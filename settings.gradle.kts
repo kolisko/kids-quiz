@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "kids-quiz"
-include(":site")
+include(":backend")

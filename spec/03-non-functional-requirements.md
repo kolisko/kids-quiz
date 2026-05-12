@@ -15,31 +15,31 @@
 
 ## Performance
 
-- Initial local development load should be acceptable for a Kotlin/JS app.
+- Initial load should stay small because the frontend is a static Angular bundle.
 - Random question selection should be instantaneous for typical question sets.
-- Server stat reads and writes should be lightweight file operations.
+- Server stat reads and writes should be lightweight SQLite operations.
 
 ## Reliability
 
-- Invalid or missing server stats file must not prevent app startup.
+- Invalid or missing server DB must be handled by idempotent migrations.
 - Invalid question JSON must not crash the app.
-- Server stat updates must be synchronized within the JVM process to avoid corrupting the stats map.
+- Server stat updates must be synchronized within the JVM process and committed to SQLite.
 - If stat API calls fail, gameplay should continue with local/session weights.
 
 ## Privacy
 
 - No accounts or personal data are required.
-- Question text and answer text are stored locally by the app and in server-side aggregate stats keys.
-- Server stats file should be treated as local application data.
+- Question text and answer text are stored in the server-side SQLite DB.
+- The SQLite DB should be treated as local application data.
 
 ## Portability
 
-- The app targets local Kobweb fullstack execution.
+- The app targets local Docker execution with the same image layout as production.
 - Static assets must be served locally, without internet dependency.
 - The project should build through the checked-in Gradle wrapper.
 
 ## Maintainability
 
-- Shared API models should live in common Kotlin source where possible.
-- Server-only persistence logic should remain isolated in `jvmMain`.
-- UI/game state should remain isolated in the page implementation unless it grows enough to split.
+- Backend API models should stay in Kotlin source and frontend API interfaces should mirror them.
+- Server-only persistence logic should remain isolated in the backend module.
+- UI/game state should remain isolated in the Angular app component until it grows enough to split.

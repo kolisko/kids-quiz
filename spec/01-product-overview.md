@@ -32,5 +32,5 @@ Kids Quiz helps children practice question-and-answer material in a playful, tim
 - A user can paste a valid `[{ "q": "...", "a": "..." }]` question set and immediately play.
 - Settings and the server-owned question set survive browser refresh.
 - Wrong and timed-out answers are recorded on the server and affect future question selection.
-- The app works locally through Kobweb fullstack server.
+- The app works locally through the Angular + Kotlin/Ktor Docker image.
 - The UI remains readable on desktop and mobile viewports.

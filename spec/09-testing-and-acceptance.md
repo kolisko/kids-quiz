@@ -5,25 +5,33 @@
 Command:
 
 ```bash
-./gradlew :site:build
+./gradlew stageDockerImageContext --no-daemon
 ```
 
 Acceptance:
 - Build exits successfully.
-- Kotlin/JS and Kotlin/JVM targets compile.
-- Kobweb backend API jar is produced.
+- Angular frontend compiles.
+- Kotlin/Ktor backend compiles.
+- Docker image context contains `app.jar`, `public/`, `Dockerfile`, and `docker-entrypoint.sh`.
 
 Known warnings:
-- Webpack bundle size warnings are acceptable for this app.
-- Gradle/Kotlin may warn that JDK 26 falls back to JVM target 25.
+- Local odd-numbered Node versions may warn during Angular builds. CI pins Node 24.
 
-## API Verification
+## Docker Verification
 
-Start server:
+Command:
 
 ```bash
-./gradlew :site:kobwebStart -PkobwebEnv=DEV -PkobwebRunLayout=FULLSTACK
+./gradlew buildDockerImage --no-daemon
+docker run --rm -p 8080:8080 -v "$PWD/.local-data:/data" kids-quiz:latest
 ```
+
+Acceptance:
+- `GET /api/health` returns success.
+- `/` returns the Angular app.
+- Restarting/recreating the container keeps SQLite data in the mounted volume.
+
+## API Verification
 
 Read stats:
 
@@ -54,8 +62,8 @@ curl -s -X POST http://127.0.0.1:8080/api/stats/answer \
 ```
 
 Acceptance:
-- `GET /api/questions` returns valid question JSON from the server.
-- `POST /api/questions` persists a valid question set on the server.
+- `GET /api/questions` returns valid question JSON from SQLite.
+- `POST /api/questions` persists a valid question set in SQLite.
 - `GET /api/stats` returns valid JSON.
 - `POST /api/stats/answer` increments the expected counter.
 - After stopping and restarting the server, stats remain available.
@@ -64,7 +72,7 @@ Acceptance:
 
 ### Settings Validation
 
-- Open app with empty default questions.
+- Open app with empty server questions.
 - Confirm settings screen appears.
 - Paste invalid JSON.
 - Confirm validation error appears.
@@ -74,15 +82,15 @@ Acceptance:
 
 ### Correct Answer
 
-- Click `Show answer`.
-- Click `Next`.
+- Click `Odpoved`.
+- Click `Dalsi`.
 - Confirm score increments.
 - Confirm server records `correct`.
 
 ### Wrong Answer
 
-- Click `Show answer`.
-- Click `Wrong`.
+- Click `Odpoved`.
+- Click `Spatne`.
 - Confirm score decrements.
 - Confirm server records `wrong`.
 
@@ -92,7 +100,7 @@ Acceptance:
 - Wait for timeout.
 - Confirm score decrements once.
 - Confirm answer is shown with timeout note.
-- Confirm only `Next` is available.
+- Confirm only `Dalsi` is available.
 - Confirm server records `timeout`.
 
 ### Finish Game
@@ -105,6 +113,6 @@ Acceptance:
 
 - `Restart` resets score but does not clear server stats.
 - `Settings` can be opened from all screens.
-- Custom JSON survives refresh through server storage, not browser `localStorage`.
-- Server question and stats files are ignored by git.
+- Custom JSON survives refresh through server SQLite, not browser `localStorage`.
+- Server DB files are ignored by git.
 - No generated build artifacts appear in `git status`.

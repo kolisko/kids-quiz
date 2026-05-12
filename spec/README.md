@@ -2,7 +2,7 @@
 
 Tato slozka obsahuje produktovou a technickou specifikaci aplikace Kids Quiz.
 
-Kids Quiz je detska webova kvízova hra v Kotlinu/Kobweb. Zobrazuje nahodne otazky z JSON dat, meri cas na zobrazeni odpovedi, boduje spravne a spatne odpovedi a po dosazeni ciloveho skore ukazuje animovanou gratulaci se zviratkem.
+Kids Quiz je detska webova kvizova hra s Angular frontendem a Kotlin/Ktor backendem. Zobrazuje nahodne otazky ulozene v SQLite, meri cas na zobrazeni odpovedi, boduje spravne a spatne odpovedi a po dosazeni ciloveho skore ukazuje animovanou gratulaci se zviratkem.
 
 ## Dokumenty
 
@@ -19,8 +19,8 @@ Kids Quiz je detska webova kvízova hra v Kotlinu/Kobweb. Zobrazuje nahodne otaz
 
 ## Current Implementation Summary
 
-- Frontend: Kotlin/JS, Compose HTML, Kobweb page route `/`.
-- Backend: Kobweb fullstack API endpoints under `/api`.
+- Frontend: Angular standalone app served as static files from the backend.
+- Backend: Kotlin/Ktor HTTP API under `/api`.
 - Local browser persistence: `localStorage` only for user settings.
 - Server persistence: SQLite DB for active questions and long-term question performance stats.
 - Static assets: 40 local SVG animal celebration images.

@@ -1,0 +1,110 @@
+<div class="app">
+  <div class="top-bar" *ngIf="screen === 'play' || screen === 'settings'">
+    <div class="score-pill">
+      Score {{ score }} / {{ settings.targetScore }}
+      <span class="flash" *ngIf="flash">{{ flash }}</span>
+    </div>
+    <div class="timer-pill">{{ secondsLeft }}s</div>
+    <div class="top-actions">
+      <button class="ghost-button" type="button" (click)="restartGame()" [disabled]="questions.length === 0">Restart</button>
+      <button class="ghost-button" type="button" (click)="screen = 'settings'">Settings</button>
+    </div>
+  </div>
+
+  <form class="login-screen" *ngIf="screen === 'login'" (ngSubmit)="submitLogin()">
+    <span class="label">Kids Quiz</span>
+    <h1>Heslo</h1>
+    <label class="password-label">
+      <input
+        name="password"
+        type="password"
+        autocomplete="current-password"
+        [(ngModel)]="password"
+        autofocus>
+    </label>
+    <p class="error login-error" *ngIf="authError">{{ authError }}</p>
+    <button class="primary-button login-button" type="submit" [disabled]="authLoading || !password.trim()">
+      {{ authLoading ? 'Overuju...' : 'Vstoupit' }}
+    </button>
+  </form>
+
+  <section class="start-screen" *ngIf="screen === 'start'">
+    <span class="label">Kids Quiz</span>
+    <h1>Vyber test</h1>
+    <div class="test-list">
+      <button class="primary-button test-button" type="button" (click)="restartGame()" [disabled]="loading || questions.length === 0">
+        {{ loading ? 'Nacitam testy...' : 'Spustit test' }}
+      </button>
+    </div>
+    <span class="start-meta">{{ loading ? 'Pripravuju otazky' : questionCountText }}</span>
+    <button class="ghost-button dark" type="button" (click)="screen = 'settings'">Settings</button>
+  </section>
+
+  <section class="settings-panel" *ngIf="screen === 'settings'">
+    <h1>Settings</h1>
+    <p>Questions loaded: {{ questions.length }}</p>
+
+    <div class="settings-grid">
+      <label>
+        Seconds
+        <input type="number" min="1" inputmode="numeric" [(ngModel)]="settings.secondsLimit" name="secondsLimit">
+      </label>
+      <label>
+        Target score
+        <input type="number" min="1" inputmode="numeric" [(ngModel)]="settings.targetScore" name="targetScore">
+      </label>
+    </div>
+
+    <label class="json-label">
+      Questions JSON
+      <textarea [(ngModel)]="questionJson" name="questionJson"></textarea>
+    </label>
+
+    <p class="error" *ngIf="jsonError">{{ jsonError }}</p>
+    <button class="primary-button" type="button" (click)="saveSettingsAndQuestions()" [disabled]="savingQuestions">
+      {{ savingQuestions ? 'Ukladam...' : 'Save and play' }}
+    </button>
+  </section>
+
+  <section class="play-surface" *ngIf="screen === 'play'">
+    <ng-container *ngIf="currentQuestion; else noQuestion">
+      <div class="question-card">
+        <span class="label">{{ answerVisible ? 'Answer' : 'Question' }}</span>
+        <h1>{{ answerVisible ? currentQuestion.a : currentQuestion.q }}</h1>
+        <p class="timeout-note" *ngIf="timedOut">Cas vyprsel, bod uz je odecteny.</p>
+      </div>
+
+      <div class="main-actions answer-actions">
+        <button class="primary-button answer-button" type="button" *ngIf="!answerVisible" (click)="showAnswer()">
+          Odpoved
+        </button>
+        <button class="primary-button answer-button" type="button" *ngIf="answerVisible && timedOut" (click)="nextAfterTimeout()">
+          Dalsi
+        </button>
+        <ng-container *ngIf="answerVisible && !timedOut">
+          <button class="danger-button answer-button" type="button" (click)="markWrong()">Spatne</button>
+          <button class="primary-button answer-button" type="button" (click)="markCorrect()">Dalsi</button>
+        </ng-container>
+      </div>
+    </ng-container>
+    <ng-template #noQuestion>
+      <div class="empty-state">
+        <h1>Zadne otazky</h1>
+        <button class="primary-button" type="button" (click)="screen = 'settings'">Settings</button>
+      </div>
+    </ng-template>
+  </section>
+
+  <section class="finish-screen" *ngIf="screen === 'finished'">
+    <div class="confetti">*  +  *  +  *</div>
+    <div class="animal-frame" [ngClass]="surprise.animationClass">
+      <span class="animal-fallback">*</span>
+      <img class="animal-image" [src]="surprise.imagePath" alt="Gratulace">
+    </div>
+    <span class="label">Score {{ score }} / {{ settings.targetScore }}</span>
+    <h1>Gratulace!</h1>
+    <div class="main-actions">
+      <button class="primary-button finish-play-button" type="button" (click)="restartGame()">Play again</button>
+    </div>
+  </section>
+</div>

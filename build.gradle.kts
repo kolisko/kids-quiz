@@ -13,98 +13,43 @@ val kidsQuizDomain = providers.gradleProperty("kidsQuizDomain").orElse("beatka.d
 val deployDir = layout.buildDirectory.dir("deploy")
 val imageContextDir = deployDir.map { it.dir("image-context") }
 val remoteFilesDir = deployDir.map { it.dir("remote") }
+val frontendDir = layout.projectDirectory.dir("frontend")
+val frontendDistDir = frontendDir.dir("dist/kids-quiz/browser")
 
-tasks.register<Exec>("kobwebReleaseExport") {
-    group = "deployment"
-    description = "Builds the Kobweb fullstack export used by the Docker image."
+tasks.register<Exec>("frontendNpmInstall") {
+    group = "build"
+    description = "Installs Angular frontend dependencies."
 
-    commandLine(
-        "./gradlew",
-        ":site:kobwebExport",
-        "-PkobwebReuseServer=true",
-        "-PkobwebEnv=DEV",
-        "-PkobwebRunLayout=FULLSTACK",
-        "-PkobwebBuildTarget=DEBUG",
-        "-PkobwebExportLayout=FULLSTACK",
-        "--no-daemon",
-    )
+    workingDir(frontendDir)
+    commandLine("npm", "ci")
+}
+
+tasks.register<Exec>("frontendBuild") {
+    group = "build"
+    description = "Builds the Angular frontend."
+
+    dependsOn("frontendNpmInstall")
+    workingDir(frontendDir)
+    commandLine("npm", "run", "build")
 }
 
 tasks.register<Sync>("stageDockerImageContext") {
     group = "deployment"
-    description = "Stages only runtime artifacts needed to build the Docker image."
+    description = "Stages the Kotlin backend jar and Angular static files for the runtime Docker image."
 
-    dependsOn("kobwebReleaseExport")
+    dependsOn("frontendBuild", ":backend:jar")
 
     into(imageContextDir)
 
     from("deploy/Dockerfile.runtime") {
         rename { "Dockerfile" }
     }
-
     from("deploy/docker-entrypoint.sh")
-
-    from("site/.kobweb") {
-        into(".kobweb")
-        exclude("server/logs/**")
-        exclude("server/state.yaml")
-        exclude("site/resources/data/**")
+    from(layout.projectDirectory.file("backend/build/libs/kids-quiz-backend.jar")) {
+        rename { "app.jar" }
     }
-
-    from("site/build/dist") {
-        into("build/dist")
-        exclude("**/public/data/**")
-    }
-
-    doLast {
-        val root = imageContextDir.get().asFile
-        val oldScriptName = "com-example-quiz.js"
-        val newScriptName = "kids-quiz-app.js"
-        val devScript = project.file("site/build/kotlin-webpack/js/developmentExecutable/$oldScriptName")
-        val systemDir = root.resolve(".kobweb/site/system")
-        val oldScript = systemDir.resolve(oldScriptName)
-        val newScript = systemDir.resolve(newScriptName)
-        val distDir = root.resolve("build/dist/js/productionExecutable")
-        val oldDistScript = distDir.resolve(oldScriptName)
-        val newDistScript = distDir.resolve(newScriptName)
-
-        fun copyScript(source: File, target: File) {
-            source.copyTo(target, overwrite = true)
-            target.writeText(
-                target.readText().replace(
-                    "sourceMappingURL=$oldScriptName.map",
-                    "sourceMappingURL=$newScriptName.map",
-                ),
-            )
-        }
-
-        if (oldScript.exists()) {
-            copyScript(if (devScript.exists()) devScript else oldScript, newScript)
-            systemDir.resolve("$oldScriptName.map")
-                .takeIf { it.exists() }
-                ?.copyTo(systemDir.resolve("$newScriptName.map"), overwrite = true)
-        }
-
-        if (oldDistScript.exists()) {
-            copyScript(if (devScript.exists()) devScript else oldDistScript, newDistScript)
-            distDir.resolve("$oldScriptName.map")
-                .takeIf { it.exists() }
-                ?.copyTo(distDir.resolve("$newScriptName.map"), overwrite = true)
-        }
-
-        listOf(
-            root.resolve(".kobweb/conf.yaml"),
-            root.resolve(".kobweb/site/pages/index.html"),
-            root.resolve(".kobweb/site/system/index.html"),
-            root.resolve("build/dist/js/productionExecutable/public/index.html"),
-        ).filter { it.exists() }.forEach { htmlFile ->
-            htmlFile.writeText(
-                htmlFile.readText().replace(
-                    "/$oldScriptName",
-                    "/$newScriptName",
-                ),
-            )
-        }
+    from(frontendDistDir) {
+        into("public")
     }
 }
 
@@ -134,11 +79,7 @@ tasks.register<Exec>("pushDockerImage") {
     dependsOn("buildDockerImage")
 
     doFirst {
-        commandLine(
-            "docker",
-            "push",
-            kidsQuizImage.get(),
-        )
+        commandLine("docker", "push", kidsQuizImage.get())
     }
 }
 
@@ -159,7 +100,7 @@ tasks.register<Exec>("prepareRemoteDeployDir") {
         commandLine(
             "ssh",
             kidsQuizHost.get(),
-            "set -e; mkdir -p '$root/deploy' '$root/data'; chmod 700 '$root/data'; rmdir '$root/src' 2>/dev/null || true",
+            "set -e; mkdir -p '$root/deploy' '$root/data/backups'; chmod 700 '$root/data'",
         )
     }
 }
@@ -231,7 +172,7 @@ tasks.register<Exec>("deployRemoteImage") {
             fi
             mkdir -p '$root/data/backups'
             if [ -f '$root/data/kids-quiz.sqlite' ]; then
-                cp -p '$root/data/kids-quiz.sqlite' '$root/data/backups/kids-quiz.sqlite.pre-deploy-'$(date -u +%Y%m%d%H%M%S)'.bak'
+                cp -p '$root/data/kids-quiz.sqlite' '$root/data/backups/kids-quiz.sqlite.pre-deploy-'${'$'}(date -u +%Y%m%d%H%M%S)'.bak'
             fi
             docker compose -p kids-quiz pull app
             docker compose -p kids-quiz run --interactive=false -T --rm app migrate

@@ -1,16 +1,17 @@
 FROM eclipse-temurin:21-jre
 
-WORKDIR /app/site
+WORKDIR /app
 
 ENV KIDS_QUIZ_DATA_DIR=/data
 ENV KIDS_QUIZ_DB_PATH=/data/kids-quiz.sqlite
+ENV KIDS_QUIZ_STATIC_DIR=/app/public
 
-COPY .kobweb ./.kobweb
-COPY build/dist ./build/dist
+COPY app.jar ./app.jar
+COPY public ./public
 COPY docker-entrypoint.sh /usr/local/bin/kids-quiz-entrypoint
 
 RUN mkdir -p /data \
-    && chmod +x ./.kobweb/server/start.sh /usr/local/bin/kids-quiz-entrypoint
+    && chmod +x /usr/local/bin/kids-quiz-entrypoint
 
 EXPOSE 8080
 

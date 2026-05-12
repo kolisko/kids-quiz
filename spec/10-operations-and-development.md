@@ -1,11 +1,26 @@
 # Operations And Development
 
-## Run Locally
+## Build Locally
 
-Start development server:
+Build the same image context used by CI:
 
 ```bash
-./gradlew :site:kobwebStart -PkobwebEnv=DEV -PkobwebRunLayout=FULLSTACK
+./gradlew stageDockerImageContext --no-daemon
+```
+
+This runs:
+- `npm ci` in `frontend/`
+- Angular production build
+- Kotlin backend jar build
+- Docker runtime context staging under `build/deploy/image-context`
+
+## Run Locally
+
+The production-like path is Docker:
+
+```bash
+./gradlew buildDockerImage --no-daemon
+docker run --rm -p 8080:8080 -v "$PWD/.local-data:/data" kids-quiz:latest
 ```
 
 Open:
@@ -14,17 +29,7 @@ Open:
 http://localhost:8080
 ```
 
-Stop server:
-
-```bash
-./gradlew :site:kobwebStop
-```
-
-## Build
-
-```bash
-./gradlew :site:build
-```
+For separate frontend/backend development, run the Angular dev server from `frontend/` and the Ktor backend from Gradle, using the same API contracts.
 
 ## Runtime Data
 
@@ -48,55 +53,43 @@ SQLite files are intentionally gitignored.
 Questions are edited through the app settings UI/API and saved to SQLite.
 There is no bundled frontend question fallback and no question JSON file in source control.
 
-## Important Config
-
-Kobweb config:
-
-```text
-site/.kobweb/conf.yaml
-```
-
-Important fields:
-- `server.port`: development port.
-- `server.files.dev.contentRoot`: public resources.
-- `server.files.dev.script`: dev JS bundle.
-- `server.files.dev.api`: JVM API jar.
-- `server.files.prod.script`: production JS bundle.
-
 ## Source Ownership
 
 Frontend/game UI:
 
 ```text
-site/src/jsMain/kotlin/com/example/quiz/pages/Index.kt
-```
-
-Shared models:
-
-```text
-site/src/commonMain/kotlin/com/example/quiz/shared/QuizModels.kt
+frontend/src/app/
 ```
 
 Server API and persistence:
 
 ```text
-site/src/jvmMain/kotlin/com/example/quiz/api/
+backend/src/main/kotlin/com/example/quiz/
 ```
 
 Static styling and assets:
 
 ```text
-site/src/jsMain/resources/public/
+frontend/src/styles.css
+frontend/src/assets/
+```
+
+Deploy files:
+
+```text
+deploy/
+.github/workflows/deploy.yml
 ```
 
 ## Deployment Notes
 
-- Current app assumes Kobweb fullstack runtime because questions and stats require JVM API endpoints.
-- Static-only export is not sufficient unless server question storage and stats are replaced by another backend.
-- Production deploys pull a built Docker image from GHCR; the VPS does not pull source code.
+- Production deploys pull a built Docker image from GHCR.
+- The VPS does not pull source code.
+- The container mounts `/opt/kids-quiz/data:/data`.
+- Migrations run with `docker compose run --rm app migrate` before the app is recreated.
 
 ## Maintenance Notes
 
-- Keep runtime question overrides and stats out of git.
-- If API model shapes change, update shared models and this specification together.
+- Keep runtime question data and stats out of git.
+- If API model shapes change, update frontend interfaces, backend models, and this specification together.
 - If question key generation changes, add a DB migration for existing stats rows.

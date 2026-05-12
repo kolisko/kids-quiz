@@ -5,6 +5,7 @@ services:
     environment:
       KIDS_QUIZ_DATA_DIR: /data
       KIDS_QUIZ_DB_PATH: /data/kids-quiz.sqlite
+      KIDS_QUIZ_STATIC_DIR: /app/public
       KIDS_QUIZ_PASSWORD_HASH: ${KIDS_QUIZ_PASSWORD_HASH:-}
       KIDS_QUIZ_AUTH_COOKIE_SECURE: ${KIDS_QUIZ_AUTH_COOKIE_SECURE:-true}
     volumes:
