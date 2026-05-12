@@ -16,7 +16,7 @@ val remoteFilesDir = deployDir.map { it.dir("remote") }
 
 tasks.register<Exec>("kobwebReleaseExport") {
     group = "deployment"
-    description = "Builds the Kobweb fullstack release export locally."
+    description = "Builds the Kobweb fullstack export used by the Docker image."
 
     commandLine(
         "./gradlew",
@@ -24,7 +24,7 @@ tasks.register<Exec>("kobwebReleaseExport") {
         "-PkobwebReuseServer=true",
         "-PkobwebEnv=DEV",
         "-PkobwebRunLayout=FULLSTACK",
-        "-PkobwebBuildTarget=RELEASE",
+        "-PkobwebBuildTarget=DEBUG",
         "-PkobwebExportLayout=FULLSTACK",
         "--no-daemon",
     )
