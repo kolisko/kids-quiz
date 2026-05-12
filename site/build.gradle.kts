@@ -57,6 +57,20 @@ tasks.named<Jar>("jvmJar") {
     )
 }
 
+tasks.named("kobwebExport") {
+    dependsOn("jsBrowserProductionWebpack")
+
+    doFirst {
+        copy {
+            from(layout.buildDirectory.dir("kotlin-webpack/js/productionExecutable")) {
+                include("com-example-quiz.js")
+                include("com-example-quiz.js.map")
+            }
+            into(layout.buildDirectory.dir("dist/js/productionExecutable"))
+        }
+    }
+}
+
 kobweb {
     app {
         index {
