@@ -234,9 +234,15 @@ tasks.register<Exec>("deployRemoteImage") {
                 cp -p '$root/data/kids-quiz.sqlite' '$root/data/backups/kids-quiz.sqlite.pre-deploy-'$(date -u +%Y%m%d%H%M%S)'.bak'
             fi
             docker compose -p kids-quiz pull app
-            docker compose -p kids-quiz run --rm app migrate
+            docker compose -p kids-quiz run --interactive=false -T --rm app migrate
             docker compose -p kids-quiz rm -sf app caddy
             docker compose -p kids-quiz up -d app caddy
+            running_image="${'$'}(docker inspect kids-quiz-app-1 --format '{{.Config.Image}}')"
+            if [ "${'$'}running_image" != "$image" ]; then
+                printf 'Expected app image %s, but container is running %s\n' "$image" "${'$'}running_image" >&2
+                docker compose -p kids-quiz ps
+                exit 1
+            fi
             """.trimIndent(),
         )
     }
