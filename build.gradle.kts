@@ -235,7 +235,8 @@ tasks.register<Exec>("deployRemoteImage") {
             fi
             docker compose -p kids-quiz pull app
             docker compose -p kids-quiz run --rm app migrate
-            docker compose -p kids-quiz up -d --force-recreate app caddy
+            docker compose -p kids-quiz rm -sf app caddy
+            docker compose -p kids-quiz up -d app caddy
             """.trimIndent(),
         )
     }
