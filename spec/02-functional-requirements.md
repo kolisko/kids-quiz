@@ -6,10 +6,10 @@
 - Each item shall contain string attributes `q` and `a`.
 - Blank `q` or `a` values shall be rejected with a visible validation error.
 - Unknown JSON fields may be ignored.
-- The default question file shall exist at `/data/questions.json` and contain a valid empty array `[]`.
 - Users shall be able to paste custom question JSON in settings.
-- Custom question JSON shall be persisted on the server.
+- Custom question JSON shall be persisted on the server in SQLite.
 - Browser `localStorage` shall not be used as a source of question data.
+- The frontend shall not fall back to a bundled question file.
 
 ## Game Settings
 
@@ -23,7 +23,7 @@
 ## Game Round
 
 - The app shall open on a test selection screen when playable questions exist.
-- The initial test selection screen shall show a `Mala nasobilka` start button.
+- The initial test selection screen shall show a start button.
 - The app shall not select a question or start the countdown until the user starts a test.
 - The app shall display one randomly selected question fullscreen.
 - The top area shall show score and countdown.

@@ -28,30 +28,25 @@ Stop server:
 
 ## Runtime Data
 
-Server question override is stored in:
+Server runtime data is stored in SQLite:
 
 ```text
-site/.quiz-questions.json
+/opt/kids-quiz/data/kids-quiz.sqlite
 ```
 
-Server stats are stored in:
+Local development can override this path with:
 
 ```text
-site/.quiz-stats.tsv
+KIDS_QUIZ_DATA_DIR=/path/to/data
+KIDS_QUIZ_DB_PATH=/path/to/kids-quiz.sqlite
 ```
 
-These files are intentionally gitignored. Deleting `site/.quiz-questions.json` returns the app to the bundled default question file. Deleting `site/.quiz-stats.tsv` resets long-term question difficulty history.
+SQLite files are intentionally gitignored.
 
 ## Editing Questions
 
-Default questions:
-
-```text
-site/src/jsMain/resources/public/data/questions.json
-```
-
-The current default is `[]`. Users can provide questions in the app settings instead.
-Saved questions are written to the server override file, not to browser `localStorage`.
+Questions are edited through the app settings UI/API and saved to SQLite.
+There is no bundled frontend question fallback and no question JSON file in source control.
 
 ## Important Config
 
@@ -98,11 +93,10 @@ site/src/jsMain/resources/public/
 
 - Current app assumes Kobweb fullstack runtime because questions and stats require JVM API endpoints.
 - Static-only export is not sufficient unless server question storage and stats are replaced by another backend.
-- For multi-device use on a local network, run the Kobweb server on a reachable host and open the host URL from client devices.
+- Production deploys pull a built Docker image from GHCR; the VPS does not pull source code.
 
 ## Maintenance Notes
 
 - Keep runtime question overrides and stats out of git.
 - If API model shapes change, update shared models and this specification together.
-- If question key generation changes, consider migration for existing stats files.
-- If stats need stronger consistency or multiple server processes, replace TSV file with a database.
+- If question key generation changes, add a DB migration for existing stats rows.

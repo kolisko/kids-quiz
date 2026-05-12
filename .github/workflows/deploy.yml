@@ -1,0 +1,138 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+env:
+  KIDS_QUIZ_DOMAIN: beatka.duckdns.org
+  KIDS_QUIZ_REMOTE_ROOT: /opt/kids-quiz
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set image name
+        id: image
+        shell: bash
+        run: |
+          image_name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "sha=${image_name}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "latest=${image_name}:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Kobweb Docker context
+        run: ./gradlew stageDockerImageContext --no-daemon
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: build/deploy/image-context
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.sha }}
+            ${{ steps.image.outputs.latest }}
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/kids_quiz_vps
+          chmod 600 ~/.ssh/kids_quiz_vps
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload Compose file
+        shell: bash
+        run: |
+          ssh -i ~/.ssh/kids_quiz_vps "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "mkdir -p '${KIDS_QUIZ_REMOTE_ROOT}/deploy' '${KIDS_QUIZ_REMOTE_ROOT}/data/backups'"
+          scp -i ~/.ssh/kids_quiz_vps deploy/docker-compose.yml \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${KIDS_QUIZ_REMOTE_ROOT}/deploy/docker-compose.yml"
+
+      - name: Deploy on VPS
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.sha }}
+        run: |
+          ssh -i ~/.ssh/kids_quiz_vps "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "KIDS_QUIZ_IMAGE='${IMAGE}' KIDS_QUIZ_DOMAIN='${KIDS_QUIZ_DOMAIN}' KIDS_QUIZ_REMOTE_ROOT='${KIDS_QUIZ_REMOTE_ROOT}' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          root="${KIDS_QUIZ_REMOTE_ROOT}"
+          domain="${KIDS_QUIZ_DOMAIN}"
+          image="${KIDS_QUIZ_IMAGE}"
+          mkdir -p "$root/deploy" "$root/data/backups"
+
+          cat > "$root/Caddyfile" <<CADDY
+          $domain {
+              header Cache-Control "no-store"
+              reverse_proxy app:8080
+          }
+          CADDY
+          chmod 600 "$root/Caddyfile"
+
+          cd "$root/deploy"
+          touch .env
+          chmod 600 .env
+
+          upsert_env() {
+              key="$1"
+              value="$2"
+              if grep -q "^${key}=" .env; then
+                  sed -i "s|^${key}=.*|${key}=${value}|" .env
+              else
+                  printf '%s=%s\n' "$key" "$value" >> .env
+              fi
+          }
+
+          upsert_env KIDS_QUIZ_IMAGE "$image"
+          upsert_env KIDS_QUIZ_AUTH_COOKIE_SECURE true
+
+          if [ -f "$root/data/kids-quiz.sqlite" ]; then
+              cp -p "$root/data/kids-quiz.sqlite" \
+                  "$root/data/backups/kids-quiz.sqlite.pre-deploy-$(date -u +%Y%m%d%H%M%S).bak"
+          fi
+
+          docker compose -p kids-quiz pull app
+          docker compose -p kids-quiz run --rm app migrate
+          docker compose -p kids-quiz up -d app caddy
+          REMOTE
+
+      - name: Healthcheck
+        shell: bash
+        run: |
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors \
+            "https://${KIDS_QUIZ_DOMAIN}/api/health"

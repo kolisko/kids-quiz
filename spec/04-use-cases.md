@@ -5,8 +5,7 @@
 Actor: User
 
 Preconditions:
-- No custom questions exist in server question storage.
-- `/data/questions.json` is `[]`.
+- No questions exist in SQLite question storage.
 
 Main flow:
 1. User opens the app.
@@ -28,7 +27,7 @@ Main flow:
 1. User opens the app.
 2. App loads settings and questions.
 3. App shows the test selection screen.
-4. User clicks `Mala nasobilka`.
+4. User clicks `Spustit test`.
 
 Expected result:
 - The first question appears.

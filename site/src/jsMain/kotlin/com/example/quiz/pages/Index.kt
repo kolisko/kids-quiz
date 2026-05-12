@@ -19,7 +19,6 @@ import com.example.quiz.shared.questionKey
 import com.varabyte.kobweb.browser.api
 import com.varabyte.kobweb.core.Page
 import kotlinx.browser.window
-import kotlinx.coroutines.await
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -202,7 +201,7 @@ fun HomePage() {
 
     suspend fun loadQuestionsJsonFromServer(): String {
         val bytes = window.api.tryGetBytes("questions")
-        return bytes?.decodeToString() ?: window.fetch("/data/questions.json").await().text().await()
+        return bytes?.decodeToString() ?: "[]"
     }
 
     suspend fun saveQuestionsJsonToServer(source: String): Boolean {
@@ -441,7 +440,7 @@ private fun StartView(
                 if (loading || questionCount == 0) disabled()
                 onClick { onStartSmallMultiplication() }
             }) {
-                Text(if (loading) "Nacitam testy..." else "Mala nasobilka")
+                Text(if (loading) "Nacitam testy..." else "Spustit test")
             }
         }
         Span(attrs = { classes("start-meta") }) {

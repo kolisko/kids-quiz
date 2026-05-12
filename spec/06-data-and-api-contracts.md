@@ -3,8 +3,8 @@
 ## Question JSON
 
 Location:
-- Default file: `/data/questions.json`
-- Server override file: `site/.quiz-questions.json`
+- SQLite table `questions` in the configured runtime DB.
+- Production DB path: `/opt/kids-quiz/data/kids-quiz.sqlite`.
 
 Schema:
 
@@ -81,8 +81,7 @@ Response:
 ```
 
 Failure behavior:
-- If no stats file exists, response is an empty map.
-- If stats file contains invalid rows, invalid rows are ignored.
+- If no stats rows exist, response is an empty map.
 
 ## GET /api/questions
 
@@ -100,9 +99,8 @@ Response:
 ```
 
 Rules:
-- If `site/.quiz-questions.json` exists, return it.
-- Otherwise return bundled `/data/questions.json`.
-- If neither source exists, return `[]`.
+- Return questions from the SQLite DB ordered by `sort_order`.
+- If no DB questions exist, return `[]`.
 
 ## POST /api/questions
 
@@ -122,10 +120,10 @@ Request:
 Rules:
 - Accept a JSON array with `q` and `a` question items.
 - Accept `[]` as a valid empty question set.
-- Persist the body to `site/.quiz-questions.json`.
+- Replace the DB question rows with the submitted items.
 
 Failure behavior:
-- Invalid question JSON returns HTTP 400 and does not replace the previous server file.
+- Invalid question JSON returns HTTP 400 and does not replace the previous DB rows.
 
 ## POST /api/stats/answer
 
@@ -163,24 +161,12 @@ Response:
 Failure behavior:
 - Invalid JSON-like body or missing required fields returns HTTP 400.
 
-## Server Persistence Files
+## Server Persistence
 
-Question override:
-
-```text
-site/.quiz-questions.json
-```
-
-Stats:
+All production question and stats data is stored in SQLite:
 
 ```text
-site/.quiz-stats.tsv
+/opt/kids-quiz/data/kids-quiz.sqlite
 ```
 
-Format:
-
-```text
-base64url(questionKey)\tcorrect\twrong\ttimeout
-```
-
-Both files are ignored by git because they are runtime data.
+Legacy `.quiz-questions.json` and `.quiz-stats.tsv` files are imported once by DB migration and then archived under the runtime backup directory.

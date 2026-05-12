@@ -22,5 +22,5 @@ Kids Quiz je detska webova kvízova hra v Kotlinu/Kobweb. Zobrazuje nahodne otaz
 - Frontend: Kotlin/JS, Compose HTML, Kobweb page route `/`.
 - Backend: Kobweb fullstack API endpoints under `/api`.
 - Local browser persistence: `localStorage` only for user settings.
-- Server persistence: `site/.quiz-questions.json` for the active custom question set and `site/.quiz-stats.tsv` for long-term question performance stats.
+- Server persistence: SQLite DB for active questions and long-term question performance stats.
 - Static assets: 40 local SVG animal celebration images.

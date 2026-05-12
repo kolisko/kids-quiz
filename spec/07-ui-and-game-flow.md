@@ -6,13 +6,13 @@
 
 Visible elements:
 - Heading `Vyber test`.
-- Primary test button `Mala nasobilka`.
+- Primary test button `Spustit test`.
 - Loaded question count.
 - `Settings` button.
 
 Behavior:
 - The countdown is not visible and does not run.
-- Clicking `Mala nasobilka` starts a new game and selects the first question.
+- Clicking `Spustit test` starts a new game and selects the first question.
 
 ### Play Screen
 

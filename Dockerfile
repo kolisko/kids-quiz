@@ -3,13 +3,15 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app/site
 
 ENV KIDS_QUIZ_DATA_DIR=/data
+ENV KIDS_QUIZ_DB_PATH=/data/kids-quiz.sqlite
 
 COPY .kobweb ./.kobweb
 COPY build/dist ./build/dist
+COPY deploy/docker-entrypoint.sh /usr/local/bin/kids-quiz-entrypoint
 
 RUN mkdir -p /data \
-    && chmod +x ./.kobweb/server/start.sh
+    && chmod +x ./.kobweb/server/start.sh /usr/local/bin/kids-quiz-entrypoint
 
 EXPOSE 8080
 
-CMD ["bash", "-lc", "rm -f ./.kobweb/server/state.yaml && exec ./.kobweb/server/start.sh"]
+ENTRYPOINT ["kids-quiz-entrypoint"]

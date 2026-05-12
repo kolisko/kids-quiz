@@ -7,7 +7,7 @@
 - Compose HTML for UI rendering.
 - Kotlin serialization on the frontend/common model layer.
 - Kobweb API routes on the JVM backend.
-- Local file persistence for server-side questions and stats.
+- SQLite persistence for server-side questions and stats.
 
 ## Module Layout
 
@@ -25,7 +25,6 @@ site/
     JsonSupport.kt
     stats/Answer.kt
   src/jsMain/resources/public/
-    data/questions.json
     styles.css
     assets/animals/*.svg
 ```
@@ -41,14 +40,11 @@ Frontend:
 
 Backend:
 - Serves Kobweb API endpoints.
-- Loads the active question JSON from `site/.quiz-questions.json` or the bundled default file.
-- Writes custom question JSON to `site/.quiz-questions.json`.
-- Keeps in-memory stats map during process lifetime.
-- Loads stats from `site/.quiz-stats.tsv` on first use.
-- Writes stats to `site/.quiz-stats.tsv` after each recorded answer.
+- Loads and writes active question JSON through SQLite.
+- Loads and writes long-term answer stats through SQLite.
+- Runs idempotent DB migrations before serving production traffic.
 
 Static resources:
-- Default question file at `/data/questions.json`.
 - Stylesheet at `/styles.css`.
 - Animal SVGs under `/assets/animals/`.
 

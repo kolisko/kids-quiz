@@ -1,5 +1,7 @@
 import com.varabyte.kobweb.gradle.application.util.configAsKobwebApplication
 import kotlinx.html.link
+import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.jvm.tasks.Jar
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -37,8 +39,22 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.kobweb.api)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.slf4j.nop)
+            implementation(libs.sqlite.jdbc)
         }
     }
+}
+
+tasks.named<Jar>("jvmJar") {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude("META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.SF")
+    from(
+        configurations.named("jvmRuntimeClasspath").map { runtimeClasspath ->
+            runtimeClasspath
+                .filter { it.name.endsWith(".jar") && !it.name.startsWith("kobweb-api-") }
+                .map { zipTree(it) }
+        }
+    )
 }
 
 kobweb {

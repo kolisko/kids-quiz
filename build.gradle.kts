@@ -13,7 +13,6 @@ val kidsQuizDomain = providers.gradleProperty("kidsQuizDomain").orElse("beatka.d
 val deployDir = layout.buildDirectory.dir("deploy")
 val imageContextDir = deployDir.map { it.dir("image-context") }
 val remoteFilesDir = deployDir.map { it.dir("remote") }
-val imageTar = deployDir.map { it.file("kids-quiz.image.tar") }
 
 tasks.register<Exec>("kobwebReleaseExport") {
     group = "deployment"
@@ -43,14 +42,18 @@ tasks.register<Sync>("stageDockerImageContext") {
         rename { "Dockerfile" }
     }
 
+    from("deploy/docker-entrypoint.sh")
+
     from("site/.kobweb") {
         into(".kobweb")
         exclude("server/logs/**")
         exclude("server/state.yaml")
+        exclude("site/resources/data/**")
     }
 
     from("site/build/dist") {
         into("build/dist")
+        exclude("**/public/data/**")
     }
 
     doLast {
@@ -124,19 +127,16 @@ tasks.register<Exec>("buildDockerImage") {
     }
 }
 
-tasks.register<Exec>("saveDockerImage") {
+tasks.register<Exec>("pushDockerImage") {
     group = "deployment"
-    description = "Saves the app Docker image as build/deploy/kids-quiz.image.tar."
+    description = "Pushes the app Docker image to its configured registry."
 
     dependsOn("buildDockerImage")
 
     doFirst {
-        imageTar.get().asFile.parentFile.mkdirs()
         commandLine(
             "docker",
-            "save",
-            "-o",
-            imageTar.get().asFile.absolutePath,
+            "push",
             kidsQuizImage.get(),
         )
     }
@@ -188,46 +188,66 @@ tasks.register<Exec>("configureRemoteCaddy") {
     }
 }
 
-tasks.register<Exec>("uploadDockerImage") {
+tasks.register<Exec>("uploadRemoteDeployFiles") {
     group = "deployment"
-    description = "Uploads the saved app image and Compose files to the VPS."
+    description = "Uploads only the Compose file to the VPS."
 
-    dependsOn("prepareRemoteDeployDir", "saveDockerImage", "stageRemoteDeployFiles")
+    dependsOn("prepareRemoteDeployDir", "stageRemoteDeployFiles")
 
     doFirst {
         val target = "${kidsQuizHost.get()}:${kidsQuizRemoteRoot.get()}/deploy/"
         commandLine(
             "scp",
-            imageTar.get().asFile.absolutePath,
             remoteFilesDir.get().file("docker-compose.yml").asFile.absolutePath,
             target,
         )
     }
 }
 
-tasks.register<Exec>("deployDockerImage") {
+tasks.register<Exec>("deployRemoteImage") {
     group = "deployment"
-    description = "Loads the uploaded image on the VPS and starts Docker Compose."
+    description = "Pulls the configured registry image on the VPS, migrates the DB, and restarts Compose."
 
-    dependsOn("uploadDockerImage")
+    dependsOn("uploadRemoteDeployFiles")
 
     doFirst {
         val root = kidsQuizRemoteRoot.get()
+        val image = kidsQuizImage.get()
         commandLine(
             "ssh",
             kidsQuizHost.get(),
-            "set -e; docker load -i '$root/deploy/kids-quiz.image.tar'; cd '$root/deploy'; docker compose -p kids-quiz up -d",
+            """
+            set -e
+            cd '$root/deploy'
+            touch .env
+            chmod 600 .env
+            if grep -q '^KIDS_QUIZ_IMAGE=' .env; then
+                sed -i 's|^KIDS_QUIZ_IMAGE=.*|KIDS_QUIZ_IMAGE=$image|' .env
+            else
+                printf '\nKIDS_QUIZ_IMAGE=%s\n' '$image' >> .env
+            fi
+            if ! grep -q '^KIDS_QUIZ_AUTH_COOKIE_SECURE=' .env; then
+                printf 'KIDS_QUIZ_AUTH_COOKIE_SECURE=true\n' >> .env
+            fi
+            mkdir -p '$root/data/backups'
+            if [ -f '$root/data/kids-quiz.sqlite' ]; then
+                cp -p '$root/data/kids-quiz.sqlite' '$root/data/backups/kids-quiz.sqlite.pre-deploy-'$(date -u +%Y%m%d%H%M%S)'.bak'
+            fi
+            docker compose -p kids-quiz pull app
+            docker compose -p kids-quiz run --rm app migrate
+            docker compose -p kids-quiz up -d app caddy
+            """.trimIndent(),
         )
     }
 }
 
 tasks.register("deployToContabo") {
     group = "deployment"
-    description = "Configures Caddy, uploads the app image tar, loads it, and starts Compose on the VPS."
+    description = "Configures Caddy, uploads Compose, pulls the registry image, migrates DB, and starts Compose on the VPS."
 
-    dependsOn("configureRemoteCaddy", "deployDockerImage")
+    dependsOn("configureRemoteCaddy", "deployRemoteImage")
 }
 
-tasks.named("deployDockerImage") {
+tasks.named("deployRemoteImage") {
     mustRunAfter("configureRemoteCaddy")
 }
