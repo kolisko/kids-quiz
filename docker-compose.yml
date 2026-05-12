@@ -1,0 +1,36 @@
+services:
+  app:
+    image: ${KIDS_QUIZ_IMAGE:-kids-quiz:latest}
+    restart: unless-stopped
+    environment:
+      KIDS_QUIZ_DATA_DIR: /data
+      KIDS_QUIZ_PASSWORD_HASH: ${KIDS_QUIZ_PASSWORD_HASH:-}
+      KIDS_QUIZ_AUTH_COOKIE_SECURE: ${KIDS_QUIZ_AUTH_COOKIE_SECURE:-true}
+    volumes:
+      - /opt/kids-quiz/data:/data
+    expose:
+      - "8080"
+    networks:
+      - kids-quiz
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/kids-quiz/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - kids-quiz
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  kids-quiz:

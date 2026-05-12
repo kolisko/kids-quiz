@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Animal celebration">
+  <rect width="400" height="400" rx="64" fill="#fff7ed"/>
+  <circle cx="66" cy="68" r="20" fill="#60a5fa" opacity="0.55"/>
+  <circle cx="335" cy="78" r="26" fill="#a78bfa" opacity="0.48"/>
+  <path d="M46 318 C96 282 119 352 168 318 C216 285 242 352 293 316 C322 296 344 300 363 318" stroke="#60a5fa" stroke-width="14" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M105 126 L145 48 L174 132 Z" fill="#a78bfa"/><path d="M226 132 L255 48 L295 126 Z" fill="#a78bfa"/>
+  <circle cx="200" cy="195" r="118" fill="#38bdf8"/>
+  <ellipse cx="157" cy="178" rx="20" ry="25" fill="#111827"/>
+  <ellipse cx="243" cy="178" rx="20" ry="25" fill="#111827"/>
+  <circle cx="164" cy="168" r="7" fill="#ffffff"/>
+  <circle cx="250" cy="168" r="7" fill="#ffffff"/>
+  <ellipse cx="200" cy="214" rx="25" ry="20" fill="#111827" opacity="0.86"/>
+  <path d="M148 248 C164 296 236 296 252 248 C232 270 168 270 148 248 Z" fill="#7f1d1d" opacity="0.92"/>
+  <path d="M166 256 C180 267 220 267 234 256" stroke="#ffffff" stroke-width="8" fill="none" stroke-linecap="round"/>
+</svg>

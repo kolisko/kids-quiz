@@ -1,0 +1,4 @@
+beatka.duckdns.org {
+    header Cache-Control "no-store"
+    reverse_proxy app:8080
+}

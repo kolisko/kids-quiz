@@ -1,0 +1,13 @@
+.gradle/
+build/
+kotlin-js-store/
+node_modules/
+.quiz-stats.json
+.quiz-stats.tsv
+.quiz-questions.json
+site/.quiz-stats.json
+site/.quiz-stats.tsv
+site/.quiz-questions.json
+site/build/
+site/.kobweb/server/
+site/.kobweb/site/

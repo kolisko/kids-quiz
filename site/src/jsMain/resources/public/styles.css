@@ -1,0 +1,467 @@
+:root {
+  color: #1f2937;
+  background: #f9fafb;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.app {
+  min-height: 100vh;
+  color: #1d2733;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255, 216, 102, 0.34), transparent 24rem),
+    radial-gradient(circle at 88% 15%, rgba(99, 210, 190, 0.28), transparent 26rem),
+    linear-gradient(135deg, #fbf7ef 0%, #eef7ff 52%, #f6f1ff 100%);
+  overflow: hidden;
+}
+
+.top-bar {
+  position: fixed;
+  z-index: 10;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+
+.score-pill,
+.timer-pill,
+.ghost-button {
+  pointer-events: auto;
+  border: 2px solid rgba(31, 41, 55, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 12px 30px rgba(31, 41, 55, 0.1);
+  backdrop-filter: blur(14px);
+}
+
+.score-pill,
+.timer-pill {
+  min-width: 5.75rem;
+  padding: 0.72rem 1rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.timer-pill {
+  color: #0f766e;
+}
+
+.flash {
+  position: absolute;
+  margin-left: 0.5rem;
+  color: #dc2626;
+  animation: rise 900ms ease-out forwards;
+}
+
+.top-actions {
+  display: flex;
+  gap: 0.5rem;
+  pointer-events: auto;
+}
+
+.start-screen,
+.login-screen,
+.play-surface,
+.finish-screen,
+.settings-panel {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6rem 1.25rem 2rem;
+}
+
+.question-card {
+  width: min(1100px, 100%);
+  text-align: center;
+}
+
+.label {
+  display: inline-flex;
+  margin-bottom: 1rem;
+  color: #475569;
+  font-size: 0.88rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.question-card h1,
+.login-screen h1,
+.start-screen h1,
+.finish-screen h1,
+.settings-panel h1 {
+  margin: 0;
+  color: #111827;
+  font-weight: 950;
+  line-height: 1.04;
+  letter-spacing: 0;
+}
+
+.start-screen {
+  text-align: center;
+}
+
+.login-screen {
+  width: min(100%, 26rem);
+  margin: 0 auto;
+  text-align: center;
+}
+
+.login-screen h1 {
+  font-size: clamp(2.6rem, 7vw, 5.2rem);
+}
+
+.password-label {
+  margin-top: 2rem;
+}
+
+.login-button {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.login-error {
+  margin: 1rem 0 0;
+}
+
+.start-screen h1 {
+  font-size: clamp(2.8rem, 8vw, 6.8rem);
+}
+
+.test-list {
+  display: grid;
+  width: min(100%, 28rem);
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+
+.test-button {
+  min-height: 5.2rem;
+  font-size: clamp(1.35rem, 4vw, 2.1rem);
+}
+
+.start-meta {
+  margin: 1rem 0 1.25rem;
+  color: #475569;
+  font-weight: 850;
+}
+
+.question-card h1 {
+  font-size: clamp(2.4rem, 8vw, 7.4rem);
+  overflow-wrap: anywhere;
+}
+
+.timeout-note,
+.settings-panel p,
+.finish-screen p {
+  max-width: 48rem;
+  color: #475569;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.main-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.85rem;
+  margin-top: 2rem;
+}
+
+.answer-actions {
+  width: min(100%, 44rem);
+  gap: 1rem;
+}
+
+.answer-button {
+  flex: 1 1 16rem;
+  min-height: 5.75rem;
+  padding: 1.15rem 2rem;
+  font-size: 1.65rem;
+  line-height: 1.1;
+}
+
+.primary-button,
+.danger-button,
+.ghost-button {
+  min-height: 3rem;
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.82rem 1.2rem;
+  cursor: pointer;
+  font-weight: 900;
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.primary-button {
+  color: #052e2b;
+  background: #5eead4;
+  box-shadow: 0 12px 24px rgba(20, 184, 166, 0.24);
+}
+
+.finish-play-button {
+  min-width: min(100%, 18rem);
+  min-height: 4rem;
+  padding: 1rem 2.2rem;
+  font-size: 1.25rem;
+}
+
+.danger-button {
+  color: #fff;
+  background: #ef4444;
+  box-shadow: 0 12px 24px rgba(239, 68, 68, 0.22);
+}
+
+.ghost-button {
+  color: #1f2937;
+  padding-inline: 1rem;
+}
+
+.ghost-button.dark {
+  color: #111827;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(1px);
+  opacity: 0.88;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.58;
+  transform: none;
+}
+
+.settings-panel {
+  width: min(900px, calc(100% - 2rem));
+  margin: 0 auto;
+  align-items: stretch;
+}
+
+.settings-panel h1 {
+  font-size: clamp(2rem, 5vw, 4rem);
+  text-align: center;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+label {
+  display: grid;
+  gap: 0.5rem;
+  color: #374151;
+  font-weight: 900;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 2px solid rgba(31, 41, 55, 0.14);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.86);
+  color: #111827;
+  outline: none;
+}
+
+input {
+  min-height: 3.2rem;
+  padding: 0.7rem 0.9rem;
+}
+
+textarea {
+  min-height: 15rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.json-label {
+  margin: 1.25rem 0;
+}
+
+.error {
+  width: 100%;
+  border-radius: 0.5rem;
+  padding: 0.9rem 1rem;
+  color: #991b1b !important;
+  background: rgba(254, 226, 226, 0.9);
+  text-align: left !important;
+}
+
+.finish-screen {
+  text-align: center;
+}
+
+.finish-screen h1 {
+  margin-top: 0.5rem;
+  font-size: clamp(2.4rem, 7vw, 6rem);
+}
+
+.animal-frame {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: min(42vh, 20rem);
+  aspect-ratio: 1;
+}
+
+.animal-fallback {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 74%;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  color: #f59e0b;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 0 0 0.65rem rgba(94, 234, 212, 0.4);
+  font-size: clamp(4rem, 18vw, 9rem);
+  font-weight: 950;
+}
+
+.animal-image {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 24px 30px rgba(15, 23, 42, 0.18));
+}
+
+.confetti {
+  color: #f59e0b;
+  font-size: clamp(1.8rem, 6vw, 5rem);
+  animation: sparkle 1300ms ease-in-out infinite alternate;
+}
+
+.pop {
+  animation: pop 900ms ease-in-out infinite alternate;
+}
+
+.floaty {
+  animation: floaty 2100ms ease-in-out infinite;
+}
+
+.wiggle {
+  animation: wiggle 900ms ease-in-out infinite;
+}
+
+.spinny {
+  animation: spinny 2400ms ease-in-out infinite;
+}
+
+.bounce {
+  animation: bounce 900ms cubic-bezier(.28,.84,.42,1) infinite;
+}
+
+@keyframes rise {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-1.2rem) scale(1.18); }
+}
+
+@keyframes sparkle {
+  from { transform: scale(0.96) rotate(-2deg); opacity: 0.74; }
+  to { transform: scale(1.05) rotate(2deg); opacity: 1; }
+}
+
+@keyframes pop {
+  from { transform: scale(0.94); }
+  to { transform: scale(1.04); }
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1rem); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg); }
+}
+
+@keyframes spinny {
+  0%, 100% { transform: rotate(-5deg) scale(1); }
+  50% { transform: rotate(5deg) scale(1.04); }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.3rem); }
+}
+
+@media (max-width: 700px) {
+  .top-bar {
+    top: 0.65rem;
+    left: 0.65rem;
+    right: 0.65rem;
+    align-items: flex-start;
+  }
+
+  .top-actions {
+    flex-direction: column;
+  }
+
+  .score-pill,
+  .timer-pill,
+  .ghost-button {
+    min-width: auto;
+    padding: 0.62rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .play-surface,
+  .finish-screen,
+  .settings-panel {
+    padding-top: 7rem;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .main-actions {
+    width: 100%;
+  }
+
+  .main-actions button {
+    flex: 1 1 10rem;
+  }
+
+  .answer-actions .answer-button {
+    flex-basis: 100%;
+    min-height: 5.25rem;
+    padding-inline: 1.25rem;
+    font-size: 1.45rem;
+  }
+}
