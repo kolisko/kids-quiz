@@ -2,7 +2,7 @@
 
 ## Purpose
 
-KitQuiz helps children practice question-and-answer material in a playful, time-boxed format. The app emphasizes fast recall, simple scoring, and adaptive repetition of questions that are difficult across multiple test sessions.
+Kids Quiz helps children practice question-and-answer material in a playful, time-boxed format. The app emphasizes fast recall, simple scoring, and adaptive repetition of questions that are difficult across multiple test sessions.
 
 ## Target Users
 

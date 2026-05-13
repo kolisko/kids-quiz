@@ -9,6 +9,7 @@ val kidsQuizPlatform = providers.gradleProperty("kidsQuizPlatform").orElse("linu
 val kidsQuizHost = providers.gradleProperty("kidsQuizHost").orElse("contabo")
 val kidsQuizRemoteRoot = providers.gradleProperty("kidsQuizRemoteRoot").orElse("/opt/kids-quiz")
 val kidsQuizDomain = providers.gradleProperty("kidsQuizDomain").orElse("beatka.duckdns.org")
+val kidsQuizExtraDomains = providers.gradleProperty("kidsQuizExtraDomains").orElse("beatka.207-180-242-157.sslip.io")
 
 val deployDir = layout.buildDirectory.dir("deploy")
 val imageContextDir = deployDir.map { it.dir("image-context") }
@@ -112,11 +113,13 @@ tasks.register<Exec>("configureRemoteCaddy") {
     doFirst {
         val root = kidsQuizRemoteRoot.get()
         val domain = kidsQuizDomain.get()
+        val extraDomains = kidsQuizExtraDomains.get().trim()
+        val addresses = if (extraDomains.isBlank()) domain else "$domain, $extraDomains"
         val remoteScript = """
             set -e
             mkdir -p '$root'
             cat > '$root/Caddyfile' <<CADDY_EOF
-            $domain {
+            $addresses {
                 header Cache-Control "no-store"
                 reverse_proxy app:8080
             }

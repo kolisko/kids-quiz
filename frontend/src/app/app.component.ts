@@ -214,6 +214,16 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.loadSettings();
     try {
+      const auth = await this.apiGet<AuthStatusResponse>('auth/status');
+      if (!auth.authenticated) {
+        this.tests = [];
+        this.selectedTest = null;
+        this.questions = [];
+        this.serverStats = {};
+        this.questionJson = '';
+        this.screen = 'login';
+        return;
+      }
       const tests = await this.apiGet<QuizTest[]>('tests');
       this.tests = tests;
       this.selectedTest = this.selectedTest

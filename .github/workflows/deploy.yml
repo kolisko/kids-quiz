@@ -16,6 +16,8 @@ concurrency:
 
 env:
   KIDS_QUIZ_DOMAIN: beatka.duckdns.org
+  KIDS_QUIZ_EXTRA_DOMAINS: beatka.207-180-242-157.sslip.io
+  KIDS_QUIZ_HEALTHCHECK_DOMAIN: beatka.207-180-242-157.sslip.io
   KIDS_QUIZ_REMOTE_ROOT: /opt/kids-quiz
 
 jobs:
@@ -93,16 +95,22 @@ jobs:
           IMAGE: ${{ steps.image.outputs.sha }}
         run: |
           ssh -i ~/.ssh/kids_quiz_vps "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "KIDS_QUIZ_IMAGE='${IMAGE}' KIDS_QUIZ_DOMAIN='${KIDS_QUIZ_DOMAIN}' KIDS_QUIZ_REMOTE_ROOT='${KIDS_QUIZ_REMOTE_ROOT}' bash -s" <<'REMOTE'
+            "KIDS_QUIZ_IMAGE='${IMAGE}' KIDS_QUIZ_DOMAIN='${KIDS_QUIZ_DOMAIN}' KIDS_QUIZ_EXTRA_DOMAINS='${KIDS_QUIZ_EXTRA_DOMAINS}' KIDS_QUIZ_REMOTE_ROOT='${KIDS_QUIZ_REMOTE_ROOT}' bash -s" <<'REMOTE'
           set -euo pipefail
 
           root="${KIDS_QUIZ_REMOTE_ROOT}"
           domain="${KIDS_QUIZ_DOMAIN}"
+          extra_domains="${KIDS_QUIZ_EXTRA_DOMAINS:-}"
           image="${KIDS_QUIZ_IMAGE}"
           mkdir -p "$root/deploy" "$root/data/backups"
 
+          addresses="$domain"
+          if [ -n "$extra_domains" ]; then
+              addresses="$addresses, $extra_domains"
+          fi
+
           cat > "$root/Caddyfile" <<CADDY
-          $domain {
+          $addresses {
               header Cache-Control "no-store"
               reverse_proxy app:8080
           }
@@ -148,4 +156,4 @@ jobs:
         shell: bash
         run: |
           curl -fsS --retry 12 --retry-delay 5 --retry-all-errors \
-            "https://${KIDS_QUIZ_DOMAIN}/api/health"
+            "https://${KIDS_QUIZ_HEALTHCHECK_DOMAIN}/api/health"

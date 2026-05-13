@@ -5,7 +5,7 @@
 ### Start Screen
 
 Visible elements:
-- Heading `KitQuiz`.
+- Heading `Kids Quiz`.
 - One button per test name loaded from the database.
 
 Behavior:
