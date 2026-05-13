@@ -14,7 +14,7 @@ body {
 
 button,
 input,
-textarea {
+lucide-icon {
   font: inherit;
 }
 
@@ -43,7 +43,7 @@ textarea {
 
 .score-pill,
 .timer-pill,
-.ghost-button {
+.icon-button {
   pointer-events: auto;
   border: 2px solid rgba(31, 41, 55, 0.12);
   border-radius: 999px;
@@ -75,6 +75,17 @@ textarea {
   display: flex;
   gap: 0.5rem;
   pointer-events: auto;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 3.65rem;
+  height: 3.65rem;
+  padding: 0;
+  color: #1f2937;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
 }
 
 .start-screen,
@@ -152,14 +163,17 @@ textarea {
 
 .test-list {
   display: grid;
-  width: min(100%, 28rem);
-  gap: 1rem;
-  margin-top: 2.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 58rem);
+  gap: 1.25rem;
+  margin-top: 3rem;
 }
 
 .test-button {
-  min-height: 5.2rem;
-  font-size: clamp(1.35rem, 4vw, 2.1rem);
+  min-height: 9rem;
+  padding: 1.4rem 2rem;
+  font-size: clamp(1.55rem, 3vw, 2.35rem);
+  line-height: 1.08;
 }
 
 .start-meta {
@@ -174,6 +188,7 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.answer-hint,
 .timeout-note,
 .settings-panel p,
 .finish-screen p {
@@ -185,29 +200,30 @@ textarea {
 }
 
 .main-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
   margin-top: 2rem;
 }
 
 .answer-actions {
-  width: min(100%, 50rem);
-  gap: 1rem;
+  width: min(100%, 56rem);
+  gap: 1.15rem;
 }
 
 .answer-button {
-  flex: 1 1 17rem;
-  min-height: 6.5rem;
-  padding: 1.3rem 2.2rem;
-  font-size: 1.9rem;
+  min-height: 8.25rem;
+  padding: 1.45rem 2.25rem;
+  font-size: clamp(1.55rem, 3.2vw, 2.25rem);
   line-height: 1.1;
 }
 
+.wide-action {
+  grid-column: 1 / -1;
+}
+
 .primary-button,
-.danger-button,
-.ghost-button {
+.danger-button {
   min-height: 3rem;
   border: 0;
   border-radius: 0.5rem;
@@ -225,25 +241,15 @@ textarea {
 
 .finish-play-button {
   min-width: min(100%, 18rem);
-  min-height: 4rem;
+  min-height: 5.4rem;
   padding: 1rem 2.2rem;
-  font-size: 1.25rem;
+  font-size: 1.45rem;
 }
 
 .danger-button {
   color: #fff;
   background: #ef4444;
   box-shadow: 0 12px 24px rgba(239, 68, 68, 0.22);
-}
-
-.ghost-button {
-  color: #1f2937;
-  padding-inline: 1rem;
-}
-
-.ghost-button.dark {
-  color: #111827;
-  background: rgba(255, 255, 255, 0.78);
 }
 
 button:hover {
@@ -267,9 +273,22 @@ button:disabled {
   align-items: stretch;
 }
 
+.settings-header {
+  display: grid;
+  grid-template-columns: 3.65rem 1fr 3.65rem;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
 .settings-panel h1 {
   font-size: clamp(2rem, 5vw, 4rem);
   text-align: center;
+}
+
+.header-spacer {
+  width: 3.65rem;
+  height: 3.65rem;
 }
 
 .settings-grid {
@@ -285,8 +304,7 @@ label {
   font-weight: 900;
 }
 
-input,
-textarea {
+input {
   width: 100%;
   border: 2px solid rgba(31, 41, 55, 0.14);
   border-radius: 0.5rem;
@@ -300,17 +318,18 @@ input {
   padding: 0.7rem 0.9rem;
 }
 
-textarea {
-  min-height: 15rem;
-  margin-top: 1rem;
-  padding: 1rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  line-height: 1.45;
-  resize: vertical;
+.settings-note {
+  min-height: 1.6rem;
+  margin: 1.25rem 0 0;
+  color: #0f766e !important;
+  font-weight: 900;
 }
 
-.json-label {
-  margin: 1.25rem 0;
+.settings-save-button {
+  width: min(100%, 18rem);
+  min-height: 5rem;
+  margin: 1.25rem auto 0;
+  font-size: 1.25rem;
 }
 
 .error {
@@ -437,10 +456,14 @@ textarea {
 
   .score-pill,
   .timer-pill,
-  .ghost-button {
+  .icon-button {
     min-width: auto;
-    padding: 0.62rem 0.75rem;
     font-size: 0.85rem;
+  }
+
+  .icon-button {
+    width: 3.25rem;
+    height: 3.25rem;
   }
 
   .play-surface,
@@ -453,18 +476,20 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .main-actions {
-    width: 100%;
+  .test-list {
+    gap: 0.8rem;
+    width: min(100%, 42rem);
   }
 
-  .main-actions button {
-    flex: 1 1 10rem;
+  .test-button {
+    min-height: 7.5rem;
+    padding: 1.1rem 1rem;
+    font-size: clamp(1.15rem, 4.5vw, 1.8rem);
   }
 
   .answer-actions .answer-button {
-    flex-basis: 100%;
-    min-height: 5.8rem;
+    min-height: 6.75rem;
     padding-inline: 1.25rem;
-    font-size: 1.65rem;
+    font-size: clamp(1.2rem, 5vw, 1.65rem);
   }
 }

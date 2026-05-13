@@ -1,21 +1,16 @@
 # Use Cases
 
-## UC-01 Start With No Questions
+## UC-01 Start Test Selection
 
 Actor: User
-
-Preconditions:
-- No questions exist in SQLite question storage.
 
 Main flow:
 1. User opens the app.
 2. App loads settings and asks the server for tests.
 3. App shows the test selection screen.
-4. User clicks a test with no playable questions.
-5. App shows settings screen for that test.
 
 Expected result:
-- User sees empty question JSON and can paste questions.
+- User sees one large button per test.
 
 ## UC-02 Start Existing Test
 
@@ -35,7 +30,7 @@ Expected result:
 - The first question appears.
 - Countdown starts only after the click.
 
-## UC-03 Paste And Save Questions
+## UC-03 Save Settings
 
 Actor: Parent or teacher
 
@@ -43,17 +38,12 @@ Preconditions:
 - User is on settings screen.
 
 Main flow:
-1. User pastes JSON array with `q` and `a`.
-2. User changes seconds or target score if desired.
-3. User clicks `Save and play`.
-4. App validates JSON and starts a new game.
+1. User changes seconds or target score.
+2. User clicks `Uložit`.
 
 Expected result:
-- Custom questions are saved on the server.
 - Settings are saved in browser storage.
-
-Failure flow:
-- If JSON is invalid or contains blank `q`/`a`, app stays on settings and shows an error.
+- No game starts and no timer runs.
 
 ## UC-04 Answer Correctly
 
@@ -65,9 +55,9 @@ Preconditions:
 
 Main flow:
 1. Child thinks of an answer.
-2. Child clicks `Show answer`.
+2. Child clicks `Ukázat odpověď`.
 3. App reveals the answer.
-4. Child/parent clicks `Next`.
+4. Child/parent clicks `Správně`.
 
 Expected result:
 - Score increases by 1.
@@ -79,10 +69,10 @@ Expected result:
 Actor: Child or parent
 
 Preconditions:
-- Answer is visible because `Show answer` was clicked before timeout.
+- Answer is visible because `Ukázat odpověď` was clicked before timeout.
 
 Main flow:
-1. User clicks `Wrong`.
+1. User clicks `Špatně`.
 2. App subtracts 1 point.
 3. App records wrong result on the server.
 4. App shows another question.
@@ -96,14 +86,14 @@ Actor: Child
 
 Preconditions:
 - A question is visible.
-- User does not click `Show answer` before timer reaches zero.
+- User does not click `Ukázat odpověď` before timer reaches zero.
 
 Main flow:
 1. Timer reaches zero.
 2. App subtracts 1 point.
 3. App records timeout result on the server.
-4. App reveals the answer and shows `Next`.
-5. User clicks `Next`.
+4. App reveals the answer and shows `Další`.
+5. User clicks `Další`.
 
 Expected result:
 - Only one penalty is applied.
@@ -118,13 +108,13 @@ Preconditions:
 - Answer is visible.
 
 Main flow:
-1. User clicks `Next`.
+1. User clicks `Správně`.
 2. Score reaches target.
 3. App shows random animal celebration.
 
 Expected result:
 - Game stops and a simplified celebration screen is shown.
-- User can play again with one prominent action.
+- User can return to test selection with one prominent action.
 
 ## UC-08 Long-Term Adaptive Practice
 

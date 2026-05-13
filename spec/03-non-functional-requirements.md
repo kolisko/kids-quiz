@@ -5,7 +5,6 @@
 - Primary gameplay controls must be large enough for children.
 - Question and answer text must be centered and readable.
 - Settings must remain simple and avoid hidden flows.
-- Error messages for invalid JSON must be understandable.
 
 ## Responsiveness
 
@@ -22,7 +21,6 @@
 ## Reliability
 
 - Invalid or missing server DB must be handled by idempotent migrations.
-- Invalid question JSON must not crash the app.
 - Server stat updates must be synchronized within the JVM process and committed to SQLite.
 - If stat API calls fail, gameplay should continue with local/session weights.
 

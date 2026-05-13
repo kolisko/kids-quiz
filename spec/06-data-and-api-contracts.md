@@ -1,26 +1,20 @@
 # Data And API Contracts
 
-## Question JSON
+## SQLite Storage
 
-Location:
-- SQLite tables `tests`, `questions`, and `question_stats` in the configured runtime DB.
-- Production DB path: `/opt/kids-quiz/data/kids-quiz.sqlite`.
+Production DB path:
 
-Schema:
-
-```json
-[
-  {
-    "q": "Question text",
-    "a": "Answer text"
-  }
-]
+```text
+/opt/kids-quiz/data/kids-quiz.sqlite
 ```
 
-Validation:
-- Root must be an array.
-- `q` must be a non-blank string.
-- `a` must be a non-blank string.
+Tables:
+- `tests`: playable test names and ordering.
+- `questions`: one row per question, unique by `test_id + q`.
+- `question_answers`: ordered answer list for each question.
+- `question_stats`: aggregate performance counters by `question_id`.
+
+Questions are not edited or stored through a raw JSON textarea. JSON remains the HTTP transport format only.
 
 ## Settings Storage
 
@@ -33,9 +27,9 @@ Browser `localStorage` keys:
 
 Questions are intentionally not stored in browser `localStorage`.
 
-## Tests
+## GET /api/tests
 
-Shape:
+Returns playable tests ordered by `sort_order`.
 
 ```json
 {
@@ -45,54 +39,28 @@ Shape:
 }
 ```
 
-Rules:
-- Test names are stored in SQLite.
-- The start screen renders buttons from `GET /api/tests`.
-- Questions and stats are scoped by test id.
+## GET /api/tests/{testId}/questions
 
-## Question Key
-
-Stats are keyed by normalized question and answer:
-
-```text
-{q.trim()}
----answer---
-{a.trim()}
-```
-
-This means changing either question text or answer text creates a new stats identity.
-
-## Question Stats
-
-Shape:
+Returns questions from SQLite ordered by `sort_order`.
 
 ```json
-{
-  "correct": 0,
-  "wrong": 0,
-  "timeout": 0
-}
+[
+  {
+    "id": 13,
+    "q": "24",
+    "answers": ["6 * 4", "8 * 3"]
+  }
+]
 ```
-
-Meaning:
-- `correct`: user clicked `Next` after showing answer before timeout.
-- `wrong`: user clicked `Wrong`.
-- `timeout`: timer expired before `Show answer`.
-
-## GET /api/tests
-
-Returns playable tests ordered by `sort_order`.
 
 ## GET /api/tests/{testId}/stats
 
-Returns aggregate stats for one test.
-
-Response:
+Returns aggregate stats for one test keyed by question id.
 
 ```json
 {
-  "statsByKey": {
-    "2 + 2?\n---answer---\n4": {
+  "statsByQuestionId": {
+    "13": {
       "correct": 0,
       "wrong": 2,
       "timeout": 1
@@ -101,76 +69,23 @@ Response:
 }
 ```
 
-Failure behavior:
-- If no stats rows exist, response is an empty map.
-
-## GET /api/tests/{testId}/questions
-
-Returns question JSON for one test as a JSON array.
-
-Response:
-
-```json
-[
-  {
-    "q": "2 + 2?",
-    "a": "4"
-  }
-]
-```
-
-Rules:
-- Return questions from the SQLite DB ordered by `sort_order`.
-- If no DB questions exist, return `[]`.
-
-## POST /api/tests/{testId}/questions
-
-Saves question JSON for one test on the server.
-
-Request:
-
-```json
-[
-  {
-    "q": "2 + 2?",
-    "a": "4"
-  }
-]
-```
-
-Rules:
-- Accept a JSON array with `q` and `a` question items.
-- Accept `[]` as a valid empty question set.
-- Replace that test's DB question rows with the submitted items.
-
-Failure behavior:
-- Invalid question JSON returns HTTP 400 and does not replace the previous DB rows.
-
 ## POST /api/tests/{testId}/stats/answer
 
-Records one answer result for one test.
-
-Request:
+Records one answer result for one question.
 
 ```json
 {
-  "q": "2 + 2?",
-  "a": "4",
+  "questionId": 13,
   "correct": false,
   "timedOut": false
 }
 ```
 
-Rules:
-- If `correct` is `true`, increment `correct`.
-- Else if `timedOut` is `true`, increment `timeout`.
-- Else increment `wrong`.
-
 Response:
 
 ```json
 {
-  "key": "2 + 2?\n---answer---\n4",
+  "questionId": 13,
   "stats": {
     "correct": 0,
     "wrong": 1,
@@ -179,15 +94,12 @@ Response:
 }
 ```
 
-Failure behavior:
+Rules:
+- If `correct` is `true`, increment `correct`.
+- Else if `timedOut` is `true`, increment `timeout`.
+- Else increment `wrong`.
 - Invalid JSON-like body or missing required fields returns HTTP 400.
 
 ## Server Persistence
 
-All production question and stats data is stored in SQLite:
-
-```text
-/opt/kids-quiz/data/kids-quiz.sqlite
-```
-
-Legacy `.quiz-questions.json` and `.quiz-stats.tsv` files are imported once by DB migration and then archived under the runtime backup directory.
+All production question and stats data is stored in SQLite and survives container restart/recreate.

@@ -50,8 +50,7 @@ SQLite files are intentionally gitignored.
 
 ## Editing Questions
 
-Questions are edited through the app settings UI/API and saved to SQLite.
-There is no bundled frontend question fallback and no question JSON file in source control.
+Questions are stored in SQLite. There is no app settings JSON editor, bundled frontend question fallback, or question JSON file in source control.
 
 ## Source Ownership
 

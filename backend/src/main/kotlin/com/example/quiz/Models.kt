@@ -3,7 +3,11 @@ package com.example.quiz
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class Question(val q: String, val a: String)
+data class Question(
+    val id: Long,
+    val q: String,
+    val answers: List<String>,
+)
 
 @Serializable
 data class QuizTest(
@@ -23,7 +27,7 @@ data class QuestionStats(
 
 @Serializable
 data class QuestionStatsSnapshot(
-    val statsByKey: Map<String, QuestionStats> = emptyMap(),
+    val statsByQuestionId: Map<Long, QuestionStats> = emptyMap(),
 )
 
 @Serializable
@@ -38,16 +42,13 @@ data class LoginRequest(
 
 @Serializable
 data class AnswerResultRequest(
-    val q: String,
-    val a: String,
+    val questionId: Long,
     val correct: Boolean,
     val timedOut: Boolean = false,
 )
 
 @Serializable
 data class AnswerResultResponse(
-    val key: String,
+    val questionId: Long,
     val stats: QuestionStats,
 )
-
-fun questionKey(q: String, a: String): String = "${q.trim()}\n---answer---\n${a.trim()}"

@@ -33,64 +33,57 @@ Acceptance:
 
 ## API Verification
 
-Read stats:
+Authenticate first when auth is enabled, then read test-scoped data:
 
 ```bash
-curl -s http://127.0.0.1:8080/api/stats
+curl -s http://127.0.0.1:8080/api/tests
 ```
 
 Read questions:
 
 ```bash
-curl -s http://127.0.0.1:8080/api/questions
+curl -s http://127.0.0.1:8080/api/tests/1/questions
 ```
 
-Save questions:
+Read stats:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8080/api/questions \
-  -H 'Content-Type: application/json' \
-  --data '[{"q":"2 + 2?","a":"4"}]'
+curl -s http://127.0.0.1:8080/api/tests/1/stats
 ```
 
 Record answer:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8080/api/stats/answer \
+curl -s -X POST http://127.0.0.1:8080/api/tests/1/stats/answer \
   -H 'Content-Type: application/json' \
-  --data '{"q":"2 + 2?","a":"4","correct":false,"timedOut":false}'
+  --data '{"questionId":13,"correct":false,"timedOut":false}'
 ```
 
 Acceptance:
-- `GET /api/questions` returns valid question JSON from SQLite.
-- `POST /api/questions` persists a valid question set in SQLite.
-- `GET /api/stats` returns valid JSON.
-- `POST /api/stats/answer` increments the expected counter.
+- `GET /api/tests/{testId}/questions` returns questions with `answers`.
+- `GET /api/tests/{testId}/stats` returns valid JSON keyed by question id.
+- `POST /api/tests/{testId}/stats/answer` increments the expected counter.
 - After stopping and restarting the server, stats remain available.
 
 ## Manual UI Scenarios
 
-### Settings Validation
+### Settings
 
-- Open app with empty server questions.
-- Confirm settings screen appears.
-- Paste invalid JSON.
-- Confirm validation error appears.
-- Paste valid JSON.
-- Confirm game starts.
-- Refresh the browser and confirm the same questions load from the server.
+- Open settings during play.
+- Confirm the timer stops and settings can be saved without starting a game.
+- Return to test selection.
 
 ### Correct Answer
 
-- Click `Odpoved`.
-- Click `Dalsi`.
+- Click `Ukázat odpověď`.
+- Click `Správně`.
 - Confirm score increments.
 - Confirm server records `correct`.
 
 ### Wrong Answer
 
-- Click `Odpoved`.
-- Click `Spatne`.
+- Click `Ukázat odpověď`.
+- Click `Špatně`.
 - Confirm score decrements.
 - Confirm server records `wrong`.
 
@@ -100,7 +93,7 @@ Acceptance:
 - Wait for timeout.
 - Confirm score decrements once.
 - Confirm answer is shown with timeout note.
-- Confirm only `Dalsi` is available.
+- Confirm only `Další` is available.
 - Confirm server records `timeout`.
 
 ### Finish Game
@@ -111,8 +104,8 @@ Acceptance:
 
 ## Regression Checklist
 
-- `Restart` resets score but does not clear server stats.
-- `Settings` can be opened from all screens.
-- Custom JSON survives refresh through server SQLite, not browser `localStorage`.
+- Secondary icon actions do not start a timer.
+- Multi-answer questions show answer count hint.
+- Questions and answers load from SQLite, not browser `localStorage`.
 - Server DB files are ignored by git.
 - No generated build artifacts appear in `git status`.

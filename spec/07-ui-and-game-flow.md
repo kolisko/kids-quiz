@@ -15,38 +15,35 @@ Behavior:
 ### Play Screen
 
 Visible elements:
-- Score pill: `Score current / target`.
+- Score pill: `Skóre current / target`.
 - Timer pill: remaining seconds.
-- `Restart` button.
-- `Settings` button.
+- Icon button for returning to test selection.
+- Icon button for settings.
 - Large centered question or answer text.
 - Primary action area.
 
 Question state:
-- Shows label `Question`.
-- Shows `Show answer` button.
+- Shows label `Otázka`.
+- Shows `Ukázat odpověď` button.
+- Shows answer count hint when more than one answer is correct.
 
 Answer state:
-- Shows label `Answer`.
+- Shows label `Odpověď`.
 - Shows answer text.
-- If answer was shown in time: buttons `Wrong` and `Next`.
-- If timeout occurred: timeout note and only `Next`.
+- If answer was shown in time: buttons `Špatně` and `Správně`.
+- If timeout occurred: timeout note and only `Další`.
 
 ### Settings Screen
 
 Visible elements:
-- Heading `Settings`.
-- Loaded question count.
+- Heading `Nastavení`.
 - Seconds input.
 - Target score input.
-- Questions JSON textarea.
-- Validation error area.
-- `Save and play` button.
+- `Uložit` button.
 
 Behavior:
-- Saving validates JSON.
-- Valid save persists settings and starts new game.
-- Invalid save keeps the user on settings.
+- Saving persists settings and does not start a game.
+- Returning from settings goes back to test selection.
 
 ### Finished Screen
 
@@ -55,14 +52,15 @@ Visible elements:
 - Random animal image without an embedded animal name label.
 - Score label.
 - Large `Gratulace!` heading.
-- One prominent `Play again` button.
+- One prominent `Vybrat test` button.
 
 Behavior:
-- `Play again` resets current game score but preserves server stats.
+- `Vybrat test` returns to the start screen without starting the timer.
 
 ## Timer Behavior
 
 - Timer starts only after the user selects a test and a question is selected.
+- Timer does not start from settings, restart, or finished screens.
 - Timer stops when answer is shown.
 - Timer reaching zero triggers timeout penalty.
 - Timer resets for each new question.

@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ArrowLeft, ListRestart, LucideAngularModule, Settings } from 'lucide-angular';
 
 const secondsStorageKey = 'kids-quiz.seconds-limit';
 const targetStorageKey = 'kids-quiz.target-score';
@@ -13,8 +14,9 @@ interface GameSettings {
 }
 
 interface Question {
+  id: number;
   q: string;
-  a: string;
+  answers: string[];
 }
 
 interface QuizTest {
@@ -30,7 +32,7 @@ interface QuestionStats {
 }
 
 interface QuestionStatsSnapshot {
-  statsByKey: Record<string, QuestionStats>;
+  statsByQuestionId: Record<string, QuestionStats>;
 }
 
 interface AuthStatusResponse {
@@ -38,7 +40,7 @@ interface AuthStatusResponse {
 }
 
 interface AnswerResultResponse {
-  key: string;
+  questionId: number;
   stats: QuestionStats;
 }
 
@@ -50,16 +52,19 @@ interface AnimalSurprise {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, LucideAngularModule],
   templateUrl: './app.component.html',
 })
 export class AppComponent implements OnInit, OnDestroy {
+  readonly backIcon = ArrowLeft;
+  readonly settingsIcon = Settings;
+  readonly newTestIcon = ListRestart;
+
   screen: Screen = 'login';
   loading = true;
   authLoading = false;
-  savingQuestions = false;
   authError: string | null = null;
-  jsonError: string | null = null;
+  settingsSaved = false;
   password = '';
 
   settings: GameSettings = { secondsLimit: 10, targetScore: 10 };
@@ -67,7 +72,6 @@ export class AppComponent implements OnInit, OnDestroy {
   selectedTest: QuizTest | null = null;
   questions: Question[] = [];
   serverStats: Record<string, QuestionStats> = {};
-  questionJson = '';
   score = 0;
   currentIndex: number | null = null;
   answerVisible = false;
@@ -86,11 +90,13 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.currentIndex === null ? null : this.questions[this.currentIndex] ?? null;
   }
 
-  get questionCountText(): string {
-    const count = this.questions.length;
-    if (count === 1) return '1 otazka';
-    if (count > 1 && count < 5) return `${count} otazky`;
-    return `${count} otazek`;
+  get currentAnswerText(): string {
+    return this.currentQuestion?.answers.join(', ') ?? '';
+  }
+
+  get currentAnswerHint(): string | null {
+    const count = this.currentQuestion?.answers.length ?? 0;
+    return count > 1 ? answerCountLabel(count) : null;
   }
 
   async ngOnInit(): Promise<void> {
@@ -109,43 +115,34 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const response = await this.apiPost<AuthStatusResponse>('auth/login', { password: this.password });
       if (!response.authenticated) {
-        this.authError = 'Heslo nesedi.';
+        this.authError = 'Heslo nesedí.';
         return;
       }
       this.password = '';
       await this.loadGameData();
     } catch {
-      this.authError = 'Heslo nesedi.';
+      this.authError = 'Heslo nesedí.';
     } finally {
       this.authLoading = false;
       this.render();
     }
   }
 
-  restartGame(): void {
-    if (this.questions.length === 0) {
-      this.screen = 'settings';
-      return;
-    }
-    this.score = 0;
-    this.mistakeWeights.clear();
-    this.screen = 'play';
-    this.pickQuestion();
-  }
-
   async startTest(test: QuizTest): Promise<void> {
     this.selectedTest = test;
     this.loading = true;
+    this.resetRoundState();
     try {
       const [stats, questions] = await Promise.all([
         this.apiGet<QuestionStatsSnapshot>(`tests/${test.id}/stats`),
         this.apiGet<Question[]>(`tests/${test.id}/questions`),
       ]);
-      this.serverStats = stats.statsByKey ?? {};
+      this.serverStats = stats.statsByQuestionId ?? {};
       this.questions = questions;
-      this.questionJson = JSON.stringify(questions, null, 2);
-      this.jsonError = null;
-      this.restartGame();
+      this.score = 0;
+      this.mistakeWeights.clear();
+      this.screen = 'play';
+      this.pickQuestion();
     } catch {
       this.screen = 'login';
     } finally {
@@ -184,30 +181,27 @@ export class AppComponent implements OnInit, OnDestroy {
     this.pickQuestion();
   }
 
-  async saveSettingsAndQuestions(): Promise<void> {
-    if (!this.selectedTest) {
-      this.jsonError = 'Nejdřív vyber test.';
-      return;
-    }
-    const parsed = this.parseQuestions(this.questionJson);
-    this.jsonError = parsed.error;
-    if (parsed.error) return;
+  openSettings(): void {
+    this.clearTimer();
+    this.settingsSaved = false;
+    this.screen = 'settings';
+  }
 
-    this.savingQuestions = true;
-    try {
-      await this.apiPost<{ ok: boolean }>(`tests/${this.selectedTest.id}/questions`, parsed.normalizedJson);
-      this.questions = parsed.questions;
-      this.questionJson = parsed.normalizedJson;
-      this.updateSelectedTestQuestionCount(parsed.questions.length);
-      this.saveSettings();
-      await this.loadServerStats();
-      this.restartGame();
-    } catch {
-      this.jsonError = 'Otazky se nepodarilo ulozit na server.';
-    } finally {
-      this.savingQuestions = false;
-      this.render();
-    }
+  saveSettingsOnly(): void {
+    this.saveSettings();
+    this.settingsSaved = true;
+    this.render();
+  }
+
+  returnToTestSelection(): void {
+    this.clearTimer();
+    this.clearFlashTimer();
+    this.resetRoundState();
+    this.selectedTest = null;
+    this.questions = [];
+    this.serverStats = {};
+    this.screen = this.tests.length > 0 ? 'start' : 'settings';
+    this.render();
   }
 
   private async loadGameData(): Promise<void> {
@@ -220,20 +214,14 @@ export class AppComponent implements OnInit, OnDestroy {
         this.selectedTest = null;
         this.questions = [];
         this.serverStats = {};
-        this.questionJson = '';
         this.screen = 'login';
         return;
       }
-      const tests = await this.apiGet<QuizTest[]>('tests');
-      this.tests = tests;
-      this.selectedTest = this.selectedTest
-        ? tests.find((test) => test.id === this.selectedTest?.id) ?? null
-        : null;
-      this.serverStats = {};
+      this.tests = await this.apiGet<QuizTest[]>('tests');
+      this.selectedTest = null;
       this.questions = [];
-      this.questionJson = '';
-      this.jsonError = null;
-      this.screen = tests.length > 0 ? 'start' : 'settings';
+      this.serverStats = {};
+      this.screen = this.tests.length > 0 ? 'start' : 'settings';
     } catch {
       this.screen = 'login';
     } finally {
@@ -259,30 +247,21 @@ export class AppComponent implements OnInit, OnDestroy {
     };
     localStorage.setItem(secondsStorageKey, `${this.settings.secondsLimit}`);
     localStorage.setItem(targetStorageKey, `${this.settings.targetScore}`);
-  }
-
-  private async loadServerStats(): Promise<void> {
-    if (!this.selectedTest) {
-      this.serverStats = {};
-      return;
-    }
-    const stats = await this.apiGet<QuestionStatsSnapshot>(`tests/${this.selectedTest.id}/stats`);
-    this.serverStats = stats.statsByKey ?? {};
-    this.render();
+    this.secondsLeft = this.settings.secondsLimit;
   }
 
   private pickQuestion(): void {
     this.clearTimer();
     if (this.questions.length === 0) {
       this.currentIndex = null;
-      this.screen = 'settings';
+      this.screen = 'start';
       return;
     }
 
     const weightedIndices: number[] = [];
     for (let index = 0; index < this.questions.length; index += 1) {
       const question = this.questions[index];
-      const stats = this.serverStats[questionKey(question.q, question.a)];
+      const stats = this.serverStats[String(question.id)];
       const mistakes = stats ? stats.wrong + stats.timeout : 0;
       const longTermDifficulty = stats ? Math.max(0, mistakes * 2 - stats.correct) : 0;
       const sessionDifficulty = this.mistakeWeights.get(index) ?? 0;
@@ -340,24 +319,26 @@ export class AppComponent implements OnInit, OnDestroy {
     const test = this.selectedTest;
     if (!question || !test) return;
     const response = await this.apiPost<AnswerResultResponse>(`tests/${test.id}/stats/answer`, {
-      q: question.q,
-      a: question.a,
+      questionId: question.id,
       correct,
       timedOut,
     });
     this.serverStats = {
       ...this.serverStats,
-      [response.key]: response.stats,
+      [String(response.questionId)]: response.stats,
     };
     this.render();
   }
 
-  private updateSelectedTestQuestionCount(questionCount: number): void {
-    const selected = this.selectedTest;
-    if (!selected) return;
-    const updated = { ...selected, questionCount };
-    this.selectedTest = updated;
-    this.tests = this.tests.map((test) => test.id === updated.id ? updated : test);
+  private resetRoundState(): void {
+    this.clearTimer();
+    this.score = 0;
+    this.currentIndex = null;
+    this.answerVisible = false;
+    this.timedOut = false;
+    this.flash = null;
+    this.secondsLeft = this.settings.secondsLimit;
+    this.mistakeWeights.clear();
   }
 
   private showPenalty(): void {
@@ -371,38 +352,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
   }
 
-  private parseQuestions(source: string): { questions: Question[]; normalizedJson: string; error: string | null } {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(source);
-    } catch {
-      return { questions: [], normalizedJson: source, error: 'JSON musi byt seznam objektu s atributy q a a.' };
-    }
-    if (!Array.isArray(parsed)) {
-      return { questions: [], normalizedJson: source, error: 'JSON musi byt seznam objektu.' };
-    }
-    const questions = parsed.map((item) => {
-      const question = item as Partial<Question> | null;
-      return {
-        q: typeof question?.q === 'string' ? question.q.trim() : '',
-        a: typeof question?.a === 'string' ? question.a.trim() : '',
-      };
-    });
-    const invalidIndex = questions.findIndex((question) => !question.q || !question.a);
-    if (invalidIndex >= 0) {
-      return {
-        questions: [],
-        normalizedJson: source,
-        error: `Otazka cislo ${invalidIndex + 1} nema vyplnene q nebo a.`,
-      };
-    }
-    return {
-      questions,
-      normalizedJson: JSON.stringify(questions, null, 2),
-      error: null,
-    };
-  }
-
   private async apiGet<T>(path: string, redirectOnUnauthorized = true): Promise<T> {
     const separator = path.includes('?') ? '&' : '?';
     const response = await fetch(`/api/${path}${separator}_=${Date.now()}`, {
@@ -413,15 +362,12 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async apiPost<T>(path: string, body: unknown, redirectOnUnauthorized = true): Promise<T> {
-    const headers = typeof body === 'string'
-      ? { 'Content-Type': 'application/json' }
-      : { 'Content-Type': 'application/json' };
     const response = await fetch(`/api/${path}`, {
       method: 'POST',
       credentials: 'include',
       cache: 'no-store',
-      headers,
-      body: typeof body === 'string' ? body : JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
     return this.readApiResponse<T>(response, redirectOnUnauthorized);
   }
@@ -455,8 +401,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 }
 
-function questionKey(q: string, a: string): string {
-  return `${q.trim()}\n---answer---\n${a.trim()}`;
+function answerCountLabel(count: number): string {
+  if (count === 1) return '1 správná odpověď';
+  if (count > 1 && count < 5) return `${count} správné odpovědi`;
+  return `${count} správných odpovědí`;
 }
 
 const surprises: AnimalSurprise[] = Array.from({ length: 40 }, (_, index) => ({

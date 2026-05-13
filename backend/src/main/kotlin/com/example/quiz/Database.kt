@@ -1,6 +1,7 @@
 package com.example.quiz
 
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -23,6 +24,45 @@ private val backupTimestampFormatter: DateTimeFormatter =
 
 private const val smallMultiplicationTestName = "Malá násobilka"
 private const val largeMultiplicationTestName = "Velká násobilka"
+
+@Serializable
+private data class LegacyQuestion(val q: String, val a: String)
+
+private data class ExistingQuestionRow(
+    val id: Long,
+    val testId: Long,
+    val q: String,
+    val a: String,
+    val sortOrder: Int,
+    val createdAt: String,
+    val updatedAt: String,
+)
+
+private data class ExistingStatsRow(
+    val testId: Long,
+    val q: String,
+    val correct: Int,
+    val wrong: Int,
+    val timeout: Int,
+    val updatedAt: String,
+)
+
+private data class MigratedQuestion(
+    val id: Long,
+    val testId: Long,
+    val q: String,
+    val sortOrder: Int,
+    val createdAt: String,
+    var updatedAt: String,
+    val answers: MutableList<String> = mutableListOf(),
+)
+
+private data class MigratedStats(
+    var correct: Int = 0,
+    var wrong: Int = 0,
+    var timeout: Int = 0,
+    var updatedAt: String = "",
+)
 
 object Database {
     fun <T> useConnection(block: (Connection) -> T): T {
@@ -84,6 +124,12 @@ object DatabaseMigrator {
                     upsertDefaultTests()
                     migrateQuestionStorageToTests()
                     recordMigration(3, "add_tests")
+                }
+            }
+            if (4 !in applied) {
+                connection.transaction {
+                    normalizeQuestionAnswers()
+                    recordMigration(4, "normalize_question_answers")
                 }
             }
         }
@@ -243,7 +289,7 @@ object DatabaseMigrator {
         val questionsFile = runtimeDataFile(".quiz-questions.json")
         if (Files.exists(questionsFile)) {
             val questions = parseQuestionsJson(Files.readString(questionsFile))
-            replaceQuestions(questions)
+            replaceLegacyQuestions(questions)
         }
 
         val statsFile = runtimeDataFile(".quiz-stats.tsv")
@@ -252,12 +298,223 @@ object DatabaseMigrator {
         }
     }
 
-    private fun parseQuestionsJson(source: String): List<Question> {
-        val questions = migrationJson.decodeFromString<List<Question>>(source)
+    private fun parseQuestionsJson(source: String): List<LegacyQuestion> {
+        val questions = migrationJson.decodeFromString<List<LegacyQuestion>>(source)
         require(questions.all { it.q.isNotBlank() && it.a.isNotBlank() }) {
             "Legacy questions contain an empty q or a value."
         }
         return questions
+    }
+
+    private fun Connection.normalizeQuestionAnswers() {
+        val questionRows = readExistingQuestionRows()
+        val statsRows = readExistingStatsRows()
+        val migratedQuestions = linkedMapOf<Pair<Long, String>, MigratedQuestion>()
+
+        questionRows.forEach { row ->
+            val key = row.testId to row.q.trim()
+            val question = migratedQuestions.getOrPut(key) {
+                MigratedQuestion(
+                    id = row.id,
+                    testId = row.testId,
+                    q = row.q.trim(),
+                    sortOrder = row.sortOrder,
+                    createdAt = row.createdAt,
+                    updatedAt = row.updatedAt,
+                )
+            }
+            if (row.updatedAt > question.updatedAt) {
+                question.updatedAt = row.updatedAt
+            }
+            splitAnswers(row.a).forEach { answer ->
+                if (answer !in question.answers) {
+                    question.answers.add(answer)
+                }
+            }
+        }
+
+        createStatement().use { statement ->
+            statement.executeUpdate("DROP TABLE IF EXISTS question_answers")
+            statement.executeUpdate("DROP TABLE IF EXISTS question_stats_new")
+            statement.executeUpdate("DROP TABLE IF EXISTS questions_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE questions_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    test_id INTEGER NOT NULL,
+                    q TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(test_id) REFERENCES tests(id) ON DELETE CASCADE,
+                    UNIQUE(test_id, q)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                CREATE TABLE question_answers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question_id INTEGER NOT NULL,
+                    answer TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(question_id) REFERENCES questions_new(id) ON DELETE CASCADE,
+                    UNIQUE(question_id, answer)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                CREATE TABLE question_stats_new (
+                    question_id INTEGER PRIMARY KEY,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    timeout INTEGER NOT NULL DEFAULT 0 CHECK(timeout >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(question_id) REFERENCES questions_new(id) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+        }
+
+        insertMigratedQuestions(migratedQuestions.values)
+        insertMigratedQuestionStats(migratedQuestions, statsRows)
+
+        createStatement().use { statement ->
+            statement.executeUpdate("DROP TABLE question_stats")
+            statement.executeUpdate("DROP TABLE questions")
+            statement.executeUpdate("ALTER TABLE questions_new RENAME TO questions")
+            statement.executeUpdate("ALTER TABLE question_stats_new RENAME TO question_stats")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_questions_test_sort_order ON questions(test_id, sort_order, id)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_question_answers_question_sort_order ON question_answers(question_id, sort_order, id)")
+        }
+    }
+
+    private fun Connection.readExistingQuestionRows(): List<ExistingQuestionRow> {
+        return createStatement().use { statement ->
+            statement.executeQuery(
+                """
+                SELECT id, test_id, q, a, sort_order, created_at, updated_at
+                FROM questions
+                ORDER BY test_id, sort_order, id
+                """.trimIndent(),
+            ).use { rows ->
+                buildList {
+                    while (rows.next()) {
+                        add(
+                            ExistingQuestionRow(
+                                id = rows.getLong("id"),
+                                testId = rows.getLong("test_id"),
+                                q = rows.getString("q"),
+                                a = rows.getString("a"),
+                                sortOrder = rows.getInt("sort_order"),
+                                createdAt = rows.getString("created_at"),
+                                updatedAt = rows.getString("updated_at"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun Connection.readExistingStatsRows(): List<ExistingStatsRow> {
+        return createStatement().use { statement ->
+            statement.executeQuery(
+                """
+                SELECT test_id, q, correct, wrong, timeout, updated_at
+                FROM question_stats
+                ORDER BY test_id, q
+                """.trimIndent(),
+            ).use { rows ->
+                buildList {
+                    while (rows.next()) {
+                        add(
+                            ExistingStatsRow(
+                                testId = rows.getLong("test_id"),
+                                q = rows.getString("q"),
+                                correct = rows.getInt("correct"),
+                                wrong = rows.getInt("wrong"),
+                                timeout = rows.getInt("timeout"),
+                                updatedAt = rows.getString("updated_at"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun Connection.insertMigratedQuestions(questions: Collection<MigratedQuestion>) {
+        prepareStatement(
+            """
+            INSERT INTO questions_new(id, test_id, q, sort_order, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+        ).use { statement ->
+            questions.forEach { question ->
+                statement.setLong(1, question.id)
+                statement.setLong(2, question.testId)
+                statement.setString(3, question.q)
+                statement.setInt(4, question.sortOrder)
+                statement.setString(5, question.createdAt)
+                statement.setString(6, question.updatedAt)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+        prepareStatement(
+            """
+            INSERT INTO question_answers(question_id, answer, sort_order, updated_at)
+            VALUES(?, ?, ?, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).use { statement ->
+            questions.forEach { question ->
+                question.answers.forEachIndexed { index, answer ->
+                    statement.setLong(1, question.id)
+                    statement.setString(2, answer)
+                    statement.setInt(3, index)
+                    statement.addBatch()
+                }
+            }
+            statement.executeBatch()
+        }
+    }
+
+    private fun Connection.insertMigratedQuestionStats(
+        questions: Map<Pair<Long, String>, MigratedQuestion>,
+        rows: List<ExistingStatsRow>,
+    ) {
+        val statsByQuestionId = linkedMapOf<Long, MigratedStats>()
+        rows.forEach { row ->
+            val question = questions[row.testId to row.q.trim()] ?: return@forEach
+            val stats = statsByQuestionId.getOrPut(question.id) { MigratedStats(updatedAt = row.updatedAt) }
+            stats.correct += row.correct
+            stats.wrong += row.wrong
+            stats.timeout += row.timeout
+            if (row.updatedAt > stats.updatedAt) {
+                stats.updatedAt = row.updatedAt
+            }
+        }
+
+        prepareStatement(
+            """
+            INSERT INTO question_stats_new(question_id, correct, wrong, timeout, updated_at)
+            VALUES(?, ?, ?, ?, ?)
+            """.trimIndent(),
+        ).use { statement ->
+            statsByQuestionId.forEach { (questionId, stats) ->
+                statement.setLong(1, questionId)
+                statement.setInt(2, stats.correct)
+                statement.setInt(3, stats.wrong)
+                statement.setInt(4, stats.timeout)
+                statement.setString(5, stats.updatedAt.ifBlank { timestamp() })
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
     }
 
     private fun parseLegacyStats(lines: List<String>): Map<String, QuestionStats> {
@@ -353,19 +610,33 @@ fun Connection.testExists(testId: Long): Boolean {
 }
 
 fun Connection.readQuestions(testId: Long): List<Question> {
-    return prepareStatement("SELECT q, a FROM questions WHERE test_id = ? ORDER BY sort_order, id").use { statement ->
+    return prepareStatement(
+        """
+        SELECT id, q
+        FROM questions
+        WHERE test_id = ?
+        ORDER BY sort_order, id
+        """.trimIndent(),
+    ).use { statement ->
         statement.setLong(1, testId)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {
-                    add(Question(q = rows.getString("q"), a = rows.getString("a")))
+                    val questionId = rows.getLong("id")
+                    add(
+                        Question(
+                            id = questionId,
+                            q = rows.getString("q"),
+                            answers = readAnswers(questionId),
+                        ),
+                    )
                 }
             }
         }
     }
 }
 
-fun Connection.replaceQuestions(questions: List<Question>) {
+private fun Connection.replaceLegacyQuestions(questions: List<LegacyQuestion>) {
     prepareStatement("DELETE FROM questions").use { it.executeUpdate() }
     prepareStatement(
         """
@@ -383,38 +654,21 @@ fun Connection.replaceQuestions(questions: List<Question>) {
     }
 }
 
-fun Connection.replaceQuestions(testId: Long, questions: List<Question>) {
-    prepareStatement("DELETE FROM questions WHERE test_id = ?").use { statement ->
-        statement.setLong(1, testId)
-        statement.executeUpdate()
-    }
-    prepareStatement(
-        """
-        INSERT INTO questions(test_id, q, a, sort_order, updated_at)
-        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """.trimIndent(),
-    ).use { statement ->
-        questions.forEachIndexed { index, question ->
-            statement.setLong(1, testId)
-            statement.setString(2, question.q.trim())
-            statement.setString(3, question.a.trim())
-            statement.setInt(4, index)
-            statement.addBatch()
-        }
-        statement.executeBatch()
-    }
-}
-
-fun Connection.readStats(testId: Long): Map<String, QuestionStats> {
+fun Connection.readStats(testId: Long): Map<Long, QuestionStats> {
     return prepareStatement(
-        "SELECT question_key, correct, wrong, timeout FROM question_stats WHERE test_id = ?",
+        """
+        SELECT question_stats.question_id, question_stats.correct, question_stats.wrong, question_stats.timeout
+        FROM question_stats
+        INNER JOIN questions ON questions.id = question_stats.question_id
+        WHERE questions.test_id = ?
+        """.trimIndent(),
     ).use { statement ->
         statement.setLong(1, testId)
         statement.executeQuery().use { rows ->
             buildMap {
                 while (rows.next()) {
                     put(
-                        rows.getString("question_key"),
+                        rows.getLong("question_id"),
                         QuestionStats(
                             correct = rows.getInt("correct"),
                             wrong = rows.getInt("wrong"),
@@ -427,31 +681,28 @@ fun Connection.readStats(testId: Long): Map<String, QuestionStats> {
     }
 }
 
-fun Connection.recordStats(testId: Long, q: String, a: String, correct: Boolean, timedOut: Boolean): Pair<String, QuestionStats> {
-    val key = questionKey(q, a)
+fun Connection.recordStats(testId: Long, questionId: Long, correct: Boolean, timedOut: Boolean): Pair<Long, QuestionStats>? {
+    if (!questionBelongsToTest(testId, questionId)) {
+        return null
+    }
     prepareStatement(
         """
-        INSERT INTO question_stats(test_id, question_key, q, a, correct, wrong, timeout, updated_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(test_id, question_key) DO UPDATE SET
+        INSERT INTO question_stats(question_id, correct, wrong, timeout, updated_at)
+        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(question_id) DO UPDATE SET
             correct = question_stats.correct + excluded.correct,
             wrong = question_stats.wrong + excluded.wrong,
             timeout = question_stats.timeout + excluded.timeout,
-            q = excluded.q,
-            a = excluded.a,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
-        statement.setLong(1, testId)
-        statement.setString(2, key)
-        statement.setString(3, q.trim())
-        statement.setString(4, a.trim())
-        statement.setInt(5, if (correct) 1 else 0)
-        statement.setInt(6, if (!correct && !timedOut) 1 else 0)
-        statement.setInt(7, if (timedOut) 1 else 0)
+        statement.setLong(1, questionId)
+        statement.setInt(2, if (correct) 1 else 0)
+        statement.setInt(3, if (!correct && !timedOut) 1 else 0)
+        statement.setInt(4, if (timedOut) 1 else 0)
         statement.executeUpdate()
     }
-    return key to readStat(testId, key)
+    return questionId to readStat(testId, questionId)
 }
 
 fun Connection.setStats(statsByKey: Map<String, QuestionStats>) {
@@ -482,12 +733,40 @@ fun Connection.setStats(statsByKey: Map<String, QuestionStats>) {
     }
 }
 
-private fun Connection.readStat(testId: Long, key: String): QuestionStats {
+private fun Connection.readAnswers(questionId: Long): List<String> {
     return prepareStatement(
-        "SELECT correct, wrong, timeout FROM question_stats WHERE test_id = ? AND question_key = ?",
+        "SELECT answer FROM question_answers WHERE question_id = ? ORDER BY sort_order, id",
+    ).use { statement ->
+        statement.setLong(1, questionId)
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) {
+                    add(rows.getString("answer"))
+                }
+            }
+        }
+    }
+}
+
+private fun Connection.questionBelongsToTest(testId: Long, questionId: Long): Boolean {
+    return prepareStatement("SELECT 1 FROM questions WHERE test_id = ? AND id = ?").use { statement ->
+        statement.setLong(1, testId)
+        statement.setLong(2, questionId)
+        statement.executeQuery().use { rows -> rows.next() }
+    }
+}
+
+private fun Connection.readStat(testId: Long, questionId: Long): QuestionStats {
+    return prepareStatement(
+        """
+        SELECT question_stats.correct, question_stats.wrong, question_stats.timeout
+        FROM question_stats
+        INNER JOIN questions ON questions.id = question_stats.question_id
+        WHERE questions.test_id = ? AND question_stats.question_id = ?
+        """.trimIndent(),
     ).use { statement ->
         statement.setLong(1, testId)
-        statement.setString(2, key)
+        statement.setLong(2, questionId)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return QuestionStats()
             QuestionStats(
@@ -514,6 +793,14 @@ private fun splitQuestionKey(key: String): Pair<String, String> {
     val delimiterIndex = key.indexOf(delimiter)
     if (delimiterIndex < 0) return key to ""
     return key.substring(0, delimiterIndex) to key.substring(delimiterIndex + delimiter.length)
+}
+
+private fun splitAnswers(rawAnswer: String): List<String> {
+    return rawAnswer.split(',')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .ifEmpty { listOf(rawAnswer.trim()) }
 }
 
 private fun timestamp(): String = backupTimestampFormatter.format(Instant.now())

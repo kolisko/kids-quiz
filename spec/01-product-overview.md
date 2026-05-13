@@ -6,8 +6,8 @@ Kids Quiz helps children practice question-and-answer material in a playful, tim
 
 ## Target Users
 
-- Children practicing simple facts, school topics, language vocabulary, or parent-provided questions.
-- Parents or teachers who prepare question sets as JSON.
+- Children practicing simple facts, school topics, or language vocabulary.
+- Parents or teachers who maintain question sets in the SQLite database.
 - A local single-user or family setup where the same server instance accumulates long-term difficulty statistics.
 
 ## Goals
@@ -23,14 +23,14 @@ Kids Quiz helps children practice question-and-answer material in a playful, tim
 
 - Multi-user accounts, authentication, or per-child profiles.
 - Remote cloud sync.
-- Rich authoring tools for question banks beyond JSON editing.
+- Rich authoring tools for question banks.
 - Strict grading of typed free-form answers.
 - Full analytics dashboard.
 
 ## Success Criteria
 
-- A user can paste a valid `[{ "q": "...", "a": "..." }]` question set and immediately play.
-- Settings and the server-owned question set survive browser refresh.
+- A user can choose a test from the start screen and immediately play.
+- Settings and the server-owned SQLite question set survive browser refresh.
 - Wrong and timed-out answers are recorded on the server and affect future question selection.
 - The app works locally through the Angular + Kotlin/Ktor Docker image.
 - The UI remains readable on desktop and mobile viewports.

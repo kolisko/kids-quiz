@@ -63,12 +63,12 @@ Startup:
 3. Frontend requests `/api/tests`.
 4. Frontend renders a start screen with test-name buttons from SQLite.
 5. After a test is selected, frontend requests `/api/tests/{testId}/questions` and `/api/tests/{testId}/stats`.
-6. Frontend validates server questions and enters game or settings.
+6. Frontend enters the game when SQLite returns questions.
 
 Answer result:
 1. User answers correctly, wrongly, or times out.
 2. Frontend updates score immediately.
-3. Frontend sends `POST /api/tests/{testId}/stats/answer`.
+3. Frontend sends `POST /api/tests/{testId}/stats/answer` with `questionId`.
 4. Backend updates SQLite stats.
 5. Frontend merges returned question stats into local `serverStats`.
 
@@ -94,4 +94,4 @@ Shared contract:
 - Question shape.
 - Stats shape.
 - API request/response shape.
-- Question key generation.
+- Question id based stats identity.
