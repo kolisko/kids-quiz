@@ -6,6 +6,13 @@ import kotlinx.serialization.Serializable
 data class Question(val q: String, val a: String)
 
 @Serializable
+data class QuizTest(
+    val id: Long,
+    val name: String,
+    val questionCount: Int = 0,
+)
+
+@Serializable
 data class QuestionStats(
     val correct: Int = 0,
     val wrong: Int = 0,

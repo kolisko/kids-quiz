@@ -1,8 +1,8 @@
-# Kids Quiz Specification
+# KitQuiz Specification
 
-Tato slozka obsahuje produktovou a technickou specifikaci aplikace Kids Quiz.
+Tato slozka obsahuje produktovou a technickou specifikaci aplikace KitQuiz.
 
-Kids Quiz je detska webova kvizova hra s Angular frontendem a Kotlin/Ktor backendem. Zobrazuje nahodne otazky ulozene v SQLite, meri cas na zobrazeni odpovedi, boduje spravne a spatne odpovedi a po dosazeni ciloveho skore ukazuje animovanou gratulaci se zviratkem.
+KitQuiz je detska webova kvizova hra s Angular frontendem a Kotlin/Ktor backendem. Zobrazuje nahodne otazky ulozene v SQLite, meri cas na zobrazeni odpovedi, boduje spravne a spatne odpovedi a po dosazeni ciloveho skore ukazuje animovanou gratulaci se zviratkem.
 
 ## Dokumenty
 

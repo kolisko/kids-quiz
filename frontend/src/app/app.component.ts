@@ -17,6 +17,12 @@ interface Question {
   a: string;
 }
 
+interface QuizTest {
+  id: number;
+  name: string;
+  questionCount: number;
+}
+
 interface QuestionStats {
   correct: number;
   wrong: number;
@@ -57,6 +63,8 @@ export class AppComponent implements OnInit, OnDestroy {
   password = '';
 
   settings: GameSettings = { secondsLimit: 10, targetScore: 10 };
+  tests: QuizTest[] = [];
+  selectedTest: QuizTest | null = null;
   questions: Question[] = [];
   serverStats: Record<string, QuestionStats> = {};
   questionJson = '';
@@ -125,6 +133,27 @@ export class AppComponent implements OnInit, OnDestroy {
     this.pickQuestion();
   }
 
+  async startTest(test: QuizTest): Promise<void> {
+    this.selectedTest = test;
+    this.loading = true;
+    try {
+      const [stats, questions] = await Promise.all([
+        this.apiGet<QuestionStatsSnapshot>(`tests/${test.id}/stats`),
+        this.apiGet<Question[]>(`tests/${test.id}/questions`),
+      ]);
+      this.serverStats = stats.statsByKey ?? {};
+      this.questions = questions;
+      this.questionJson = JSON.stringify(questions, null, 2);
+      this.jsonError = null;
+      this.restartGame();
+    } catch {
+      this.screen = 'login';
+    } finally {
+      this.loading = false;
+      this.render();
+    }
+  }
+
   showAnswer(): void {
     this.answerVisible = true;
     this.clearTimer();
@@ -156,15 +185,20 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async saveSettingsAndQuestions(): Promise<void> {
+    if (!this.selectedTest) {
+      this.jsonError = 'Nejdřív vyber test.';
+      return;
+    }
     const parsed = this.parseQuestions(this.questionJson);
     this.jsonError = parsed.error;
     if (parsed.error) return;
 
     this.savingQuestions = true;
     try {
-      await this.apiPost<{ ok: boolean }>('questions', parsed.normalizedJson);
+      await this.apiPost<{ ok: boolean }>(`tests/${this.selectedTest.id}/questions`, parsed.normalizedJson);
       this.questions = parsed.questions;
       this.questionJson = parsed.normalizedJson;
+      this.updateSelectedTestQuestionCount(parsed.questions.length);
       this.saveSettings();
       await this.loadServerStats();
       this.restartGame();
@@ -180,15 +214,16 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.loadSettings();
     try {
-      const [stats, questions] = await Promise.all([
-        this.apiGet<QuestionStatsSnapshot>('stats'),
-        this.apiGet<Question[]>('questions'),
-      ]);
-      this.serverStats = stats.statsByKey ?? {};
-      this.questions = questions;
-      this.questionJson = JSON.stringify(questions, null, 2);
+      const tests = await this.apiGet<QuizTest[]>('tests');
+      this.tests = tests;
+      this.selectedTest = this.selectedTest
+        ? tests.find((test) => test.id === this.selectedTest?.id) ?? null
+        : null;
+      this.serverStats = {};
+      this.questions = [];
+      this.questionJson = '';
       this.jsonError = null;
-      this.screen = questions.length > 0 ? 'start' : 'settings';
+      this.screen = tests.length > 0 ? 'start' : 'settings';
     } catch {
       this.screen = 'login';
     } finally {
@@ -217,7 +252,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async loadServerStats(): Promise<void> {
-    const stats = await this.apiGet<QuestionStatsSnapshot>('stats');
+    if (!this.selectedTest) {
+      this.serverStats = {};
+      return;
+    }
+    const stats = await this.apiGet<QuestionStatsSnapshot>(`tests/${this.selectedTest.id}/stats`);
     this.serverStats = stats.statsByKey ?? {};
     this.render();
   }
@@ -288,8 +327,9 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async recordAnswer(index: number, correct: boolean, timedOut: boolean): Promise<void> {
     const question = this.questions[index];
-    if (!question) return;
-    const response = await this.apiPost<AnswerResultResponse>('stats/answer', {
+    const test = this.selectedTest;
+    if (!question || !test) return;
+    const response = await this.apiPost<AnswerResultResponse>(`tests/${test.id}/stats/answer`, {
       q: question.q,
       a: question.a,
       correct,
@@ -300,6 +340,14 @@ export class AppComponent implements OnInit, OnDestroy {
       [response.key]: response.stats,
     };
     this.render();
+  }
+
+  private updateSelectedTestQuestionCount(questionCount: number): void {
+    const selected = this.selectedTest;
+    if (!selected) return;
+    const updated = { ...selected, questionCount };
+    this.selectedTest = updated;
+    this.tests = this.tests.map((test) => test.id === updated.id ? updated : test);
   }
 
   private showPenalty(): void {

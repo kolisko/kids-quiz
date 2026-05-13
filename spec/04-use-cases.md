@@ -9,9 +9,10 @@ Preconditions:
 
 Main flow:
 1. User opens the app.
-2. App loads settings and asks the server for the active questions.
-3. App finds no playable questions.
-4. App shows settings screen.
+2. App loads settings and asks the server for tests.
+3. App shows the test selection screen.
+4. User clicks a test with no playable questions.
+5. App shows settings screen for that test.
 
 Expected result:
 - User sees empty question JSON and can paste questions.
@@ -25,9 +26,10 @@ Preconditions:
 
 Main flow:
 1. User opens the app.
-2. App loads settings and questions.
+2. App loads settings and tests.
 3. App shows the test selection screen.
-4. User clicks `Spustit test`.
+4. User clicks a test-name button.
+5. App loads that test's questions and stats.
 
 Expected result:
 - The first question appears.

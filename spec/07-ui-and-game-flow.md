@@ -5,14 +5,12 @@
 ### Start Screen
 
 Visible elements:
-- Heading `Vyber test`.
-- Primary test button `Spustit test`.
-- Loaded question count.
-- `Settings` button.
+- Heading `KitQuiz`.
+- One button per test name loaded from the database.
 
 Behavior:
 - The countdown is not visible and does not run.
-- Clicking `Spustit test` starts a new game and selects the first question.
+- Clicking a test button loads that test's questions and stats, then starts a new game.
 
 ### Play Screen
 

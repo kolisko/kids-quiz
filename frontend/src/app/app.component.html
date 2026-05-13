@@ -12,7 +12,7 @@
   </div>
 
   <form class="login-screen" *ngIf="screen === 'login'" (ngSubmit)="submitLogin()">
-    <span class="label">Kids Quiz</span>
+    <span class="label">KitQuiz</span>
     <h1>Heslo</h1>
     <label class="password-label">
       <input
@@ -29,19 +29,21 @@
   </form>
 
   <section class="start-screen" *ngIf="screen === 'start'">
-    <span class="label">Kids Quiz</span>
-    <h1>Vyber test</h1>
+    <h1>KitQuiz</h1>
     <div class="test-list">
-      <button class="primary-button test-button" type="button" (click)="restartGame()" [disabled]="loading || questions.length === 0">
-        {{ loading ? 'Nacitam testy...' : 'Spustit test' }}
+      <button
+        class="primary-button test-button"
+        type="button"
+        *ngFor="let test of tests"
+        (click)="startTest(test)"
+        [disabled]="loading">
+        {{ loading && selectedTest?.id === test.id ? 'Načítám...' : test.name }}
       </button>
     </div>
-    <span class="start-meta">{{ loading ? 'Pripravuju otazky' : questionCountText }}</span>
-    <button class="ghost-button dark" type="button" (click)="screen = 'settings'">Settings</button>
   </section>
 
   <section class="settings-panel" *ngIf="screen === 'settings'">
-    <h1>Settings</h1>
+    <h1>{{ selectedTest?.name || 'Settings' }}</h1>
     <p>Questions loaded: {{ questions.length }}</p>
 
     <div class="settings-grid">

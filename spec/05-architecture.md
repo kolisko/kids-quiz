@@ -60,14 +60,15 @@ Static resources:
 Startup:
 1. Browser opens `/`.
 2. Frontend checks `/api/auth/status`.
-3. Frontend requests `/api/questions`.
-4. Frontend requests `/api/stats`.
-5. Frontend validates server questions and enters game or settings.
+3. Frontend requests `/api/tests`.
+4. Frontend renders a start screen with test-name buttons from SQLite.
+5. After a test is selected, frontend requests `/api/tests/{testId}/questions` and `/api/tests/{testId}/stats`.
+6. Frontend validates server questions and enters game or settings.
 
 Answer result:
 1. User answers correctly, wrongly, or times out.
 2. Frontend updates score immediately.
-3. Frontend sends `POST /api/stats/answer`.
+3. Frontend sends `POST /api/tests/{testId}/stats/answer`.
 4. Backend updates SQLite stats.
 5. Frontend merges returned question stats into local `serverStats`.
 

@@ -12,6 +12,7 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveText
 import io.ktor.server.request.path
@@ -82,14 +83,53 @@ fun Application.module() {
                 Auth.setSessionCookie(call)
                 call.respond(AuthStatusResponse(authenticated = true))
             }
+            get("/tests") {
+                if (!Auth.requireAuthenticated(call)) return@get
+                call.respond(TestsStore.readTests())
+            }
+            route("/tests/{testId}") {
+                get("/questions") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val testId = call.requireQuizTestId() ?: return@get
+                    call.respond(QuestionsStore.readQuestions(testId))
+                }
+                post("/questions") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val testId = call.requireQuizTestId() ?: return@post
+                    val body = call.receiveText()
+                    if (!QuestionsStore.replaceQuestions(testId, body)) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@post
+                    }
+                    call.respond(mapOf("ok" to true))
+                }
+                get("/stats") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val testId = call.requireQuizTestId() ?: return@get
+                    call.respond(QuestionStatsSnapshot(statsByKey = StatsStore.snapshot(testId)))
+                }
+                post("/stats/answer") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val testId = call.requireQuizTestId() ?: return@post
+                    val request = runCatching { call.receive<AnswerResultRequest>() }.getOrNull()
+                    if (request == null || request.q.isBlank() || request.a.isBlank()) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@post
+                    }
+                    val (key, stats) = StatsStore.record(testId, request.q, request.a, request.correct, request.timedOut)
+                    call.respond(AnswerResultResponse(key = key, stats = stats))
+                }
+            }
             get("/questions") {
                 if (!Auth.requireAuthenticated(call)) return@get
-                call.respond(QuestionsStore.readQuestions())
+                val testId = call.requireFirstQuizTestId() ?: return@get
+                call.respond(QuestionsStore.readQuestions(testId))
             }
             post("/questions") {
                 if (!Auth.requireAuthenticated(call)) return@post
+                val testId = call.requireFirstQuizTestId() ?: return@post
                 val body = call.receiveText()
-                if (!QuestionsStore.replaceQuestions(body)) {
+                if (!QuestionsStore.replaceQuestions(testId, body)) {
                     call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                     return@post
                 }
@@ -97,16 +137,18 @@ fun Application.module() {
             }
             get("/stats") {
                 if (!Auth.requireAuthenticated(call)) return@get
-                call.respond(QuestionStatsSnapshot(statsByKey = StatsStore.snapshot()))
+                val testId = call.requireFirstQuizTestId() ?: return@get
+                call.respond(QuestionStatsSnapshot(statsByKey = StatsStore.snapshot(testId)))
             }
             post("/stats/answer") {
                 if (!Auth.requireAuthenticated(call)) return@post
+                val testId = call.requireFirstQuizTestId() ?: return@post
                 val request = runCatching { call.receive<AnswerResultRequest>() }.getOrNull()
                 if (request == null || request.q.isBlank() || request.a.isBlank()) {
                     call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                     return@post
                 }
-                val (key, stats) = StatsStore.record(request.q, request.a, request.correct, request.timedOut)
+                val (key, stats) = StatsStore.record(testId, request.q, request.a, request.correct, request.timedOut)
                 call.respond(AnswerResultResponse(key = key, stats = stats))
             }
         }
@@ -118,6 +160,24 @@ fun Application.module() {
             call.respondStaticOrIndex(staticDir)
         }
     }
+}
+
+private suspend fun ApplicationCall.requireQuizTestId(): Long? {
+    val testId = parameters["testId"]?.toLongOrNull()
+    if (testId == null || !TestsStore.exists(testId)) {
+        respond(HttpStatusCode.NotFound, mapOf("error" to "test_not_found"))
+        return null
+    }
+    return testId
+}
+
+private suspend fun ApplicationCall.requireFirstQuizTestId(): Long? {
+    val testId = TestsStore.readTests().firstOrNull()?.id
+    if (testId == null) {
+        respond(HttpStatusCode.NotFound, mapOf("error" to "test_not_found"))
+        return null
+    }
+    return testId
 }
 
 private suspend fun io.ktor.server.application.ApplicationCall.respondStaticOrIndex(staticDir: File) {

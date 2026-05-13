@@ -3,7 +3,7 @@
 ## Question JSON
 
 Location:
-- SQLite table `questions` in the configured runtime DB.
+- SQLite tables `tests`, `questions`, and `question_stats` in the configured runtime DB.
 - Production DB path: `/opt/kids-quiz/data/kids-quiz.sqlite`.
 
 Schema:
@@ -32,6 +32,23 @@ Browser `localStorage` keys:
 | `kids-quiz.target-score` | integer string | `10` |
 
 Questions are intentionally not stored in browser `localStorage`.
+
+## Tests
+
+Shape:
+
+```json
+{
+  "id": 1,
+  "name": "Malá násobilka",
+  "questionCount": 37
+}
+```
+
+Rules:
+- Test names are stored in SQLite.
+- The start screen renders buttons from `GET /api/tests`.
+- Questions and stats are scoped by test id.
 
 ## Question Key
 
@@ -62,9 +79,13 @@ Meaning:
 - `wrong`: user clicked `Wrong`.
 - `timeout`: timer expired before `Show answer`.
 
-## GET /api/stats
+## GET /api/tests
 
-Returns aggregate stats.
+Returns playable tests ordered by `sort_order`.
+
+## GET /api/tests/{testId}/stats
+
+Returns aggregate stats for one test.
 
 Response:
 
@@ -83,9 +104,9 @@ Response:
 Failure behavior:
 - If no stats rows exist, response is an empty map.
 
-## GET /api/questions
+## GET /api/tests/{testId}/questions
 
-Returns the active question JSON as a JSON array.
+Returns question JSON for one test as a JSON array.
 
 Response:
 
@@ -102,9 +123,9 @@ Rules:
 - Return questions from the SQLite DB ordered by `sort_order`.
 - If no DB questions exist, return `[]`.
 
-## POST /api/questions
+## POST /api/tests/{testId}/questions
 
-Saves the active question JSON on the server.
+Saves question JSON for one test on the server.
 
 Request:
 
@@ -120,14 +141,14 @@ Request:
 Rules:
 - Accept a JSON array with `q` and `a` question items.
 - Accept `[]` as a valid empty question set.
-- Replace the DB question rows with the submitted items.
+- Replace that test's DB question rows with the submitted items.
 
 Failure behavior:
 - Invalid question JSON returns HTTP 400 and does not replace the previous DB rows.
 
-## POST /api/stats/answer
+## POST /api/tests/{testId}/stats/answer
 
-Records one answer result.
+Records one answer result for one test.
 
 Request:
 
