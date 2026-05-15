@@ -78,6 +78,45 @@ lucide-icon {
   pointer-events: auto;
 }
 
+.tts-status {
+  position: relative;
+}
+
+.tts-status-button {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.24);
+  background: rgba(254, 242, 242, 0.92);
+}
+
+.tts-details {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  width: min(21rem, calc(100vw - 2rem));
+  padding: 0.85rem 0.95rem;
+  border: 2px solid rgba(185, 28, 28, 0.18);
+  border-radius: 0.75rem;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 42px rgba(31, 41, 55, 0.18);
+  backdrop-filter: blur(14px);
+}
+
+.tts-details-title {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: #991b1b;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.tts-details pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 0.76rem/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
 .icon-button {
   display: inline-grid;
   place-items: center;
@@ -518,6 +557,11 @@ textarea {
 
   .top-actions {
     flex-direction: column;
+  }
+
+  .tts-details {
+    top: 0;
+    right: calc(100% + 0.55rem);
   }
 
   .score-pill,

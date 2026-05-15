@@ -6,6 +6,21 @@
     </div>
     <div class="timer-pill">{{ secondsLeft }} s</div>
     <div class="top-actions">
+      <div class="tts-status" *ngIf="activeGame === 'spelling' && ttsStatus === 'unsupported'">
+        <button
+          class="icon-button tts-status-button"
+          type="button"
+          (click)="toggleTtsDetails()"
+          title="TTS není dostupné"
+          aria-label="TTS není dostupné"
+          [attr.aria-expanded]="ttsDetailsVisible">
+          <lucide-icon [img]="ttsUnavailableIcon" [size]="26"></lucide-icon>
+        </button>
+        <div class="tts-details" *ngIf="ttsDetailsVisible" role="status">
+          <span class="tts-details-title">TTS není dostupné</span>
+          <pre>{{ ttsTechnicalDetails }}</pre>
+        </div>
+      </div>
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
         <lucide-icon [img]="newTestIcon" [size]="26"></lucide-icon>
       </button>

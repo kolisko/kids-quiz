@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, ListRestart, LucideAngularModule, Settings } from 'lucide-angular';
+import { ArrowLeft, ListRestart, LucideAngularModule, MessageCircleOff, Settings } from 'lucide-angular';
 
 const secondsStorageKey = 'kids-quiz.seconds-limit';
 const targetStorageKey = 'kids-quiz.target-score';
@@ -11,6 +11,7 @@ type QuizTestType = 'multiplication' | 'english';
 type ActiveGame = 'multiplication' | 'spelling';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
 type PracticeMode = PracticeDirection | 'mix';
+type TtsStatus = 'checking' | 'supported' | 'unsupported';
 
 interface GameSettings {
   secondsLimit: number;
@@ -85,6 +86,15 @@ interface AnimalSurprise {
   animationClass: string;
 }
 
+interface TtsDiagnostics {
+  reason: string;
+  speechSynthesis: boolean;
+  speechSynthesisUtterance: boolean;
+  voiceCount: number;
+  lastError: string | null;
+  userAgent: string;
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -95,6 +105,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly backIcon = ArrowLeft;
   readonly settingsIcon = Settings;
   readonly newTestIcon = ListRestart;
+  readonly ttsUnavailableIcon = MessageCircleOff;
   readonly practiceModes: PracticeModeOption[] = [
     { mode: 'product_to_factors', label: 'Najdi násobení' },
     { mode: 'factors_to_product', label: 'Spočítej výsledek' },
@@ -132,6 +143,9 @@ export class AppComponent implements OnInit, OnDestroy {
   secondsLeft = this.settings.secondsLimit;
   flash: string | null = null;
   surprise = surprises[0];
+  ttsStatus: TtsStatus = 'checking';
+  ttsDiagnostics: TtsDiagnostics = createTtsDiagnostics('Kontrola TTS jeste neprobehla.', null);
+  ttsDetailsVisible = false;
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
     product_to_factors: new Map<number, number>(),
@@ -139,6 +153,8 @@ export class AppComponent implements OnInit, OnDestroy {
   };
   private timerId: number | null = null;
   private flashTimerId: number | null = null;
+  private ttsVoicesTimerId: number | null = null;
+  private ttsVoicesChangedHandler: (() => void) | null = null;
 
   constructor(private readonly changeDetector: ChangeDetectorRef) {}
 
@@ -189,6 +205,18 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.spellingSetInputs.some((value) => parseSpellingWords(value).length > 0);
   }
 
+  get ttsTechnicalDetails(): string {
+    const details = this.ttsDiagnostics;
+    return [
+      `Duvod: ${details.reason}`,
+      `speechSynthesis: ${details.speechSynthesis ? 'ano' : 'ne'}`,
+      `SpeechSynthesisUtterance: ${details.speechSynthesisUtterance ? 'ano' : 'ne'}`,
+      `Pocet hlasu: ${details.voiceCount}`,
+      `Posledni chyba: ${details.lastError ?? 'zadna'}`,
+      `User agent: ${details.userAgent}`,
+    ].join('\n');
+  }
+
   async ngOnInit(): Promise<void> {
     await this.loadGameData();
   }
@@ -196,6 +224,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.clearTimer();
     this.clearFlashTimer();
+    this.clearTtsVoiceCheck();
   }
 
   async submitLogin(): Promise<void> {
@@ -262,10 +291,12 @@ export class AppComponent implements OnInit, OnDestroy {
       this.spellingStats = stats.statsByWord ?? {};
       this.spellingWords = session.words;
       this.screen = 'play';
+      this.checkTtsSupport();
       this.pickQuestion();
     } catch {
       this.spellingWords = [];
       this.screen = 'play';
+      this.checkTtsSupport();
     } finally {
       this.loading = false;
       this.render();
@@ -288,6 +319,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   replaySpellingAudio(): void {
     this.playCurrentSpellingAudio();
+  }
+
+  toggleTtsDetails(): void {
+    this.ttsDetailsVisible = !this.ttsDetailsVisible;
   }
 
   markWrong(): void {
@@ -317,6 +352,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   openSettings(): void {
     this.clearTimer();
+    this.ttsDetailsVisible = false;
     this.settingsSaved = false;
     this.settingsError = null;
     this.screen = 'settings';
@@ -353,6 +389,7 @@ export class AppComponent implements OnInit, OnDestroy {
   returnToTestSelection(): void {
     this.clearTimer();
     this.clearFlashTimer();
+    this.ttsDetailsVisible = false;
     this.resetRoundState();
     this.selectedTest = null;
     this.selectedMode = null;
@@ -473,6 +510,45 @@ export class AppComponent implements OnInit, OnDestroy {
     this.secondsLeft = this.settings.secondsLimit;
     this.startTimer();
     window.setTimeout(() => this.playCurrentSpellingAudio(), 120);
+  }
+
+  private checkTtsSupport(): void {
+    this.clearTtsVoiceCheck();
+    this.ttsDetailsVisible = false;
+
+    const speech = window.speechSynthesis;
+    const hasSpeech = typeof speech !== 'undefined';
+    const hasUtterance = typeof window.SpeechSynthesisUtterance !== 'undefined';
+    if (!hasSpeech || !hasUtterance) {
+      this.setTtsUnsupported('Web Speech API neni v tomto prohlizeci dostupne.');
+      return;
+    }
+
+    this.ttsStatus = 'checking';
+    this.ttsDiagnostics = createTtsDiagnostics('Cekam na nacteni TTS hlasu.', null);
+    const updateFromVoices = (): boolean => {
+      const voiceCount = speech.getVoices().length;
+      if (voiceCount > 0) {
+        this.clearTtsVoiceCheck();
+        this.ttsStatus = 'supported';
+        this.ttsDiagnostics = createTtsDiagnostics('TTS hlasy jsou dostupne.', null, voiceCount);
+        this.ttsDetailsVisible = false;
+        this.render();
+        return true;
+      }
+      return false;
+    };
+
+    if (updateFromVoices()) return;
+
+    this.ttsVoicesChangedHandler = updateFromVoices;
+    speech.addEventListener?.('voiceschanged', updateFromVoices);
+    this.ttsVoicesTimerId = window.setTimeout(() => {
+      const voiceCount = speech.getVoices().length;
+      if (voiceCount === 0) {
+        this.setTtsUnsupported('Prohlizec nevratil zadne TTS hlasy.', null, voiceCount);
+      }
+    }, 1500);
   }
 
   private startTimer(): void {
@@ -601,12 +677,30 @@ export class AppComponent implements OnInit, OnDestroy {
   private playCurrentSpellingAudio(): void {
     const word = this.currentSpellingWord?.text;
     const speech = window.speechSynthesis;
-    if (!word || !speech) return;
+    if (!word) return;
+    if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
+      this.setTtsUnsupported('Web Speech API neni v tomto prohlizeci dostupne.');
+      return;
+    }
     speech.cancel();
     const utterance = new SpeechSynthesisUtterance(word);
     utterance.lang = 'en-US';
     utterance.rate = 0.86;
-    speech.speak(utterance);
+    utterance.onerror = (event) => {
+      this.setTtsUnsupported('Prehrani TTS skoncilo chybou.', event.error, speech.getVoices().length);
+    };
+    try {
+      speech.speak(utterance);
+    } catch (error) {
+      this.setTtsUnsupported('Prehrani TTS selhalo.', error instanceof Error ? error.message : String(error), speech.getVoices().length);
+    }
+  }
+
+  private setTtsUnsupported(reason: string, lastError: string | null = null, voiceCount?: number): void {
+    this.clearTtsVoiceCheck();
+    this.ttsStatus = 'unsupported';
+    this.ttsDiagnostics = createTtsDiagnostics(reason, lastError, voiceCount);
+    this.render();
   }
 
   private showPenalty(): void {
@@ -675,6 +769,17 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  private clearTtsVoiceCheck(): void {
+    if (this.ttsVoicesTimerId !== null) {
+      window.clearTimeout(this.ttsVoicesTimerId);
+      this.ttsVoicesTimerId = null;
+    }
+    if (this.ttsVoicesChangedHandler !== null && window.speechSynthesis) {
+      window.speechSynthesis.removeEventListener?.('voiceschanged', this.ttsVoicesChangedHandler);
+      this.ttsVoicesChangedHandler = null;
+    }
+  }
+
   private render(): void {
     this.changeDetector.detectChanges();
   }
@@ -694,6 +799,19 @@ function emptyStatsByDirection(): Record<PracticeDirection, Record<string, Quest
   return {
     product_to_factors: {},
     factors_to_product: {},
+  };
+}
+
+function createTtsDiagnostics(reason: string, lastError: string | null, voiceCount?: number): TtsDiagnostics {
+  const speech = window.speechSynthesis;
+  const hasSpeech = typeof speech !== 'undefined';
+  return {
+    reason,
+    speechSynthesis: hasSpeech,
+    speechSynthesisUtterance: typeof window.SpeechSynthesisUtterance !== 'undefined',
+    voiceCount: voiceCount ?? (hasSpeech ? speech.getVoices().length : 0),
+    lastError,
+    userAgent: navigator.userAgent,
   };
 }
 
