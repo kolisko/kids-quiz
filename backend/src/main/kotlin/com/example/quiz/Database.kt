@@ -24,6 +24,7 @@ private val backupTimestampFormatter: DateTimeFormatter =
 
 private const val smallMultiplicationTestName = "Malá násobilka"
 private const val largeMultiplicationTestName = "Velká násobilka"
+private const val englishTestName = "Angličtina"
 
 @Serializable
 private data class LegacyQuestion(val q: String, val a: String)
@@ -136,6 +137,12 @@ object DatabaseMigrator {
                 connection.transaction {
                     addQuestionStatsDirection()
                     recordMigration(5, "add_question_stats_direction")
+                }
+            }
+            if (6 !in applied) {
+                connection.transaction {
+                    addEnglishSpelling()
+                    recordMigration(6, "add_english_spelling")
                 }
             }
         }
@@ -427,6 +434,61 @@ object DatabaseMigrator {
         }
     }
 
+    private fun Connection.addEnglishSpelling() {
+        createStatement().use { statement ->
+            statement.executeUpdate("ALTER TABLE tests ADD COLUMN test_type TEXT NOT NULL DEFAULT '${QuizTestType.multiplication.name}'")
+            statement.executeUpdate(
+                """
+                INSERT INTO tests(name, test_type, sort_order, updated_at)
+                VALUES('$englishTestName', '${QuizTestType.english.name}', 2, CURRENT_TIMESTAMP)
+                ON CONFLICT(name) DO UPDATE SET
+                    test_type = '${QuizTestType.english.name}',
+                    sort_order = 2,
+                    updated_at = CURRENT_TIMESTAMP
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS spelling_sets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    raw_words TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_spelling_sets_sort_order ON spelling_sets(sort_order, id)")
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS spelling_words (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    set_id INTEGER NOT NULL,
+                    word TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(set_id) REFERENCES spelling_sets(id) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_spelling_words_set_sort_order ON spelling_words(set_id, sort_order, id)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_spelling_words_normalized ON spelling_words(normalized_word)")
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS spelling_word_stats (
+                    normalized_word TEXT PRIMARY KEY,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    timeout INTEGER NOT NULL DEFAULT 0 CHECK(timeout >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
     private fun Connection.readExistingQuestionRows(): List<ExistingQuestionRow> {
         return createStatement().use { statement ->
             statement.executeQuery(
@@ -614,10 +676,20 @@ fun Connection.transaction(block: Connection.() -> Unit) {
 fun Connection.readTests(): List<QuizTest> {
     return prepareStatement(
         """
-        SELECT tests.id, tests.name, COUNT(questions.id) AS question_count
+        SELECT
+            tests.id,
+            tests.name,
+            tests.test_type,
+            CASE
+                WHEN tests.test_type = '${QuizTestType.english.name}' THEN (
+                    SELECT COUNT(*) FROM spelling_sets
+                    WHERE TRIM(raw_words) <> ''
+                )
+                ELSE COUNT(questions.id)
+            END AS question_count
         FROM tests
         LEFT JOIN questions ON questions.test_id = tests.id
-        GROUP BY tests.id, tests.name, tests.sort_order
+        GROUP BY tests.id, tests.name, tests.test_type, tests.sort_order
         ORDER BY tests.sort_order, tests.id
         """.trimIndent(),
     ).use { statement ->
@@ -628,6 +700,7 @@ fun Connection.readTests(): List<QuizTest> {
                         QuizTest(
                             id = rows.getLong("id"),
                             name = rows.getString("name"),
+                            type = QuizTestType.valueOf(rows.getString("test_type")),
                             questionCount = rows.getInt("question_count"),
                         ),
                     )
@@ -635,6 +708,139 @@ fun Connection.readTests(): List<QuizTest> {
             }
         }
     }
+}
+
+fun Connection.readSpellingSets(): List<SpellingSet> {
+    return prepareStatement(
+        """
+        SELECT id, raw_words
+        FROM spelling_sets
+        ORDER BY sort_order, id
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) {
+                    val setId = rows.getLong("id")
+                    add(
+                        SpellingSet(
+                            id = setId,
+                            rawWords = rows.getString("raw_words"),
+                            words = readSpellingWords(setId),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun Connection.replaceSpellingSets(rawSets: List<String>) {
+    transaction {
+        prepareStatement("DELETE FROM spelling_sets").use { it.executeUpdate() }
+        prepareStatement(
+            """
+            INSERT INTO spelling_sets(raw_words, sort_order, updated_at)
+            VALUES(?, ?, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).use { setStatement ->
+            prepareStatement(
+                """
+                INSERT INTO spelling_words(set_id, word, normalized_word, sort_order, updated_at)
+                VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """.trimIndent(),
+            ).use { wordStatement ->
+                rawSets.map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .forEachIndexed { setIndex, rawWords ->
+                        setStatement.setString(1, rawWords)
+                        setStatement.setInt(2, setIndex)
+                        setStatement.executeUpdate()
+
+                        val setId = lastInsertRowId()
+                        parseSpellingWords(rawWords).forEachIndexed { wordIndex, word ->
+                            wordStatement.setLong(1, setId)
+                            wordStatement.setString(2, word)
+                            wordStatement.setString(3, normalizeSpellingWord(word))
+                            wordStatement.setInt(4, wordIndex)
+                            wordStatement.addBatch()
+                        }
+                    }
+                wordStatement.executeBatch()
+            }
+        }
+    }
+}
+
+fun Connection.readSpellingSession(): SpellingSession? {
+    val setId = prepareStatement(
+        """
+        SELECT spelling_sets.id
+        FROM spelling_sets
+        WHERE EXISTS (
+            SELECT 1 FROM spelling_words
+            WHERE spelling_words.set_id = spelling_sets.id
+        )
+        ORDER BY RANDOM()
+        LIMIT 1
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return null
+            rows.getLong("id")
+        }
+    }
+    return SpellingSession(setId = setId, words = readSpellingWords(setId))
+}
+
+fun Connection.readSpellingStats(): Map<String, QuestionStats> {
+    return prepareStatement(
+        """
+        SELECT normalized_word, correct, wrong, timeout
+        FROM spelling_word_stats
+        ORDER BY normalized_word
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            buildMap {
+                while (rows.next()) {
+                    put(
+                        rows.getString("normalized_word"),
+                        QuestionStats(
+                            correct = rows.getInt("correct"),
+                            wrong = rows.getInt("wrong"),
+                            timeout = rows.getInt("timeout"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun Connection.recordSpellingStats(word: String, correct: Boolean, timedOut: Boolean): Pair<String, QuestionStats>? {
+    val normalized = normalizeSpellingWord(word)
+    if (normalized.isBlank() || !spellingWordExists(normalized)) {
+        return null
+    }
+    prepareStatement(
+        """
+        INSERT INTO spelling_word_stats(normalized_word, correct, wrong, timeout, updated_at)
+        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(normalized_word) DO UPDATE SET
+            correct = spelling_word_stats.correct + excluded.correct,
+            wrong = spelling_word_stats.wrong + excluded.wrong,
+            timeout = spelling_word_stats.timeout + excluded.timeout,
+            updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, normalized)
+        statement.setInt(2, if (correct) 1 else 0)
+        statement.setInt(3, if (!correct && !timedOut) 1 else 0)
+        statement.setInt(4, if (timedOut) 1 else 0)
+        statement.executeUpdate()
+    }
+    return normalized to readSpellingStat(normalized)
 }
 
 fun Connection.testExists(testId: Long): Boolean {
@@ -791,6 +997,68 @@ private fun Connection.readAnswers(questionId: Long): List<String> {
     }
 }
 
+private fun Connection.readSpellingWords(setId: Long): List<SpellingWord> {
+    return prepareStatement(
+        """
+        SELECT id, word, normalized_word
+        FROM spelling_words
+        WHERE set_id = ?
+        ORDER BY sort_order, id
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, setId)
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) {
+                    add(
+                        SpellingWord(
+                            id = rows.getLong("id"),
+                            text = rows.getString("word"),
+                            normalized = rows.getString("normalized_word"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun Connection.lastInsertRowId(): Long {
+    return createStatement().use { statement ->
+        statement.executeQuery("SELECT last_insert_rowid()").use { rows ->
+            require(rows.next()) { "Missing SQLite last_insert_rowid()." }
+            rows.getLong(1)
+        }
+    }
+}
+
+private fun Connection.spellingWordExists(normalizedWord: String): Boolean {
+    return prepareStatement("SELECT 1 FROM spelling_words WHERE normalized_word = ? LIMIT 1").use { statement ->
+        statement.setString(1, normalizedWord)
+        statement.executeQuery().use { rows -> rows.next() }
+    }
+}
+
+private fun Connection.readSpellingStat(normalizedWord: String): QuestionStats {
+    return prepareStatement(
+        """
+        SELECT correct, wrong, timeout
+        FROM spelling_word_stats
+        WHERE normalized_word = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, normalizedWord)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return QuestionStats()
+            QuestionStats(
+                correct = rows.getInt("correct"),
+                wrong = rows.getInt("wrong"),
+                timeout = rows.getInt("timeout"),
+            )
+        }
+    }
+}
+
 private fun Connection.questionBelongsToTest(testId: Long, questionId: Long): Boolean {
     return prepareStatement("SELECT 1 FROM questions WHERE test_id = ? AND id = ?").use { statement ->
         statement.setLong(1, testId)
@@ -846,5 +1114,13 @@ private fun splitAnswers(rawAnswer: String): List<String> {
         .distinct()
         .ifEmpty { listOf(rawAnswer.trim()) }
 }
+
+private fun parseSpellingWords(rawWords: String): List<String> {
+    return rawWords.split(',')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+}
+
+private fun normalizeSpellingWord(word: String): String = word.trim().lowercase()
 
 private fun timestamp(): String = backupTimestampFormatter.format(Instant.now())

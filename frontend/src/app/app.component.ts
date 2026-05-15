@@ -6,7 +6,9 @@ import { ArrowLeft, ListRestart, LucideAngularModule, Settings } from 'lucide-an
 const secondsStorageKey = 'kids-quiz.seconds-limit';
 const targetStorageKey = 'kids-quiz.target-score';
 
-type Screen = 'login' | 'start' | 'mode' | 'play' | 'settings' | 'finished';
+type Screen = 'login' | 'start' | 'category' | 'mode' | 'play' | 'settings' | 'finished';
+type QuizTestType = 'multiplication' | 'english';
+type ActiveGame = 'multiplication' | 'spelling';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
 type PracticeMode = PracticeDirection | 'mix';
 
@@ -24,6 +26,7 @@ interface Question {
 interface QuizTest {
   id: number;
   name: string;
+  type: QuizTestType;
   questionCount: number;
 }
 
@@ -49,6 +52,32 @@ interface AnswerResultResponse {
 interface PracticeModeOption {
   mode: PracticeMode;
   label: string;
+}
+
+interface SpellingSet {
+  id: number;
+  rawWords: string;
+  words: SpellingWord[];
+}
+
+interface SpellingWord {
+  id: number;
+  text: string;
+  normalized: string;
+}
+
+interface SpellingSession {
+  setId: number;
+  words: SpellingWord[];
+}
+
+interface SpellingStatsSnapshot {
+  statsByWord: Record<string, QuestionStats>;
+}
+
+interface SpellingAnswerResultResponse {
+  word: string;
+  stats: QuestionStats;
 }
 
 interface AnimalSurprise {
@@ -77,17 +106,23 @@ export class AppComponent implements OnInit, OnDestroy {
   authLoading = false;
   authError: string | null = null;
   settingsSaved = false;
+  settingsError: string | null = null;
   password = '';
 
   settings: GameSettings = { secondsLimit: 10, targetScore: 10 };
   tests: QuizTest[] = [];
   selectedTest: QuizTest | null = null;
+  activeGame: ActiveGame = 'multiplication';
   selectedMode: PracticeMode | null = null;
   questions: Question[] = [];
   serverStats: Record<PracticeDirection, Record<string, QuestionStats>> = {
     product_to_factors: {},
     factors_to_product: {},
   };
+  spellingSetInputs: string[] = [''];
+  spellingStats: Record<string, QuestionStats> = {};
+  spellingWords: SpellingWord[] = [];
+  spellingWordIndex: number | null = null;
   score = 0;
   currentIndex: number | null = null;
   currentDirection: PracticeDirection = 'product_to_factors';
@@ -111,7 +146,18 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.currentIndex === null ? null : this.questions[this.currentIndex] ?? null;
   }
 
+  get currentSpellingWord(): SpellingWord | null {
+    return this.spellingWordIndex === null ? null : this.spellingWords[this.spellingWordIndex] ?? null;
+  }
+
+  get hasCurrentPrompt(): boolean {
+    return this.activeGame === 'spelling' ? this.currentSpellingWord !== null : this.currentQuestion !== null;
+  }
+
   get currentQuestionText(): string {
+    if (this.activeGame === 'spelling') {
+      return '...';
+    }
     if (!this.currentQuestion) return '';
     return this.currentDirection === 'factors_to_product'
       ? this.currentFactorQuestion ?? ''
@@ -119,6 +165,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get currentAnswerText(): string {
+    if (this.activeGame === 'spelling') {
+      return this.currentSpellingWord?.text ?? '';
+    }
     if (!this.currentQuestion) return '';
     return this.currentDirection === 'factors_to_product'
       ? this.currentQuestion.q
@@ -126,9 +175,18 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get currentAnswerHint(): string | null {
+    if (this.activeGame === 'spelling') return null;
     if (this.currentDirection !== 'product_to_factors') return null;
     const count = this.currentQuestion?.answers.length ?? 0;
     return count > 1 ? answerCountLabel(count) : null;
+  }
+
+  get scoreGoal(): number {
+    return this.activeGame === 'spelling' ? this.spellingWords.length : this.settings.targetScore;
+  }
+
+  get spellingSetsConfigured(): boolean {
+    return this.spellingSetInputs.some((value) => parseSpellingWords(value).length > 0);
   }
 
   async ngOnInit(): Promise<void> {
@@ -164,6 +222,14 @@ export class AppComponent implements OnInit, OnDestroy {
     this.selectedTest = test;
     this.loading = true;
     this.resetRoundState();
+    if (test.type === 'english') {
+      this.activeGame = 'spelling';
+      this.screen = 'category';
+      this.loading = false;
+      this.render();
+      return;
+    }
+    this.activeGame = 'multiplication';
     try {
       const [productStats, factorStats, questions] = await Promise.all([
         this.apiGet<QuestionStatsSnapshot>(`tests/${test.id}/stats?direction=product_to_factors`),
@@ -184,7 +250,30 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  async startSpelling(): Promise<void> {
+    this.loading = true;
+    this.activeGame = 'spelling';
+    this.resetRoundState();
+    try {
+      const [stats, session] = await Promise.all([
+        this.apiGet<SpellingStatsSnapshot>('spelling/stats'),
+        this.apiGet<SpellingSession>('spelling/session'),
+      ]);
+      this.spellingStats = stats.statsByWord ?? {};
+      this.spellingWords = session.words;
+      this.screen = 'play';
+      this.pickQuestion();
+    } catch {
+      this.spellingWords = [];
+      this.screen = 'play';
+    } finally {
+      this.loading = false;
+      this.render();
+    }
+  }
+
   startPractice(mode: PracticeMode): void {
+    this.activeGame = 'multiplication';
     this.selectedMode = mode;
     this.resetRoundState();
     this.screen = 'play';
@@ -197,8 +286,12 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearTimer();
   }
 
+  replaySpellingAudio(): void {
+    this.playCurrentSpellingAudio();
+  }
+
   markWrong(): void {
-    const index = this.currentIndex;
+    const index = this.activeGame === 'spelling' ? this.spellingWordIndex : this.currentIndex;
     if (index === null) return;
     this.score -= 1;
     this.incrementMistakeWeight(index);
@@ -208,7 +301,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   markCorrect(): void {
-    const index = this.currentIndex;
+    const index = this.activeGame === 'spelling' ? this.spellingWordIndex : this.currentIndex;
     if (index === null) return;
     const nextScore = this.score + 1;
     this.score = nextScore;
@@ -225,13 +318,36 @@ export class AppComponent implements OnInit, OnDestroy {
   openSettings(): void {
     this.clearTimer();
     this.settingsSaved = false;
+    this.settingsError = null;
     this.screen = 'settings';
   }
 
-  saveSettingsOnly(): void {
+  async saveSettingsOnly(): Promise<void> {
     this.saveSettings();
-    this.settingsSaved = true;
-    this.render();
+    this.settingsSaved = false;
+    this.settingsError = null;
+    this.loading = true;
+    try {
+      await this.apiPut<SpellingSet[]>('spelling/sets', { sets: this.spellingSetInputs });
+      await this.loadSpellingSets();
+      this.settingsSaved = true;
+    } catch {
+      this.settingsError = 'Spelling seznamy se nepodařilo uložit.';
+    } finally {
+      this.loading = false;
+      this.render();
+    }
+  }
+
+  addSpellingSet(): void {
+    this.spellingSetInputs = [...this.spellingSetInputs, ''];
+  }
+
+  removeSpellingSet(index: number): void {
+    this.spellingSetInputs = this.spellingSetInputs.filter((_, candidateIndex) => candidateIndex !== index);
+    if (this.spellingSetInputs.length === 0) {
+      this.spellingSetInputs = [''];
+    }
   }
 
   returnToTestSelection(): void {
@@ -242,6 +358,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.selectedMode = null;
     this.questions = [];
     this.serverStats = emptyStatsByDirection();
+    this.spellingWords = [];
+    this.spellingStats = {};
     this.screen = this.tests.length > 0 ? 'start' : 'settings';
     this.render();
   }
@@ -257,14 +375,22 @@ export class AppComponent implements OnInit, OnDestroy {
         this.selectedMode = null;
         this.questions = [];
         this.serverStats = emptyStatsByDirection();
+        this.spellingWords = [];
+        this.spellingStats = {};
         this.screen = 'login';
         return;
       }
-      this.tests = await this.apiGet<QuizTest[]>('tests');
+      const [tests] = await Promise.all([
+        this.apiGet<QuizTest[]>('tests'),
+        this.loadSpellingSets(),
+      ]);
+      this.tests = tests;
       this.selectedTest = null;
       this.selectedMode = null;
       this.questions = [];
       this.serverStats = emptyStatsByDirection();
+      this.spellingWords = [];
+      this.spellingStats = {};
       this.screen = this.tests.length > 0 ? 'start' : 'settings';
     } catch {
       this.screen = 'login';
@@ -296,6 +422,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private pickQuestion(): void {
     this.clearTimer();
+    if (this.activeGame === 'spelling') {
+      this.pickSpellingWord();
+      return;
+    }
     if (this.questions.length === 0) {
       this.currentIndex = null;
       this.screen = this.selectedTest ? 'mode' : 'start';
@@ -325,10 +455,31 @@ export class AppComponent implements OnInit, OnDestroy {
     this.startTimer();
   }
 
+  private pickSpellingWord(): void {
+    if (this.spellingWords.length === 0) {
+      this.spellingWordIndex = null;
+      return;
+    }
+    const nextIndex = this.spellingWordIndex === null ? 0 : this.spellingWordIndex + 1;
+    if (nextIndex >= this.spellingWords.length) {
+      this.clearTimer();
+      this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
+      this.screen = 'finished';
+      return;
+    }
+    this.spellingWordIndex = nextIndex;
+    this.answerVisible = false;
+    this.timedOut = false;
+    this.secondsLeft = this.settings.secondsLimit;
+    this.startTimer();
+    window.setTimeout(() => this.playCurrentSpellingAudio(), 120);
+  }
+
   private startTimer(): void {
     this.clearTimer();
     this.timerId = window.setInterval(() => {
-      if (this.screen !== 'play' || this.answerVisible || this.currentIndex === null) {
+      const hasCurrentItem = this.activeGame === 'spelling' ? this.spellingWordIndex !== null : this.currentIndex !== null;
+      if (this.screen !== 'play' || this.answerVisible || !hasCurrentItem) {
         this.clearTimer();
         return;
       }
@@ -341,7 +492,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private handleTimeout(): void {
-    const index = this.currentIndex;
+    const index = this.activeGame === 'spelling' ? this.spellingWordIndex : this.currentIndex;
     if (index === null || this.answerVisible) return;
     this.clearTimer();
     this.timedOut = true;
@@ -354,6 +505,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private finishIfNeeded(nextScore: number): boolean {
+    if (this.activeGame === 'spelling') return false;
     if (nextScore < this.settings.targetScore) return false;
     this.clearTimer();
     this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
@@ -362,6 +514,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async recordAnswer(index: number, correct: boolean, timedOut: boolean): Promise<void> {
+    if (this.activeGame === 'spelling') {
+      await this.recordSpellingAnswer(index, correct, timedOut);
+      return;
+    }
     const question = this.questions[index];
     const test = this.selectedTest;
     if (!question || !test) return;
@@ -382,10 +538,26 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
   }
 
+  private async recordSpellingAnswer(index: number, correct: boolean, timedOut: boolean): Promise<void> {
+    const word = this.spellingWords[index];
+    if (!word) return;
+    const response = await this.apiPost<SpellingAnswerResultResponse>('spelling/stats/answer', {
+      word: word.normalized,
+      correct,
+      timedOut,
+    });
+    this.spellingStats = {
+      ...this.spellingStats,
+      [response.word]: response.stats,
+    };
+    this.render();
+  }
+
   private resetRoundState(): void {
     this.clearTimer();
     this.score = 0;
     this.currentIndex = null;
+    this.spellingWordIndex = null;
     this.currentDirection = 'product_to_factors';
     this.currentFactorQuestion = null;
     this.answerVisible = false;
@@ -410,13 +582,31 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private incrementMistakeWeight(index: number): void {
+    if (this.activeGame === 'spelling') return;
     const weights = this.mistakeWeights[this.currentDirection];
     weights.set(index, (weights.get(index) ?? 0) + 1);
   }
 
   private decrementMistakeWeight(index: number): void {
+    if (this.activeGame === 'spelling') return;
     const weights = this.mistakeWeights[this.currentDirection];
     weights.set(index, Math.max(0, (weights.get(index) ?? 0) - 1));
+  }
+
+  private async loadSpellingSets(): Promise<void> {
+    const sets = await this.apiGet<SpellingSet[]>('spelling/sets');
+    this.spellingSetInputs = sets.length > 0 ? sets.map((set) => set.rawWords) : [''];
+  }
+
+  private playCurrentSpellingAudio(): void {
+    const word = this.currentSpellingWord?.text;
+    const speech = window.speechSynthesis;
+    if (!word || !speech) return;
+    speech.cancel();
+    const utterance = new SpeechSynthesisUtterance(word);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.86;
+    speech.speak(utterance);
   }
 
   private showPenalty(): void {
@@ -442,6 +632,17 @@ export class AppComponent implements OnInit, OnDestroy {
   private async apiPost<T>(path: string, body: unknown, redirectOnUnauthorized = true): Promise<T> {
     const response = await fetch(`/api/${path}`, {
       method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return this.readApiResponse<T>(response, redirectOnUnauthorized);
+  }
+
+  private async apiPut<T>(path: string, body: unknown, redirectOnUnauthorized = true): Promise<T> {
+    const response = await fetch(`/api/${path}`, {
+      method: 'PUT',
       credentials: 'include',
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
@@ -483,6 +684,10 @@ function answerCountLabel(count: number): string {
   if (count === 1) return '1 správná odpověď';
   if (count > 1 && count < 5) return `${count} správné odpovědi`;
   return `${count} správných odpovědí`;
+}
+
+function parseSpellingWords(rawWords: string): string[] {
+  return rawWords.split(',').map((word) => word.trim()).filter(Boolean);
 }
 
 function emptyStatsByDirection(): Record<PracticeDirection, Record<string, QuestionStats>> {

@@ -9,6 +9,12 @@ enum class PracticeDirection {
 }
 
 @Serializable
+enum class QuizTestType {
+    multiplication,
+    english,
+}
+
+@Serializable
 data class Question(
     val id: Long,
     val q: String,
@@ -19,6 +25,7 @@ data class Question(
 data class QuizTest(
     val id: Long,
     val name: String,
+    val type: QuizTestType = QuizTestType.multiplication,
     val questionCount: Int = 0,
 )
 
@@ -57,5 +64,48 @@ data class AnswerResultRequest(
 @Serializable
 data class AnswerResultResponse(
     val questionId: Long,
+    val stats: QuestionStats,
+)
+
+@Serializable
+data class SpellingSet(
+    val id: Long,
+    val rawWords: String,
+    val words: List<SpellingWord> = emptyList(),
+)
+
+@Serializable
+data class SpellingWord(
+    val id: Long,
+    val text: String,
+    val normalized: String,
+)
+
+@Serializable
+data class SpellingSetsRequest(
+    val sets: List<String> = emptyList(),
+)
+
+@Serializable
+data class SpellingSession(
+    val setId: Long,
+    val words: List<SpellingWord>,
+)
+
+@Serializable
+data class SpellingStatsSnapshot(
+    val statsByWord: Map<String, QuestionStats> = emptyMap(),
+)
+
+@Serializable
+data class SpellingAnswerResultRequest(
+    val word: String,
+    val correct: Boolean,
+    val timedOut: Boolean = false,
+)
+
+@Serializable
+data class SpellingAnswerResultResponse(
+    val word: String,
     val stats: QuestionStats,
 )

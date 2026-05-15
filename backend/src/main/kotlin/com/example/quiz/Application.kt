@@ -19,6 +19,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondFile
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.Json
@@ -54,6 +55,7 @@ fun Application.module() {
         allowHeader(HttpHeaders.Authorization)
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
+        allowMethod(HttpMethod.Put)
     }
     install(StatusPages) {
         exception<Throwable> { call, cause ->
@@ -85,6 +87,48 @@ fun Application.module() {
             get("/tests") {
                 if (!Auth.requireAuthenticated(call)) return@get
                 call.respond(TestsStore.readTests())
+            }
+            route("/spelling") {
+                get("/sets") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    call.respond(SpellingStore.readSets())
+                }
+                put("/sets") {
+                    if (!Auth.requireAuthenticated(call)) return@put
+                    val request = runCatching { call.receive<SpellingSetsRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@put
+                    }
+                    call.respond(SpellingStore.replaceSets(request.sets))
+                }
+                get("/session") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val session = SpellingStore.readSession()
+                    if (session == null) {
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "no_spelling_sets"))
+                        return@get
+                    }
+                    call.respond(session)
+                }
+                get("/stats") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    call.respond(SpellingStatsSnapshot(statsByWord = SpellingStore.snapshot()))
+                }
+                post("/stats/answer") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val request = runCatching { call.receive<SpellingAnswerResultRequest>() }.getOrNull()
+                    if (request == null || request.word.isBlank()) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@post
+                    }
+                    val (word, stats) = SpellingStore.record(request.word, request.correct, request.timedOut)
+                        ?: run {
+                            call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
+                            return@post
+                        }
+                    call.respond(SpellingAnswerResultResponse(word = word, stats = stats))
+                }
             }
             route("/tests/{testId}") {
                 get("/questions") {

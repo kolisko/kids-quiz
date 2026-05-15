@@ -1,7 +1,7 @@
 <div class="app">
   <div class="top-bar" *ngIf="screen === 'play'">
     <div class="score-pill">
-      Skóre {{ score }} / {{ settings.targetScore }}
+      Skóre {{ score }} / {{ scoreGoal }}
       <span class="flash" *ngIf="flash">{{ flash }}</span>
     </div>
     <div class="timer-pill">{{ secondsLeft }} s</div>
@@ -67,6 +67,22 @@
     </div>
   </section>
 
+  <section class="mode-screen" *ngIf="screen === 'category'">
+    <div class="settings-header">
+      <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
+        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+      </button>
+      <h1>{{ selectedTest?.name }}</h1>
+      <span class="header-spacer" aria-hidden="true"></span>
+    </div>
+
+    <div class="mode-list">
+      <button class="primary-button mode-button" type="button" (click)="startSpelling()" [disabled]="loading">
+        {{ loading ? 'Načítám...' : 'Spelling' }}
+      </button>
+    </div>
+  </section>
+
   <section class="settings-panel" *ngIf="screen === 'settings'">
     <div class="settings-header">
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
@@ -87,14 +103,34 @@
       </label>
     </div>
 
+    <section class="settings-section">
+      <h2>Angličtina - Spelling</h2>
+      <div class="spelling-set-list">
+        <label class="spelling-set-row" *ngFor="let set of spellingSetInputs; let index = index">
+          Seznam slov {{ index + 1 }}
+          <textarea
+            rows="3"
+            [(ngModel)]="spellingSetInputs[index]"
+            [name]="'spellingSet' + index"></textarea>
+          <button class="danger-button compact-button" type="button" (click)="removeSpellingSet(index)" *ngIf="spellingSetInputs.length > 1">
+            Odebrat
+          </button>
+        </label>
+      </div>
+      <button class="primary-button compact-button" type="button" (click)="addSpellingSet()">
+        Přidat seznam
+      </button>
+    </section>
+
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>
-    <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()">
+    <p class="error settings-error" *ngIf="settingsError">{{ settingsError }}</p>
+    <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading">
       Uložit
     </button>
   </section>
 
   <section class="play-surface" *ngIf="screen === 'play'">
-    <ng-container *ngIf="currentQuestion; else noQuestion">
+    <ng-container *ngIf="hasCurrentPrompt; else noQuestion">
       <div class="question-card">
         <span class="label">{{ answerVisible ? 'Odpověď' : 'Otázka' }}</span>
         <h1>{{ answerVisible ? currentAnswerText : currentQuestionText }}</h1>
@@ -103,7 +139,10 @@
       </div>
 
       <div class="main-actions answer-actions">
-        <button class="primary-button answer-button wide-action" type="button" *ngIf="!answerVisible" (click)="showAnswer()">
+        <button class="primary-button answer-button" type="button" *ngIf="activeGame === 'spelling' && !answerVisible" (click)="replaySpellingAudio()">
+          Přehrát znovu
+        </button>
+        <button class="primary-button answer-button" [ngClass]="{ 'wide-action': activeGame !== 'spelling' }" type="button" *ngIf="!answerVisible" (click)="showAnswer()">
           Ukázat odpověď
         </button>
         <button class="primary-button answer-button wide-action" type="button" *ngIf="answerVisible && timedOut" (click)="nextAfterTimeout()">
@@ -117,8 +156,11 @@
     </ng-container>
     <ng-template #noQuestion>
       <div class="empty-state">
-        <h1>Žádné otázky</h1>
-        <button class="primary-button finish-play-button wide-action" type="button" (click)="returnToTestSelection()">Vybrat test</button>
+        <h1>{{ activeGame === 'spelling' ? 'Žádné spelling seznamy' : 'Žádné otázky' }}</h1>
+        <div class="main-actions">
+          <button class="primary-button finish-play-button wide-action" type="button" *ngIf="activeGame === 'spelling'" (click)="openSettings()">Nastavení</button>
+          <button class="primary-button finish-play-button wide-action" type="button" (click)="returnToTestSelection()">Vybrat test</button>
+        </div>
       </div>
     </ng-template>
   </section>
@@ -129,7 +171,7 @@
       <span class="animal-fallback">*</span>
       <img class="animal-image" [src]="surprise.imagePath" alt="Gratulace">
     </div>
-    <span class="label">Skóre {{ score }} / {{ settings.targetScore }}</span>
+    <span class="label">Skóre {{ score }} / {{ scoreGoal }}</span>
     <h1>Gratulace!</h1>
     <div class="main-actions">
       <button class="primary-button finish-play-button wide-action" type="button" (click)="returnToTestSelection()">Vybrat test</button>

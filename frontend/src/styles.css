@@ -14,6 +14,7 @@ body {
 
 button,
 input,
+textarea,
 lucide-icon {
   font: inherit;
 }
@@ -328,7 +329,8 @@ label {
   font-weight: 900;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   border: 2px solid rgba(31, 41, 55, 0.14);
   border-radius: 0.5rem;
@@ -337,9 +339,45 @@ input {
   outline: none;
 }
 
-input {
+input,
+textarea {
   min-height: 3.2rem;
   padding: 0.7rem 0.9rem;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.settings-section {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.settings-section h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.35rem;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.spelling-set-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.spelling-set-row {
+  align-items: stretch;
+}
+
+.compact-button {
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0.68rem 1rem;
+  font-size: 0.98rem;
 }
 
 .settings-note {
@@ -363,6 +401,10 @@ input {
   color: #991b1b !important;
   background: rgba(254, 226, 226, 0.9);
   text-align: left !important;
+}
+
+.settings-error {
+  margin: 1.25rem 0 0;
 }
 
 .finish-screen {

@@ -47,3 +47,38 @@ object StatsStore {
         }
     }
 }
+
+object SpellingStore {
+    private val lock = Any()
+
+    fun readSets(): List<SpellingSet> = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readSpellingSets()
+        }
+    }
+
+    fun replaceSets(rawSets: List<String>): List<SpellingSet> = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.replaceSpellingSets(rawSets)
+            connection.readSpellingSets()
+        }
+    }
+
+    fun readSession(): SpellingSession? = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readSpellingSession()
+        }
+    }
+
+    fun snapshot(): Map<String, QuestionStats> = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readSpellingStats()
+        }
+    }
+
+    fun record(word: String, correct: Boolean, timedOut: Boolean): Pair<String, QuestionStats>? = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.recordSpellingStats(word, correct, timedOut)
+        }
+    }
+}
