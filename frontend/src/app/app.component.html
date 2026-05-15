@@ -92,8 +92,27 @@
     </div>
 
     <div class="mode-list">
-      <button class="primary-button mode-button" type="button" (click)="startSpelling()" [disabled]="loading">
-        {{ loading ? 'Načítám...' : 'Spelling' }}
+      <button class="primary-button mode-button" type="button" (click)="openSpellingModes()" [disabled]="loading">
+        Spelling
+      </button>
+    </div>
+  </section>
+
+  <section class="mode-screen" *ngIf="screen === 'spellingMode'">
+    <div class="settings-header">
+      <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
+        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+      </button>
+      <h1>Spelling</h1>
+      <span class="header-spacer" aria-hidden="true"></span>
+    </div>
+
+    <div class="mode-list">
+      <button class="primary-button mode-button" type="button" (click)="startSpelling('latest')" [disabled]="loading">
+        {{ loading ? 'Načítám...' : 'Nová slovíčka' }}
+      </button>
+      <button class="primary-button mode-button" type="button" (click)="startSpelling('older')" [disabled]="loading">
+        {{ loading ? 'Načítám...' : 'Starší slovíčka' }}
       </button>
     </div>
   </section>
@@ -121,16 +140,27 @@
     <section class="settings-section">
       <h2>Angličtina - Spelling</h2>
       <div class="spelling-set-list">
-        <label class="spelling-set-row" *ngFor="let set of spellingSetInputs; let index = index">
-          Seznam slov {{ index + 1 }}
+        <div class="spelling-set-row" *ngFor="let set of spellingSetInputs; let index = index">
+          <span class="spelling-set-title">
+            Seznam slov {{ index + 1 }}
+            <span class="latest-marker" *ngIf="latestSpellingSetIndex === index">Nejnovější</span>
+          </span>
           <textarea
             rows="3"
             [(ngModel)]="spellingSetInputs[index]"
             [name]="'spellingSet' + index"></textarea>
+          <label class="latest-choice">
+            <input
+              type="radio"
+              name="latestSpellingSet"
+              [value]="index"
+              [(ngModel)]="latestSpellingSetIndex">
+            Nejnovější seznam
+          </label>
           <button class="danger-button compact-button" type="button" (click)="removeSpellingSet(index)" *ngIf="spellingSetInputs.length > 1">
             Odebrat
           </button>
-        </label>
+        </div>
       </div>
       <button class="primary-button compact-button" type="button" (click)="addSpellingSet()">
         Přidat seznam

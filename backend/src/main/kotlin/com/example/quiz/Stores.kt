@@ -16,6 +16,23 @@ object TestsStore {
     }
 }
 
+object SettingsStore {
+    private val lock = Any()
+
+    fun read(): AppSettings = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readAppSettings()
+        }
+    }
+
+    fun replace(settings: AppSettings): AppSettings = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.replaceAppSettings(settings)
+            connection.readAppSettings()
+        }
+    }
+}
+
 object QuestionsStore {
     private val lock = Any()
 
@@ -57,16 +74,16 @@ object SpellingStore {
         }
     }
 
-    fun replaceSets(rawSets: List<String>): List<SpellingSet> = synchronized(lock) {
+    fun replaceSets(rawSets: List<String>, latestSetIndex: Int?): List<SpellingSet> = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.replaceSpellingSets(rawSets)
+            connection.replaceSpellingSets(rawSets, latestSetIndex)
             connection.readSpellingSets()
         }
     }
 
-    fun readSession(): SpellingSession? = synchronized(lock) {
+    fun readSession(mode: SpellingSessionMode): SpellingSession? = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.readSpellingSession()
+            connection.readSpellingSession(mode)
         }
     }
 

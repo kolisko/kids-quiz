@@ -25,6 +25,8 @@ private val backupTimestampFormatter: DateTimeFormatter =
 private const val smallMultiplicationTestName = "Malá násobilka"
 private const val largeMultiplicationTestName = "Velká násobilka"
 private const val englishTestName = "Angličtina"
+private const val defaultSecondsLimit = 30
+private const val defaultTargetScore = 10
 
 @Serializable
 private data class LegacyQuestion(val q: String, val a: String)
@@ -143,6 +145,18 @@ object DatabaseMigrator {
                 connection.transaction {
                     addEnglishSpelling()
                     recordMigration(6, "add_english_spelling")
+                }
+            }
+            if (7 !in applied) {
+                connection.transaction {
+                    addLatestSpellingSet()
+                    recordMigration(7, "add_latest_spelling_set")
+                }
+            }
+            if (8 !in applied) {
+                connection.transaction {
+                    addAppSettings()
+                    recordMigration(8, "add_app_settings")
                 }
             }
         }
@@ -489,6 +503,52 @@ object DatabaseMigrator {
         }
     }
 
+    private fun Connection.addLatestSpellingSet() {
+        createStatement().use { statement ->
+            statement.executeUpdate("ALTER TABLE spelling_sets ADD COLUMN is_latest INTEGER NOT NULL DEFAULT 0 CHECK(is_latest IN (0, 1))")
+            statement.executeUpdate(
+                """
+                UPDATE spelling_sets
+                SET is_latest = 1
+                WHERE id = (
+                    SELECT spelling_sets.id
+                    FROM spelling_sets
+                    WHERE EXISTS (
+                        SELECT 1 FROM spelling_words
+                        WHERE spelling_words.set_id = spelling_sets.id
+                    )
+                    ORDER BY sort_order DESC, id DESC
+                    LIMIT 1
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addAppSettings() {
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    seconds_limit INTEGER NOT NULL DEFAULT $defaultSecondsLimit CHECK(seconds_limit >= 1),
+                    target_score INTEGER NOT NULL DEFAULT $defaultTargetScore CHECK(target_score >= 1),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO app_settings(id, seconds_limit, target_score, updated_at)
+                VALUES(1, $defaultSecondsLimit, $defaultTargetScore, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET
+                    seconds_limit = $defaultSecondsLimit,
+                    updated_at = CURRENT_TIMESTAMP
+                """.trimIndent(),
+            )
+        }
+    }
+
     private fun Connection.readExistingQuestionRows(): List<ExistingQuestionRow> {
         return createStatement().use { statement ->
             statement.executeQuery(
@@ -710,10 +770,48 @@ fun Connection.readTests(): List<QuizTest> {
     }
 }
 
+fun Connection.readAppSettings(): AppSettings {
+    ensureAppSettingsRow()
+    return prepareStatement(
+        """
+        SELECT seconds_limit, target_score
+        FROM app_settings
+        WHERE id = 1
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return AppSettings()
+            AppSettings(
+                secondsLimit = rows.getInt("seconds_limit"),
+                targetScore = rows.getInt("target_score"),
+            )
+        }
+    }
+}
+
+fun Connection.replaceAppSettings(settings: AppSettings) {
+    val secondsLimit = settings.secondsLimit.coerceAtLeast(1)
+    val targetScore = settings.targetScore.coerceAtLeast(1)
+    prepareStatement(
+        """
+        INSERT INTO app_settings(id, seconds_limit, target_score, updated_at)
+        VALUES(1, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+            seconds_limit = excluded.seconds_limit,
+            target_score = excluded.target_score,
+            updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setInt(1, secondsLimit)
+        statement.setInt(2, targetScore)
+        statement.executeUpdate()
+    }
+}
+
 fun Connection.readSpellingSets(): List<SpellingSet> {
     return prepareStatement(
         """
-        SELECT id, raw_words
+        SELECT id, raw_words, is_latest
         FROM spelling_sets
         ORDER BY sort_order, id
         """.trimIndent(),
@@ -726,6 +824,7 @@ fun Connection.readSpellingSets(): List<SpellingSet> {
                         SpellingSet(
                             id = setId,
                             rawWords = rows.getString("raw_words"),
+                            isLatest = rows.getInt("is_latest") == 1,
                             words = readSpellingWords(setId),
                         ),
                     )
@@ -735,13 +834,21 @@ fun Connection.readSpellingSets(): List<SpellingSet> {
     }
 }
 
-fun Connection.replaceSpellingSets(rawSets: List<String>) {
+fun Connection.replaceSpellingSets(rawSets: List<String>, latestSetIndex: Int?) {
+    val preparedSets = rawSets
+        .mapIndexed { index, rawWords -> index to rawWords.trim() }
+        .filter { (_, rawWords) -> rawWords.isNotBlank() }
+    val selectedOriginalIndex = preparedSets
+        .firstOrNull { (index, rawWords) -> index == latestSetIndex && parseSpellingWords(rawWords).isNotEmpty() }
+        ?.first
+        ?: preparedSets.lastOrNull { (_, rawWords) -> parseSpellingWords(rawWords).isNotEmpty() }?.first
+
     transaction {
         prepareStatement("DELETE FROM spelling_sets").use { it.executeUpdate() }
         prepareStatement(
             """
-            INSERT INTO spelling_sets(raw_words, sort_order, updated_at)
-            VALUES(?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO spelling_sets(raw_words, sort_order, is_latest, updated_at)
+            VALUES(?, ?, ?, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).use { setStatement ->
             prepareStatement(
@@ -750,11 +857,10 @@ fun Connection.replaceSpellingSets(rawSets: List<String>) {
                 VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """.trimIndent(),
             ).use { wordStatement ->
-                rawSets.map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .forEachIndexed { setIndex, rawWords ->
+                preparedSets.forEachIndexed { setIndex, (originalIndex, rawWords) ->
                         setStatement.setString(1, rawWords)
                         setStatement.setInt(2, setIndex)
+                        setStatement.setInt(3, if (originalIndex == selectedOriginalIndex) 1 else 0)
                         setStatement.executeUpdate()
 
                         val setId = lastInsertRowId()
@@ -772,16 +878,25 @@ fun Connection.replaceSpellingSets(rawSets: List<String>) {
     }
 }
 
-fun Connection.readSpellingSession(): SpellingSession? {
+fun Connection.readSpellingSession(mode: SpellingSessionMode): SpellingSession? {
+    val modeClause = when (mode) {
+        SpellingSessionMode.latest -> "spelling_sets.is_latest = 1"
+        SpellingSessionMode.older -> "spelling_sets.is_latest = 0"
+    }
+    val orderClause = when (mode) {
+        SpellingSessionMode.latest -> "spelling_sets.sort_order DESC, spelling_sets.id DESC"
+        SpellingSessionMode.older -> "RANDOM()"
+    }
     val setId = prepareStatement(
         """
         SELECT spelling_sets.id
         FROM spelling_sets
-        WHERE EXISTS (
+        WHERE $modeClause
+        AND EXISTS (
             SELECT 1 FROM spelling_words
             WHERE spelling_words.set_id = spelling_sets.id
         )
-        ORDER BY RANDOM()
+        ORDER BY $orderClause
         LIMIT 1
         """.trimIndent(),
     ).use { statement ->
@@ -1030,6 +1145,16 @@ private fun Connection.lastInsertRowId(): Long {
             rows.getLong(1)
         }
     }
+}
+
+private fun Connection.ensureAppSettingsRow() {
+    prepareStatement(
+        """
+        INSERT INTO app_settings(id, seconds_limit, target_score, updated_at)
+        VALUES(1, $defaultSecondsLimit, $defaultTargetScore, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO NOTHING
+        """.trimIndent(),
+    ).use { it.executeUpdate() }
 }
 
 private fun Connection.spellingWordExists(normalizedWord: String): Boolean {

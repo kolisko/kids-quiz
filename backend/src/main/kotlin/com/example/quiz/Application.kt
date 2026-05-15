@@ -88,6 +88,21 @@ fun Application.module() {
                 if (!Auth.requireAuthenticated(call)) return@get
                 call.respond(TestsStore.readTests())
             }
+            route("/settings") {
+                get {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    call.respond(SettingsStore.read())
+                }
+                put {
+                    if (!Auth.requireAuthenticated(call)) return@put
+                    val request = runCatching { call.receive<AppSettings>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@put
+                    }
+                    call.respond(SettingsStore.replace(request))
+                }
+            }
             route("/spelling") {
                 get("/sets") {
                     if (!Auth.requireAuthenticated(call)) return@get
@@ -100,13 +115,15 @@ fun Application.module() {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@put
                     }
-                    call.respond(SpellingStore.replaceSets(request.sets))
+                    call.respond(SpellingStore.replaceSets(request.sets, request.latestSetIndex))
                 }
                 get("/session") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    val session = SpellingStore.readSession()
+                    val mode = call.requireSpellingSessionMode() ?: return@get
+                    val session = SpellingStore.readSession(mode)
                     if (session == null) {
-                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "no_spelling_sets"))
+                        val error = if (mode == SpellingSessionMode.older) "no_older_spelling_sets" else "no_spelling_sets"
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to error))
                         return@get
                     }
                     call.respond(session)
@@ -182,6 +199,16 @@ private suspend fun ApplicationCall.requireQuizTestId(): Long? {
         return null
     }
     return testId
+}
+
+private suspend fun ApplicationCall.requireSpellingSessionMode(): SpellingSessionMode? {
+    val rawMode = request.queryParameters["mode"] ?: SpellingSessionMode.latest.name
+    val mode = SpellingSessionMode.entries.firstOrNull { it.name == rawMode }
+    if (mode == null) {
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_spelling_session_mode"))
+        return null
+    }
+    return mode
 }
 
 private suspend fun ApplicationCall.requirePracticeDirection(): PracticeDirection? {

@@ -21,6 +21,6 @@ Kids Quiz je detska webova kvizova hra s Angular frontendem a Kotlin/Ktor backen
 
 - Frontend: Angular standalone app served as static files from the backend.
 - Backend: Kotlin/Ktor HTTP API under `/api`.
-- Local browser persistence: `localStorage` only for user settings.
-- Server persistence: SQLite DB for active questions and long-term question performance stats.
+- Local browser persistence: none for app settings.
+- Server persistence: SQLite DB for global settings, active questions, spelling sets, and long-term question performance stats.
 - Static assets: 40 local SVG animal celebration images.

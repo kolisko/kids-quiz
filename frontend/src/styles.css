@@ -412,6 +412,40 @@ textarea {
   align-items: stretch;
 }
 
+.spelling-set-title,
+.latest-choice {
+  color: #111827;
+  font-weight: 900;
+}
+
+.spelling-set-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.latest-marker {
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  color: #0f766e;
+  background: #ccfbf1;
+  font-size: 0.82rem;
+}
+
+.latest-choice {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: auto;
+}
+
+.latest-choice input {
+  width: 1.2rem;
+  min-height: auto;
+  accent-color: #0f766e;
+}
+
 .compact-button {
   justify-self: start;
   min-height: 2.75rem;

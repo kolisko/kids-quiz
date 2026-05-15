@@ -16,7 +16,7 @@ Kids Quiz helps children practice question-and-answer material in a playful, tim
 - Make answering simple: reveal answer, mark wrong, or continue as correct.
 - Penalize missed time limits and wrong answers.
 - Reward reaching a configured target score with a fun animal celebration.
-- Persist settings on the client, while the active question set and difficulty stats live on the server.
+- Persist settings, active question sets, and difficulty stats on the server.
 - Prefer harder questions more often in later tests.
 
 ## Non-Goals

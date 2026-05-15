@@ -12,10 +12,10 @@
 ## Game Settings
 
 - The app shall allow configuring the question time limit in seconds.
-- The default time limit shall be 10 seconds.
+- The default time limit shall be 30 seconds.
 - The app shall allow configuring target score.
 - The default target score shall be 10 points.
-- Settings shall be persisted in browser `localStorage`.
+- Settings shall be persisted globally in SQLite.
 - Settings values shall be coerced to at least `1`.
 
 ## Game Round

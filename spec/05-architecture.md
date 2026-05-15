@@ -42,7 +42,7 @@ Frontend:
 - Displays game UI.
 - Maintains current game score and current round state.
 - Calls backend APIs to load/save questions and to load/update long-term stats.
-- Stores only user settings in `localStorage`.
+- Does not store app settings in `localStorage`; global settings are loaded from SQLite through the backend.
 
 Backend:
 - Serves `/api` endpoints.
@@ -60,7 +60,7 @@ Static resources:
 Startup:
 1. Browser opens `/`.
 2. Frontend checks `/api/auth/status`.
-3. Frontend requests `/api/tests`.
+3. Frontend requests `/api/settings` and `/api/tests`.
 4. Frontend renders a start screen with test-name buttons from SQLite.
 5. After a test is selected, frontend requests `/api/tests/{testId}/questions` and `/api/tests/{testId}/stats`.
 6. Frontend enters the game when SQLite returns questions.

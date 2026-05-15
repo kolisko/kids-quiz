@@ -14,6 +14,11 @@ enum class QuizTestType {
     english,
 }
 
+enum class SpellingSessionMode {
+    latest,
+    older,
+}
+
 @Serializable
 data class Question(
     val id: Long,
@@ -54,6 +59,12 @@ data class LoginRequest(
 )
 
 @Serializable
+data class AppSettings(
+    val secondsLimit: Int = 30,
+    val targetScore: Int = 10,
+)
+
+@Serializable
 data class AnswerResultRequest(
     val questionId: Long,
     val correct: Boolean,
@@ -71,6 +82,7 @@ data class AnswerResultResponse(
 data class SpellingSet(
     val id: Long,
     val rawWords: String,
+    val isLatest: Boolean = false,
     val words: List<SpellingWord> = emptyList(),
 )
 
@@ -84,6 +96,7 @@ data class SpellingWord(
 @Serializable
 data class SpellingSetsRequest(
     val sets: List<String> = emptyList(),
+    val latestSetIndex: Int? = null,
 )
 
 @Serializable
