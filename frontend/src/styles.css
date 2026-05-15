@@ -89,6 +89,7 @@ lucide-icon {
 }
 
 .start-screen,
+.mode-screen,
 .login-screen,
 .play-surface,
 .finish-screen,
@@ -120,6 +121,7 @@ lucide-icon {
 .question-card h1,
 .login-screen h1,
 .start-screen h1,
+.mode-screen h1,
 .finish-screen h1,
 .settings-panel h1,
 .empty-state h1 {
@@ -132,6 +134,12 @@ lucide-icon {
 
 .start-screen {
   text-align: center;
+}
+
+.mode-screen {
+  width: min(900px, calc(100% - 2rem));
+  margin: 0 auto;
+  align-items: stretch;
 }
 
 .login-screen {
@@ -169,10 +177,25 @@ lucide-icon {
   margin-top: 3rem;
 }
 
+.mode-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  width: min(100%, 42rem);
+  gap: 1rem;
+  margin: 2.25rem auto 0;
+}
+
 .test-button {
   min-height: 9rem;
   padding: 1.4rem 2rem;
   font-size: clamp(1.55rem, 3vw, 2.35rem);
+  line-height: 1.08;
+}
+
+.mode-button {
+  min-height: 7.25rem;
+  padding: 1.25rem 1.5rem;
+  font-size: clamp(1.45rem, 3vw, 2.2rem);
   line-height: 1.08;
 }
 
@@ -281,7 +304,8 @@ button:disabled {
   margin-bottom: 2rem;
 }
 
-.settings-panel h1 {
+.settings-panel h1,
+.mode-screen h1 {
   font-size: clamp(2rem, 5vw, 4rem);
   text-align: center;
 }
@@ -468,6 +492,7 @@ input {
 
   .play-surface,
   .finish-screen,
+  .mode-screen,
   .settings-panel {
     padding-top: 7rem;
   }
@@ -485,6 +510,12 @@ input {
     min-height: 7.5rem;
     padding: 1.1rem 1rem;
     font-size: clamp(1.15rem, 4.5vw, 1.8rem);
+  }
+
+  .mode-button {
+    min-height: 6.4rem;
+    padding: 1rem;
+    font-size: clamp(1.15rem, 5vw, 1.75rem);
   }
 
   .answer-actions .answer-button {

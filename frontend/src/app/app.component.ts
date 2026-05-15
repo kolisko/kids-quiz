@@ -6,7 +6,9 @@ import { ArrowLeft, ListRestart, LucideAngularModule, Settings } from 'lucide-an
 const secondsStorageKey = 'kids-quiz.seconds-limit';
 const targetStorageKey = 'kids-quiz.target-score';
 
-type Screen = 'login' | 'start' | 'play' | 'settings' | 'finished';
+type Screen = 'login' | 'start' | 'mode' | 'play' | 'settings' | 'finished';
+type PracticeDirection = 'product_to_factors' | 'factors_to_product';
+type PracticeMode = PracticeDirection | 'mix';
 
 interface GameSettings {
   secondsLimit: number;
@@ -44,6 +46,11 @@ interface AnswerResultResponse {
   stats: QuestionStats;
 }
 
+interface PracticeModeOption {
+  mode: PracticeMode;
+  label: string;
+}
+
 interface AnimalSurprise {
   imagePath: string;
   animationClass: string;
@@ -59,6 +66,11 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly backIcon = ArrowLeft;
   readonly settingsIcon = Settings;
   readonly newTestIcon = ListRestart;
+  readonly practiceModes: PracticeModeOption[] = [
+    { mode: 'product_to_factors', label: 'Najdi násobení' },
+    { mode: 'factors_to_product', label: 'Spočítej výsledek' },
+    { mode: 'mix', label: 'Mix' },
+  ];
 
   screen: Screen = 'login';
   loading = true;
@@ -70,17 +82,26 @@ export class AppComponent implements OnInit, OnDestroy {
   settings: GameSettings = { secondsLimit: 10, targetScore: 10 };
   tests: QuizTest[] = [];
   selectedTest: QuizTest | null = null;
+  selectedMode: PracticeMode | null = null;
   questions: Question[] = [];
-  serverStats: Record<string, QuestionStats> = {};
+  serverStats: Record<PracticeDirection, Record<string, QuestionStats>> = {
+    product_to_factors: {},
+    factors_to_product: {},
+  };
   score = 0;
   currentIndex: number | null = null;
+  currentDirection: PracticeDirection = 'product_to_factors';
+  currentFactorQuestion: string | null = null;
   answerVisible = false;
   timedOut = false;
   secondsLeft = this.settings.secondsLimit;
   flash: string | null = null;
   surprise = surprises[0];
 
-  private readonly mistakeWeights = new Map<number, number>();
+  private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
+    product_to_factors: new Map<number, number>(),
+    factors_to_product: new Map<number, number>(),
+  };
   private timerId: number | null = null;
   private flashTimerId: number | null = null;
 
@@ -90,11 +111,22 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.currentIndex === null ? null : this.questions[this.currentIndex] ?? null;
   }
 
+  get currentQuestionText(): string {
+    if (!this.currentQuestion) return '';
+    return this.currentDirection === 'factors_to_product'
+      ? this.currentFactorQuestion ?? ''
+      : this.currentQuestion.q;
+  }
+
   get currentAnswerText(): string {
-    return this.currentQuestion?.answers.join(', ') ?? '';
+    if (!this.currentQuestion) return '';
+    return this.currentDirection === 'factors_to_product'
+      ? this.currentQuestion.q
+      : this.currentQuestion.answers.join(', ');
   }
 
   get currentAnswerHint(): string | null {
+    if (this.currentDirection !== 'product_to_factors') return null;
     const count = this.currentQuestion?.answers.length ?? 0;
     return count > 1 ? answerCountLabel(count) : null;
   }
@@ -133,22 +165,31 @@ export class AppComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.resetRoundState();
     try {
-      const [stats, questions] = await Promise.all([
-        this.apiGet<QuestionStatsSnapshot>(`tests/${test.id}/stats`),
+      const [productStats, factorStats, questions] = await Promise.all([
+        this.apiGet<QuestionStatsSnapshot>(`tests/${test.id}/stats?direction=product_to_factors`),
+        this.apiGet<QuestionStatsSnapshot>(`tests/${test.id}/stats?direction=factors_to_product`),
         this.apiGet<Question[]>(`tests/${test.id}/questions`),
       ]);
-      this.serverStats = stats.statsByQuestionId ?? {};
+      this.serverStats = {
+        product_to_factors: productStats.statsByQuestionId ?? {},
+        factors_to_product: factorStats.statsByQuestionId ?? {},
+      };
       this.questions = questions;
-      this.score = 0;
-      this.mistakeWeights.clear();
-      this.screen = 'play';
-      this.pickQuestion();
+      this.screen = 'mode';
     } catch {
       this.screen = 'login';
     } finally {
       this.loading = false;
       this.render();
     }
+  }
+
+  startPractice(mode: PracticeMode): void {
+    this.selectedMode = mode;
+    this.resetRoundState();
+    this.screen = 'play';
+    this.pickQuestion();
+    this.render();
   }
 
   showAnswer(): void {
@@ -160,7 +201,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const index = this.currentIndex;
     if (index === null) return;
     this.score -= 1;
-    this.mistakeWeights.set(index, (this.mistakeWeights.get(index) ?? 0) + 1);
+    this.incrementMistakeWeight(index);
     void this.recordAnswer(index, false, false);
     this.showPenalty();
     this.pickQuestion();
@@ -171,7 +212,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (index === null) return;
     const nextScore = this.score + 1;
     this.score = nextScore;
-    this.mistakeWeights.set(index, Math.max(0, (this.mistakeWeights.get(index) ?? 0) - 1));
+    this.decrementMistakeWeight(index);
     void this.recordAnswer(index, true, false);
     if (this.finishIfNeeded(nextScore)) return;
     this.pickQuestion();
@@ -198,8 +239,9 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearFlashTimer();
     this.resetRoundState();
     this.selectedTest = null;
+    this.selectedMode = null;
     this.questions = [];
-    this.serverStats = {};
+    this.serverStats = emptyStatsByDirection();
     this.screen = this.tests.length > 0 ? 'start' : 'settings';
     this.render();
   }
@@ -212,15 +254,17 @@ export class AppComponent implements OnInit, OnDestroy {
       if (!auth.authenticated) {
         this.tests = [];
         this.selectedTest = null;
+        this.selectedMode = null;
         this.questions = [];
-        this.serverStats = {};
+        this.serverStats = emptyStatsByDirection();
         this.screen = 'login';
         return;
       }
       this.tests = await this.apiGet<QuizTest[]>('tests');
       this.selectedTest = null;
+      this.selectedMode = null;
       this.questions = [];
-      this.serverStats = {};
+      this.serverStats = emptyStatsByDirection();
       this.screen = this.tests.length > 0 ? 'start' : 'settings';
     } catch {
       this.screen = 'login';
@@ -254,17 +298,18 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearTimer();
     if (this.questions.length === 0) {
       this.currentIndex = null;
-      this.screen = 'start';
+      this.screen = this.selectedTest ? 'mode' : 'start';
       return;
     }
 
+    const direction = this.pickDirection();
     const weightedIndices: number[] = [];
     for (let index = 0; index < this.questions.length; index += 1) {
       const question = this.questions[index];
-      const stats = this.serverStats[String(question.id)];
+      const stats = this.serverStats[direction][String(question.id)];
       const mistakes = stats ? stats.wrong + stats.timeout : 0;
       const longTermDifficulty = stats ? Math.max(0, mistakes * 2 - stats.correct) : 0;
-      const sessionDifficulty = this.mistakeWeights.get(index) ?? 0;
+      const sessionDifficulty = this.mistakeWeights[direction].get(index) ?? 0;
       const weight = 1 + longTermDifficulty * 2 + sessionDifficulty * 3;
       for (let copy = 0; copy < weight; copy += 1) {
         weightedIndices.push(index);
@@ -272,6 +317,8 @@ export class AppComponent implements OnInit, OnDestroy {
     }
 
     this.currentIndex = weightedIndices[Math.floor(Math.random() * weightedIndices.length)] ?? 0;
+    this.currentDirection = direction;
+    this.currentFactorQuestion = this.pickFactorQuestion(this.questions[this.currentIndex]);
     this.answerVisible = false;
     this.timedOut = false;
     this.secondsLeft = this.settings.secondsLimit;
@@ -300,7 +347,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.timedOut = true;
     this.answerVisible = true;
     this.score -= 1;
-    this.mistakeWeights.set(index, (this.mistakeWeights.get(index) ?? 0) + 1);
+    this.incrementMistakeWeight(index);
     void this.recordAnswer(index, false, true);
     this.showPenalty();
     this.render();
@@ -318,14 +365,19 @@ export class AppComponent implements OnInit, OnDestroy {
     const question = this.questions[index];
     const test = this.selectedTest;
     if (!question || !test) return;
+    const direction = this.currentDirection;
     const response = await this.apiPost<AnswerResultResponse>(`tests/${test.id}/stats/answer`, {
       questionId: question.id,
       correct,
       timedOut,
+      direction,
     });
     this.serverStats = {
       ...this.serverStats,
-      [String(response.questionId)]: response.stats,
+      [direction]: {
+        ...this.serverStats[direction],
+        [String(response.questionId)]: response.stats,
+      },
     };
     this.render();
   }
@@ -334,11 +386,37 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearTimer();
     this.score = 0;
     this.currentIndex = null;
+    this.currentDirection = 'product_to_factors';
+    this.currentFactorQuestion = null;
     this.answerVisible = false;
     this.timedOut = false;
     this.flash = null;
     this.secondsLeft = this.settings.secondsLimit;
-    this.mistakeWeights.clear();
+    this.mistakeWeights.product_to_factors.clear();
+    this.mistakeWeights.factors_to_product.clear();
+  }
+
+  private pickDirection(): PracticeDirection {
+    if (this.selectedMode === 'factors_to_product') return 'factors_to_product';
+    if (this.selectedMode === 'mix') {
+      return Math.random() < 0.5 ? 'product_to_factors' : 'factors_to_product';
+    }
+    return 'product_to_factors';
+  }
+
+  private pickFactorQuestion(question: Question | undefined): string | null {
+    if (!question || question.answers.length === 0) return null;
+    return question.answers[Math.floor(Math.random() * question.answers.length)] ?? question.answers[0];
+  }
+
+  private incrementMistakeWeight(index: number): void {
+    const weights = this.mistakeWeights[this.currentDirection];
+    weights.set(index, (weights.get(index) ?? 0) + 1);
+  }
+
+  private decrementMistakeWeight(index: number): void {
+    const weights = this.mistakeWeights[this.currentDirection];
+    weights.set(index, Math.max(0, (weights.get(index) ?? 0) - 1));
   }
 
   private showPenalty(): void {
@@ -405,6 +483,13 @@ function answerCountLabel(count: number): string {
   if (count === 1) return '1 správná odpověď';
   if (count > 1 && count < 5) return `${count} správné odpovědi`;
   return `${count} správných odpovědí`;
+}
+
+function emptyStatsByDirection(): Record<PracticeDirection, Record<string, QuestionStats>> {
+  return {
+    product_to_factors: {},
+    factors_to_product: {},
+  };
 }
 
 const surprises: AnimalSurprise[] = Array.from({ length: 40 }, (_, index) => ({

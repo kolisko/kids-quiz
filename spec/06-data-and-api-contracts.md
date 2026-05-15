@@ -12,7 +12,7 @@ Tables:
 - `tests`: playable test names and ordering.
 - `questions`: one row per question, unique by `test_id + q`.
 - `question_answers`: ordered answer list for each question.
-- `question_stats`: aggregate performance counters by `question_id`.
+- `question_stats`: aggregate performance counters by `question_id + direction`.
 
 Questions are not edited or stored through a raw JSON textarea. JSON remains the HTTP transport format only.
 
@@ -57,6 +57,9 @@ Returns questions from SQLite ordered by `sort_order`.
 
 Returns aggregate stats for one test keyed by question id.
 
+Optional query parameters:
+- `direction`: `product_to_factors` or `factors_to_product`; defaults to `product_to_factors`.
+
 ```json
 {
   "statsByQuestionId": {
@@ -77,7 +80,8 @@ Records one answer result for one question.
 {
   "questionId": 13,
   "correct": false,
-  "timedOut": false
+  "timedOut": false,
+  "direction": "factors_to_product"
 }
 ```
 

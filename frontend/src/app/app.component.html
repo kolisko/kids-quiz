@@ -46,6 +46,27 @@
     </div>
   </section>
 
+  <section class="mode-screen" *ngIf="screen === 'mode'">
+    <div class="settings-header">
+      <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
+        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+      </button>
+      <h1>{{ selectedTest?.name }}</h1>
+      <span class="header-spacer" aria-hidden="true"></span>
+    </div>
+
+    <div class="mode-list">
+      <button
+        class="primary-button mode-button"
+        type="button"
+        *ngFor="let option of practiceModes"
+        (click)="startPractice(option.mode)"
+        [disabled]="loading">
+        {{ option.label }}
+      </button>
+    </div>
+  </section>
+
   <section class="settings-panel" *ngIf="screen === 'settings'">
     <div class="settings-header">
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
@@ -76,7 +97,7 @@
     <ng-container *ngIf="currentQuestion; else noQuestion">
       <div class="question-card">
         <span class="label">{{ answerVisible ? 'Odpověď' : 'Otázka' }}</span>
-        <h1>{{ answerVisible ? currentAnswerText : currentQuestion.q }}</h1>
+        <h1>{{ answerVisible ? currentAnswerText : currentQuestionText }}</h1>
         <p class="answer-hint" *ngIf="!answerVisible && currentAnswerHint">{{ currentAnswerHint }}</p>
         <p class="timeout-note" *ngIf="timedOut">Čas vypršel, bod je odečtený.</p>
       </div>

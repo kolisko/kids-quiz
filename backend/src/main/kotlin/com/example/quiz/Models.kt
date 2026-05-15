@@ -3,6 +3,12 @@ package com.example.quiz
 import kotlinx.serialization.Serializable
 
 @Serializable
+enum class PracticeDirection {
+    product_to_factors,
+    factors_to_product,
+}
+
+@Serializable
 data class Question(
     val id: Long,
     val q: String,
@@ -45,6 +51,7 @@ data class AnswerResultRequest(
     val questionId: Long,
     val correct: Boolean,
     val timedOut: Boolean = false,
+    val direction: PracticeDirection = PracticeDirection.product_to_factors,
 )
 
 @Serializable

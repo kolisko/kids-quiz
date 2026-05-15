@@ -132,6 +132,12 @@ object DatabaseMigrator {
                     recordMigration(4, "normalize_question_answers")
                 }
             }
+            if (5 !in applied) {
+                connection.transaction {
+                    addQuestionStatsDirection()
+                    recordMigration(5, "add_question_stats_direction")
+                }
+            }
         }
         migrated = true
     }
@@ -389,6 +395,35 @@ object DatabaseMigrator {
             statement.executeUpdate("ALTER TABLE question_stats_new RENAME TO question_stats")
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_questions_test_sort_order ON questions(test_id, sort_order, id)")
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_question_answers_question_sort_order ON question_answers(question_id, sort_order, id)")
+        }
+    }
+
+    private fun Connection.addQuestionStatsDirection() {
+        createStatement().use { statement ->
+            statement.executeUpdate("DROP TABLE IF EXISTS question_stats_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE question_stats_new (
+                    question_id INTEGER NOT NULL,
+                    direction TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    timeout INTEGER NOT NULL DEFAULT 0 CHECK(timeout >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(question_id) REFERENCES questions(id) ON DELETE CASCADE,
+                    PRIMARY KEY(question_id, direction)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO question_stats_new(question_id, direction, correct, wrong, timeout, updated_at)
+                SELECT question_id, '${PracticeDirection.product_to_factors.name}', correct, wrong, timeout, updated_at
+                FROM question_stats
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE question_stats")
+            statement.executeUpdate("ALTER TABLE question_stats_new RENAME TO question_stats")
         }
     }
 
@@ -654,16 +689,17 @@ private fun Connection.replaceLegacyQuestions(questions: List<LegacyQuestion>) {
     }
 }
 
-fun Connection.readStats(testId: Long): Map<Long, QuestionStats> {
+fun Connection.readStats(testId: Long, direction: PracticeDirection): Map<Long, QuestionStats> {
     return prepareStatement(
         """
         SELECT question_stats.question_id, question_stats.correct, question_stats.wrong, question_stats.timeout
         FROM question_stats
         INNER JOIN questions ON questions.id = question_stats.question_id
-        WHERE questions.test_id = ?
+        WHERE questions.test_id = ? AND question_stats.direction = ?
         """.trimIndent(),
     ).use { statement ->
         statement.setLong(1, testId)
+        statement.setString(2, direction.name)
         statement.executeQuery().use { rows ->
             buildMap {
                 while (rows.next()) {
@@ -681,15 +717,21 @@ fun Connection.readStats(testId: Long): Map<Long, QuestionStats> {
     }
 }
 
-fun Connection.recordStats(testId: Long, questionId: Long, correct: Boolean, timedOut: Boolean): Pair<Long, QuestionStats>? {
+fun Connection.recordStats(
+    testId: Long,
+    questionId: Long,
+    correct: Boolean,
+    timedOut: Boolean,
+    direction: PracticeDirection,
+): Pair<Long, QuestionStats>? {
     if (!questionBelongsToTest(testId, questionId)) {
         return null
     }
     prepareStatement(
         """
-        INSERT INTO question_stats(question_id, correct, wrong, timeout, updated_at)
-        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(question_id) DO UPDATE SET
+        INSERT INTO question_stats(question_id, direction, correct, wrong, timeout, updated_at)
+        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(question_id, direction) DO UPDATE SET
             correct = question_stats.correct + excluded.correct,
             wrong = question_stats.wrong + excluded.wrong,
             timeout = question_stats.timeout + excluded.timeout,
@@ -697,12 +739,13 @@ fun Connection.recordStats(testId: Long, questionId: Long, correct: Boolean, tim
         """.trimIndent(),
     ).use { statement ->
         statement.setLong(1, questionId)
-        statement.setInt(2, if (correct) 1 else 0)
-        statement.setInt(3, if (!correct && !timedOut) 1 else 0)
-        statement.setInt(4, if (timedOut) 1 else 0)
+        statement.setString(2, direction.name)
+        statement.setInt(3, if (correct) 1 else 0)
+        statement.setInt(4, if (!correct && !timedOut) 1 else 0)
+        statement.setInt(5, if (timedOut) 1 else 0)
         statement.executeUpdate()
     }
-    return questionId to readStat(testId, questionId)
+    return questionId to readStat(testId, questionId, direction)
 }
 
 fun Connection.setStats(statsByKey: Map<String, QuestionStats>) {
@@ -756,17 +799,18 @@ private fun Connection.questionBelongsToTest(testId: Long, questionId: Long): Bo
     }
 }
 
-private fun Connection.readStat(testId: Long, questionId: Long): QuestionStats {
+private fun Connection.readStat(testId: Long, questionId: Long, direction: PracticeDirection): QuestionStats {
     return prepareStatement(
         """
         SELECT question_stats.correct, question_stats.wrong, question_stats.timeout
         FROM question_stats
         INNER JOIN questions ON questions.id = question_stats.question_id
-        WHERE questions.test_id = ? AND question_stats.question_id = ?
+        WHERE questions.test_id = ? AND question_stats.question_id = ? AND question_stats.direction = ?
         """.trimIndent(),
     ).use { statement ->
         statement.setLong(1, testId)
         statement.setLong(2, questionId)
+        statement.setString(3, direction.name)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return QuestionStats()
             QuestionStats(

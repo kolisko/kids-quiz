@@ -95,7 +95,8 @@ fun Application.module() {
                 get("/stats") {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val testId = call.requireQuizTestId() ?: return@get
-                    call.respond(QuestionStatsSnapshot(statsByQuestionId = StatsStore.snapshot(testId)))
+                    val direction = call.requirePracticeDirection() ?: return@get
+                    call.respond(QuestionStatsSnapshot(statsByQuestionId = StatsStore.snapshot(testId, direction)))
                 }
                 post("/stats/answer") {
                     if (!Auth.requireAuthenticated(call)) return@post
@@ -105,7 +106,13 @@ fun Application.module() {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@post
                     }
-                    val (questionId, stats) = StatsStore.record(testId, request.questionId, request.correct, request.timedOut)
+                    val (questionId, stats) = StatsStore.record(
+                        testId,
+                        request.questionId,
+                        request.correct,
+                        request.timedOut,
+                        request.direction,
+                    )
                         ?: run {
                             call.respond(HttpStatusCode.NotFound, mapOf("error" to "question_not_found"))
                             return@post
@@ -131,6 +138,15 @@ private suspend fun ApplicationCall.requireQuizTestId(): Long? {
         return null
     }
     return testId
+}
+
+private suspend fun ApplicationCall.requirePracticeDirection(): PracticeDirection? {
+    val rawDirection = parameters["direction"] ?: return PracticeDirection.product_to_factors
+    return runCatching { PracticeDirection.valueOf(rawDirection) }.getOrNull()
+        ?: run {
+            respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_direction"))
+            null
+        }
 }
 
 private suspend fun io.ktor.server.application.ApplicationCall.respondStaticOrIndex(staticDir: File) {
