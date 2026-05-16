@@ -358,6 +358,7 @@
           <div class="flipcard-options">
             <button
               class="primary-button flipcard-option-button"
+              [class.flipcard-option-wrong]="option.wrongFeedback"
               type="button"
               *ngFor="let option of flipcardOptions"
               [disabled]="option.disabled || flipcardAnswersDisabled"

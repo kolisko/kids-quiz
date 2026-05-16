@@ -156,6 +156,7 @@ interface FlipcardAnswerResultResponse {
 interface FlipcardOption {
   word: FlipcardWord;
   disabled: boolean;
+  wrongFeedback?: boolean;
 }
 
 interface AnimalSurprise {
@@ -216,9 +217,11 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardStats: Record<string, QuestionStats> = {};
   spellingWords: SpellingWord[] = [];
   flipcardWords: FlipcardWord[] = [];
+  flipcardAnswerPool: FlipcardWord[] = [];
   flipcardQueue: number[] = [];
   flipcardWordIndex: number | null = null;
   flipcardOptions: FlipcardOption[] = [];
+  flipcardOptionsByIndex: FlipcardOption[][] = [];
   flipcardAttemptFailed = false;
   flipcardImageLoaded = false;
   flipcardImageError: string | null = null;
@@ -482,10 +485,15 @@ export class AppComponent implements OnInit, OnDestroy {
       ]);
       this.applySettings(settings);
       this.flipcardStats = stats.statsByWord ?? {};
-      const session = await this.apiGet<FlipcardSession>(`flipcards/session?limit=${this.settings.targetScore}`);
+      const [session, answerPool] = await Promise.all([
+        this.apiGet<FlipcardSession>(`flipcards/session?limit=${this.settings.targetScore}`),
+        this.loadFlipcardAnswerPool(),
+      ]);
       this.flipcardWords = session.words;
+      this.flipcardAnswerPool = answerPool;
       this.flipcardQueue = this.flipcardWords.map((_, index) => index);
-      if (this.flipcardWords.length < 3) {
+      this.flipcardOptionsByIndex = this.flipcardWords.map((_, index) => this.buildFlipcardOptions(index));
+      if (this.flipcardWords.length < 1 || this.flipcardAnswerPool.length < 3 || this.flipcardOptionsByIndex.some((options) => options.length < 3)) {
         if (this.settings.flipcardSource === 'ready_only') {
           this.audioPrepItems = [];
           this.audioPrepError = 'Pro ready-only test jsou potřeba aspoň 3 připravená slovíčka.';
@@ -498,7 +506,9 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.prepareFlipcardAssets();
     } catch {
       this.flipcardWords = [];
+      this.flipcardAnswerPool = [];
       this.flipcardQueue = [];
+      this.flipcardOptionsByIndex = [];
       this.setScreen('play');
       if (this.settings.audioSource === 'browser_tts') {
         this.checkTtsSupport();
@@ -540,6 +550,17 @@ export class AppComponent implements OnInit, OnDestroy {
       this.startingSpellingMode = null;
       this.render();
     }
+  }
+
+  private async loadFlipcardAnswerPool(): Promise<FlipcardWord[]> {
+    if (this.settings.flipcardSource === 'ready_only') {
+      const response = await this.apiGet<FlipcardAssetsResponse>('flipcards/assets');
+      return response.items
+        .filter((asset) => asset.imageStatus === 'ready' && asset.audioStatus === 'ready')
+        .map((asset) => ({ text: asset.word, normalized: asset.normalized }));
+    }
+    const response = await this.apiGet<FlipcardWordsResponse>('flipcards/words');
+    return response.items;
   }
 
   startPractice(mode: PracticeMode): void {
@@ -947,9 +968,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.serverStats = emptyStatsByDirection();
     this.spellingWords = [];
     this.flipcardWords = [];
+    this.flipcardAnswerPool = [];
     this.flipcardQueue = [];
     this.flipcardWordIndex = null;
     this.flipcardOptions = [];
+    this.flipcardOptionsByIndex = [];
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;
     this.spellingPendingIndices = [];
@@ -1134,9 +1157,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.backendAudioUrls = {};
     this.flipcardImageUrls = {};
     try {
-      this.audioPrepItems = this.flipcardWords.flatMap((word) => {
-        const items: AudioPrepItem[] = [
-          {
+      const imageItems: AudioPrepItem[] = this.flipcardWords.map((word) => ({
             audioWord: word.text,
             normalized: word.normalized,
             word: word.text,
@@ -1144,10 +1165,9 @@ export class AppComponent implements OnInit, OnDestroy {
             status: 'pending',
             audioUrl: null,
             error: null,
-          },
-        ];
-        if (this.settings.audioSource === 'backend_mp3') {
-          items.push({
+      }));
+      const audioItems: AudioPrepItem[] = this.settings.audioSource === 'backend_mp3'
+        ? this.flipcardAudioWordsForSession().map((word) => ({
             audioWord: word.text,
             normalized: word.normalized,
             word: word.text,
@@ -1155,10 +1175,9 @@ export class AppComponent implements OnInit, OnDestroy {
             status: 'pending',
             audioUrl: null,
             error: null,
-          });
-        }
-        return items;
-      });
+        }))
+        : [];
+      this.audioPrepItems = [...imageItems, ...audioItems];
 
       await Promise.all(this.audioPrepItems.map((item) => (
         item.kind === 'flipcard_image' ? this.loadFlipcardImageStatus(item) : this.loadAudioItemStatus(item)
@@ -1503,7 +1522,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardAttemptFailed = false;
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;
-    this.flipcardOptions = this.buildFlipcardOptions(nextIndex);
+    this.flipcardOptions = this.flipcardOptionsForIndex(nextIndex);
     this.answerVisible = false;
     this.timedOut = false;
     this.secondsLeft = this.settings.secondsLimit;
@@ -1514,8 +1533,23 @@ export class AppComponent implements OnInit, OnDestroy {
   private buildFlipcardOptions(index: number): FlipcardOption[] {
     const correct = this.flipcardWords[index];
     if (!correct) return [];
-    const distractors = shuffled(this.flipcardWords.filter((_, candidateIndex) => candidateIndex !== index)).slice(0, 2);
+    const distractors = shuffled(
+      this.flipcardAnswerPool.filter((word) => word.normalized !== correct.normalized),
+    ).slice(0, 2);
     return shuffled([correct, ...distractors]).map((word) => ({ word, disabled: false }));
+  }
+
+  private flipcardOptionsForIndex(index: number): FlipcardOption[] {
+    return (this.flipcardOptionsByIndex[index] ?? this.buildFlipcardOptions(index))
+      .map((option) => ({ word: option.word, disabled: false, wrongFeedback: false }));
+  }
+
+  private flipcardAudioWordsForSession(): FlipcardWord[] {
+    const words = new Map<string, FlipcardWord>();
+    this.flipcardOptionsByIndex.flat().forEach((option) => {
+      words.set(option.word.normalized, option.word);
+    });
+    return Array.from(words.values());
   }
 
   async selectFlipcardOption(option: FlipcardOption): Promise<void> {
@@ -1530,8 +1564,6 @@ export class AppComponent implements OnInit, OnDestroy {
       this.flipcardAdvancing = false;
       if (!this.flipcardAttemptFailed) {
         this.flipcardAttemptFailed = true;
-        this.score -= 1;
-        this.showPenalty();
         void this.recordFlipcardAnswer(currentIndex, false, false);
       }
       this.render();
@@ -1552,9 +1584,15 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private disableFlipcardOption(normalized: string): void {
     this.flipcardOptions = this.flipcardOptions.map((option) => (
-      option.word.normalized === normalized ? { ...option, disabled: true } : option
+      option.word.normalized === normalized ? { ...option, disabled: true, wrongFeedback: true } : option
     ));
     this.render();
+    window.setTimeout(() => {
+      this.flipcardOptions = this.flipcardOptions.map((option) => (
+        option.word.normalized === normalized ? { ...option, wrongFeedback: false } : option
+      ));
+      this.render();
+    }, 460);
   }
 
   onFlipcardImageLoad(): void {
@@ -1749,6 +1787,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardWordIndex = null;
     this.flipcardQueue = [];
     this.flipcardOptions = [];
+    this.flipcardOptionsByIndex = [];
+    this.flipcardAnswerPool = [];
     this.flipcardAttemptFailed = false;
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;

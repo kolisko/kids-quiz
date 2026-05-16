@@ -338,6 +338,25 @@ lucide-icon {
   overflow-wrap: anywhere;
 }
 
+.flipcard-option-wrong {
+  animation: flipcard-no 420ms ease-in-out;
+  border-color: rgba(185, 28, 28, 0.58);
+  background: #fecaca;
+  color: #7f1d1d;
+}
+
+@keyframes flipcard-no {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  18%, 54% {
+    transform: translateX(-0.5rem);
+  }
+  36%, 72% {
+    transform: translateX(0.5rem);
+  }
+}
+
 .answer-hint,
 .timeout-note,
 .settings-panel p,
