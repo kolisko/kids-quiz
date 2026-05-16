@@ -44,7 +44,6 @@ private data class OpenAiImageRequest(
 class FlipcardImageException(message: String) : RuntimeException(message)
 
 object FlipcardImageService {
-    private val lock = Any()
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(20))
         .build()
@@ -52,18 +51,33 @@ object FlipcardImageService {
     fun status(rawWord: String): FlipcardImageResponse? {
         val word = flipcardImageWord(rawWord) ?: return null
         val ready = Files.isRegularFile(imagePath(word))
+        val job = ArtifactGenerationQueue.snapshot(imageJobKey(word))
         return FlipcardImageResponse(
             word = word.text,
             normalized = word.normalized,
-            status = if (ready) FlipcardImageStatus.ready else FlipcardImageStatus.missing,
+            status = when {
+                ready -> FlipcardImageStatus.ready
+                job != null -> job.status.toFlipcardImageStatus()
+                else -> FlipcardImageStatus.missing
+            },
             imageUrl = if (ready) imageUrl(word) else null,
+            error = if (ready) null else job?.error,
         )
     }
 
-    fun generate(rawWord: String): FlipcardImageResponse? {
+    fun enqueueGeneration(rawWord: String): FlipcardImageResponse? {
         val word = flipcardImageWord(rawWord) ?: return null
-        synchronized(lock) {
-            val outputPath = imagePath(word)
+        val outputPath = imagePath(word)
+        if (Files.isRegularFile(outputPath)) {
+            ArtifactGenerationQueue.clear(imageJobKey(word))
+            return FlipcardImageResponse(
+                word = word.text,
+                normalized = word.normalized,
+                status = FlipcardImageStatus.ready,
+                imageUrl = imageUrl(word),
+            )
+        }
+        val job = ArtifactGenerationQueue.enqueue(imageJobKey(word), ArtifactJobPool.image) {
             if (!Files.isRegularFile(outputPath)) {
                 generateToFile(word, outputPath)
             }
@@ -71,8 +85,9 @@ object FlipcardImageService {
         return FlipcardImageResponse(
             word = word.text,
             normalized = word.normalized,
-            status = FlipcardImageStatus.ready,
-            imageUrl = imageUrl(word),
+            status = job.status.toFlipcardImageStatus(),
+            imageUrl = null,
+            error = job.error,
         )
     }
 
@@ -130,6 +145,10 @@ object FlipcardImageService {
         )
     }
 
+    private fun imageJobKey(word: FlipcardWord): String {
+        return "flipcard_image:${imageCacheKey(word)}"
+    }
+
     private fun imageUrl(word: FlipcardWord): String {
         return "/api/flipcards/images/${urlEncodePathSegment(word.text)}.${imageFormat()}?v=${imageCacheKey(word)}"
     }
@@ -180,5 +199,13 @@ object FlipcardImageService {
     private fun sha256Hex(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun ArtifactJobStatus.toFlipcardImageStatus(): FlipcardImageStatus {
+        return when (this) {
+            ArtifactJobStatus.queued -> FlipcardImageStatus.queued
+            ArtifactJobStatus.generating -> FlipcardImageStatus.generating
+            ArtifactJobStatus.error -> FlipcardImageStatus.error
+        }
     }
 }

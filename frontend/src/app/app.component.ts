@@ -11,7 +11,8 @@ type PracticeMode = PracticeDirection | 'mix';
 type SpellingSessionMode = 'latest' | 'older';
 type TtsStatus = 'checking' | 'supported' | 'unsupported';
 type AudioSource = 'browser_tts' | 'backend_mp3';
-type AudioPrepStatus = 'pending' | 'generating' | 'ready' | 'error';
+type ArtifactStatus = 'ready' | 'missing' | 'queued' | 'generating' | 'error';
+type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 
@@ -75,9 +76,10 @@ interface SpellingWord {
 interface SpellingAudioWordResponse {
   word: string;
   normalized: string;
-  status: 'ready' | 'missing';
+  status: ArtifactStatus;
   kind: 'word' | 'spelling';
   audioUrl: string | null;
+  error?: string | null;
 }
 
 interface AudioPrepItem {
@@ -121,17 +123,20 @@ interface FlipcardSession {
 interface FlipcardImageResponse {
   word: string;
   normalized: string;
-  status: 'ready' | 'missing';
+  status: ArtifactStatus;
   imageUrl: string | null;
+  error?: string | null;
 }
 
 interface FlipcardAsset {
   word: string;
   normalized: string;
-  imageStatus: 'ready' | 'missing';
+  imageStatus: ArtifactStatus;
   imageUrl: string | null;
-  audioStatus: 'ready' | 'missing';
+  imageError?: string | null;
+  audioStatus: ArtifactStatus;
   audioUrl: string | null;
+  audioError?: string | null;
 }
 
 interface FlipcardAssetsResponse {
@@ -336,8 +341,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get visibleAudioPrepItems(): AudioPrepItem[] {
-    const hasWork = this.audioPrepItems.some((item) => item.status === 'generating' || item.status === 'error');
-    return hasWork ? this.audioPrepItems : this.audioPrepItems.filter((item) => item.status === 'generating' || item.status === 'error');
+    const hasWork = this.audioPrepItems.some((item) => item.status === 'queued' || item.status === 'generating' || item.status === 'error');
+    return hasWork ? this.audioPrepItems : this.audioPrepItems.filter((item) => item.status === 'queued' || item.status === 'generating' || item.status === 'error');
   }
 
   get audioPrepSummary(): string {
@@ -368,6 +373,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   audioPrepItemStatusLabel(item: AudioPrepItem): string {
     if (item.status === 'ready') return 'Hotovo';
+    if (item.status === 'queued') return 'Ve frontě';
     if (item.status === 'generating') return item.kind === 'flipcard_image' ? 'Generuji' : 'Nahrávám';
     if (item.status === 'error') return 'Chyba';
     return 'Čeká';
@@ -635,11 +641,21 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   assetImageIsGenerating(asset: FlipcardAsset): boolean {
-    return Boolean(this.assetImageGenerating[asset.normalized]);
+    return Boolean(this.assetImageGenerating[asset.normalized])
+      || asset.imageStatus === 'queued'
+      || asset.imageStatus === 'generating';
   }
 
   assetImageError(asset: FlipcardAsset): string | null {
-    return this.assetImageErrors[asset.normalized] ?? null;
+    return this.assetImageErrors[asset.normalized] ?? asset.imageError ?? null;
+  }
+
+  assetImageStatusLabel(asset: FlipcardAsset): string {
+    if (asset.imageStatus === 'ready') return 'Hotovo';
+    if (asset.imageStatus === 'queued') return 'Ve frontě';
+    if (asset.imageStatus === 'generating') return 'Generuji obrázek...';
+    if (asset.imageStatus === 'error') return 'Chyba';
+    return 'Chybí obrázek';
   }
 
   async generateAssetImage(asset: FlipcardAsset): Promise<void> {
@@ -651,19 +667,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
     try {
       const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(asset.word), {});
-      if (!response.imageUrl) {
-        throw new Error('Image URL chybi.');
+      await this.applyAssetImageResponse(response);
+      if (response.status !== 'ready') {
+        await this.pollAssetImageUntilReady(asset.word, response.normalized);
       }
-      await this.preloadImage(response.imageUrl);
-      this.flipcardAssets = this.flipcardAssets.map((item) => (
-        item.normalized === response.normalized
-          ? { ...item, imageStatus: 'ready', imageUrl: response.imageUrl }
-          : item
-      ));
-      this.flipcardImageUrls = {
-        ...this.flipcardImageUrls,
-        [response.normalized]: response.imageUrl,
-      };
     } catch (error) {
       this.assetImageErrors = {
         ...this.assetImageErrors,
@@ -674,6 +681,44 @@ export class AppComponent implements OnInit, OnDestroy {
       this.assetImageGenerating = nextGenerating;
       this.render();
     }
+  }
+
+  private async pollAssetImageUntilReady(word: string, normalized: string): Promise<void> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 30 * 60 * 1000) {
+      await this.delay(2000);
+      const response = await this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(word));
+      await this.applyAssetImageResponse(response);
+      if (response.status === 'ready') return;
+      if (response.status === 'error') {
+        throw new Error(response.error ?? 'Obrazek se nepodarilo pripravit.');
+      }
+    }
+    this.assetImageErrors = {
+      ...this.assetImageErrors,
+      [normalized]: 'Generování trvá příliš dlouho.',
+    };
+  }
+
+  private async applyAssetImageResponse(response: FlipcardImageResponse): Promise<void> {
+    if (response.status === 'ready' && response.imageUrl) {
+      await this.preloadImage(response.imageUrl);
+      this.flipcardImageUrls = {
+        ...this.flipcardImageUrls,
+        [response.normalized]: response.imageUrl,
+      };
+    }
+    this.flipcardAssets = this.flipcardAssets.map((item) => (
+      item.normalized === response.normalized
+        ? {
+          ...item,
+          imageStatus: response.status,
+          imageUrl: response.imageUrl ?? item.imageUrl,
+          imageError: response.error ?? null,
+        }
+        : item
+    ));
+    this.render();
   }
 
   async saveSettingsOnly(): Promise<void> {
@@ -896,12 +941,6 @@ export class AppComponent implements OnInit, OnDestroy {
       );
 
       const missingItems = this.audioPrepItems.filter((item) => item.status !== 'ready');
-      if (this.settings.flipcardSource === 'ready_only' && missingItems.length > 0) {
-        this.screen = 'audioPrep';
-        this.audioPrepError = 'Pro test z připravených slov chybí obrázek nebo audio.';
-        this.render();
-        return;
-      }
       if (missingItems.length > 0) {
         this.screen = 'audioPrep';
         this.render();
@@ -966,6 +1005,12 @@ export class AppComponent implements OnInit, OnDestroy {
       );
 
       const missingItems = this.audioPrepItems.filter((item) => item.status !== 'ready');
+      if (this.settings.flipcardSource === 'ready_only' && missingItems.length > 0) {
+        this.screen = 'audioPrep';
+        this.audioPrepError = 'Pro test z připravených slov chybí obrázek nebo audio.';
+        this.render();
+        return;
+      }
       if (missingItems.length > 0) {
         this.screen = 'audioPrep';
         this.render();
@@ -987,7 +1032,15 @@ export class AppComponent implements OnInit, OnDestroy {
   private async loadAudioItemStatus(item: AudioPrepItem): Promise<void> {
     if (item.kind === 'flipcard_image') return;
     const response = await this.apiGet<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind));
-    if (response.status !== 'ready' || !response.audioUrl) return;
+    if (response.status !== 'ready' || !response.audioUrl) {
+      if (response.status !== 'missing') {
+        this.updateAudioPrepItem(item.normalized, item.kind, {
+          status: response.status,
+          error: response.error ?? null,
+        });
+      }
+      return;
+    }
     this.updateAudioPrepItem(item.normalized, item.kind, {
       status: 'ready',
       audioUrl: response.audioUrl,
@@ -997,7 +1050,15 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async loadFlipcardImageStatus(item: AudioPrepItem): Promise<void> {
     const response = await this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(item.audioWord));
-    if (response.status !== 'ready' || !response.imageUrl) return;
+    if (response.status !== 'ready' || !response.imageUrl) {
+      if (response.status !== 'missing') {
+        this.updateAudioPrepItem(item.normalized, item.kind, {
+          status: response.status,
+          error: response.error ?? null,
+        });
+      }
+      return;
+    }
     this.updateAudioPrepItem(item.normalized, item.kind, {
       status: 'ready',
       audioUrl: response.imageUrl,
@@ -1062,24 +1123,66 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async generateAudioItem(item: AudioPrepItem): Promise<void> {
-    this.updateAudioPrepItem(item.normalized, item.kind, { status: 'generating', error: null });
+    this.updateAudioPrepItem(item.normalized, item.kind, { status: 'queued', error: null });
     try {
       if (item.kind === 'flipcard_image') {
         const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(item.audioWord), {});
-        if (!response.imageUrl) {
-          throw new Error('Image URL chybi.');
+        this.applyFlipcardImagePrepResponse(item, response);
+        if (response.status !== 'ready') {
+          await this.pollAudioPrepItemUntilReady(item);
         }
-        this.flipcardImageUrls = {
-          ...this.flipcardImageUrls,
-          [response.normalized]: response.imageUrl,
-        };
-        this.updateAudioPrepItem(item.normalized, item.kind, { status: 'ready', audioUrl: response.imageUrl, error: null });
         return;
       }
       const response = await this.apiPost<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind), {});
-      if (!response.audioUrl) {
-        throw new Error('Audio URL chybi.');
+      this.applySpellingAudioPrepResponse(item, response);
+      if (response.status !== 'ready') {
+        await this.pollAudioPrepItemUntilReady(item);
       }
+    } catch (error) {
+      this.audioPrepError = error instanceof Error ? error.message : 'Generování selhalo.';
+      this.updateAudioPrepItem(item.normalized, item.kind, {
+        status: 'error',
+        error: this.audioPrepError,
+      });
+    }
+  }
+
+  private async pollAudioPrepItemUntilReady(item: AudioPrepItem): Promise<void> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 30 * 60 * 1000) {
+      await this.delay(2000);
+      if (item.kind === 'flipcard_image') {
+        const response = await this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(item.audioWord));
+        this.applyFlipcardImagePrepResponse(item, response);
+        if (response.status === 'ready') return;
+        if (response.status === 'error') throw new Error(response.error ?? 'Generování obrázku selhalo.');
+      } else {
+        const response = await this.apiGet<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind));
+        this.applySpellingAudioPrepResponse(item, response);
+        if (response.status === 'ready') return;
+        if (response.status === 'error') throw new Error(response.error ?? 'Generování audia selhalo.');
+      }
+    }
+    throw new Error('Generování trvá příliš dlouho.');
+  }
+
+  private applyFlipcardImagePrepResponse(item: AudioPrepItem, response: FlipcardImageResponse): void {
+    if (response.status === 'ready' && response.imageUrl) {
+      this.flipcardImageUrls = {
+        ...this.flipcardImageUrls,
+        [response.normalized]: response.imageUrl,
+      };
+      this.updateAudioPrepItem(item.normalized, item.kind, { status: 'ready', audioUrl: response.imageUrl, error: null });
+      return;
+    }
+    this.updateAudioPrepItem(item.normalized, item.kind, {
+      status: response.status,
+      error: response.error ?? null,
+    });
+  }
+
+  private applySpellingAudioPrepResponse(item: AudioPrepItem, response: SpellingAudioWordResponse): void {
+    if (response.status === 'ready' && response.audioUrl) {
       if (response.kind === 'spelling') {
         this.backendSpellingAudioUrls = {
           ...this.backendSpellingAudioUrls,
@@ -1092,13 +1195,12 @@ export class AppComponent implements OnInit, OnDestroy {
         };
       }
       this.updateAudioPrepItem(item.normalized, item.kind, { status: 'ready', audioUrl: response.audioUrl, error: null });
-    } catch (error) {
-      this.audioPrepError = error instanceof Error ? error.message : 'Generování selhalo.';
-      this.updateAudioPrepItem(item.normalized, item.kind, {
-        status: 'error',
-        error: this.audioPrepError,
-      });
+      return;
     }
+    this.updateAudioPrepItem(item.normalized, item.kind, {
+      status: response.status,
+      error: response.error ?? null,
+    });
   }
 
   private updateAudioPrepItem(normalized: string, kind: AudioPrepItem['kind'], update: Partial<AudioPrepItem>): void {
@@ -1114,6 +1216,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private flipcardImagePath(word: string): string {
     return `flipcards/images/${encodeURIComponent(word)}`;
+  }
+
+  private async delay(milliseconds: number): Promise<void> {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
   }
 
   private pickQuestion(): void {

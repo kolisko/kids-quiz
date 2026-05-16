@@ -35,6 +35,9 @@ enum class FlipcardSource {
 enum class SpellingAudioStatus {
     ready,
     missing,
+    queued,
+    generating,
+    error,
 }
 
 enum class SpellingAudioKind {
@@ -46,6 +49,9 @@ enum class SpellingAudioKind {
 enum class FlipcardImageStatus {
     ready,
     missing,
+    queued,
+    generating,
+    error,
 }
 
 @Serializable
@@ -131,6 +137,7 @@ data class SpellingAudioWordResponse(
     val status: SpellingAudioStatus,
     val kind: SpellingAudioKind = SpellingAudioKind.word,
     val audioUrl: String? = null,
+    val error: String? = null,
 )
 
 @Serializable
@@ -209,6 +216,7 @@ data class FlipcardImageResponse(
     val normalized: String,
     val status: FlipcardImageStatus,
     val imageUrl: String? = null,
+    val error: String? = null,
 )
 
 @Serializable
@@ -217,8 +225,10 @@ data class FlipcardAsset(
     val normalized: String,
     val imageStatus: FlipcardImageStatus,
     val imageUrl: String? = null,
+    val imageError: String? = null,
     val audioStatus: SpellingAudioStatus,
     val audioUrl: String? = null,
+    val audioError: String? = null,
 )
 
 @Serializable

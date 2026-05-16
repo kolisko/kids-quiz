@@ -250,7 +250,7 @@
       <article class="asset-card" *ngFor="let asset of flipcardAssets">
         <strong>{{ asset.word }}</strong>
         <span [class.asset-ready]="asset.imageStatus === 'ready'" [class.asset-missing]="asset.imageStatus !== 'ready'">
-          {{ asset.imageStatus === 'ready' ? 'Hotovo' : (assetImageIsGenerating(asset) ? 'Generuji obrázek...' : 'Chybí obrázek') }}
+          {{ assetImageStatusLabel(asset) }}
         </span>
         <img *ngIf="asset.imageUrl" [src]="asset.imageUrl" [alt]="asset.word">
         <button

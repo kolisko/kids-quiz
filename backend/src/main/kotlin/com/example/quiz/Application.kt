@@ -179,7 +179,7 @@ fun Application.module() {
                     val word = call.requireSpellingAudioWord() ?: return@post
                     val kind = call.requireSpellingAudioKind() ?: return@post
                     try {
-                        val response = SpellingAudioService.generate(word, kind)
+                        val response = SpellingAudioService.enqueueGeneration(word, kind)
                             ?: run {
                                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                                 return@post
@@ -265,7 +265,7 @@ fun Application.module() {
                     if (!Auth.requireAuthenticated(call)) return@post
                     val word = call.requireFlipcardImageWord() ?: return@post
                     try {
-                        val response = FlipcardImageService.generate(word)
+                        val response = FlipcardImageService.enqueueGeneration(word)
                             ?: run {
                                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                                 return@post

@@ -38,7 +38,6 @@ private data class OpenAiTtsRequest(
 class SpellingAudioException(message: String) : RuntimeException(message)
 
 object SpellingAudioService {
-    private val lock = Any()
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(20))
         .build()
@@ -46,19 +45,35 @@ object SpellingAudioService {
     fun status(rawWord: String, kind: SpellingAudioKind): SpellingAudioWordResponse? {
         val word = spellingAudioWord(rawWord) ?: return null
         val ready = Files.isRegularFile(audioPath(word, kind))
+        val job = ArtifactGenerationQueue.snapshot(audioJobKey(word, kind))
         return SpellingAudioWordResponse(
             word = word.text,
             normalized = word.normalized,
-            status = if (ready) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
+            status = when {
+                ready -> SpellingAudioStatus.ready
+                job != null -> job.status.toSpellingAudioStatus()
+                else -> SpellingAudioStatus.missing
+            },
             kind = kind,
             audioUrl = if (ready) audioUrl(word, kind) else null,
+            error = if (ready) null else job?.error,
         )
     }
 
-    fun generate(rawWord: String, kind: SpellingAudioKind): SpellingAudioWordResponse? {
+    fun enqueueGeneration(rawWord: String, kind: SpellingAudioKind): SpellingAudioWordResponse? {
         val word = spellingAudioWord(rawWord) ?: return null
-        synchronized(lock) {
-            val outputPath = audioPath(word, kind)
+        val outputPath = audioPath(word, kind)
+        if (Files.isRegularFile(outputPath)) {
+            ArtifactGenerationQueue.clear(audioJobKey(word, kind))
+            return SpellingAudioWordResponse(
+                word = word.text,
+                normalized = word.normalized,
+                status = SpellingAudioStatus.ready,
+                kind = kind,
+                audioUrl = audioUrl(word, kind),
+            )
+        }
+        val job = ArtifactGenerationQueue.enqueue(audioJobKey(word, kind), ArtifactJobPool.audio) {
             if (!Files.isRegularFile(outputPath)) {
                 generateToFile(word, kind, outputPath)
             }
@@ -66,9 +81,10 @@ object SpellingAudioService {
         return SpellingAudioWordResponse(
             word = word.text,
             normalized = word.normalized,
-            status = SpellingAudioStatus.ready,
+            status = job.status.toSpellingAudioStatus(),
             kind = kind,
-            audioUrl = audioUrl(word, kind),
+            audioUrl = null,
+            error = job.error,
         )
     }
 
@@ -112,6 +128,10 @@ object SpellingAudioService {
 
     private fun audioCacheKey(word: SpellingWord, kind: SpellingAudioKind): String {
         return sha256Hex(listOf(kind.name, word.normalized, ttsModel(), ttsVoice(), ttsInstructions(kind)).joinToString("\u001f"))
+    }
+
+    private fun audioJobKey(word: SpellingWord, kind: SpellingAudioKind): String {
+        return "spelling_audio:${audioCacheKey(word, kind)}"
     }
 
     private fun audioUrl(word: SpellingWord, kind: SpellingAudioKind): String {
@@ -163,5 +183,13 @@ object SpellingAudioService {
     private fun sha256Hex(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun ArtifactJobStatus.toSpellingAudioStatus(): SpellingAudioStatus {
+        return when (this) {
+            ArtifactJobStatus.queued -> SpellingAudioStatus.queued
+            ArtifactJobStatus.generating -> SpellingAudioStatus.generating
+            ArtifactJobStatus.error -> SpellingAudioStatus.error
+        }
     }
 }

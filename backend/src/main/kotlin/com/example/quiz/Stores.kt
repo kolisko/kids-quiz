@@ -160,8 +160,10 @@ object FlipcardStore {
             normalized = word.normalized,
             imageStatus = image?.status ?: FlipcardImageStatus.missing,
             imageUrl = image?.imageUrl,
+            imageError = image?.error,
             audioStatus = audio?.status ?: SpellingAudioStatus.missing,
             audioUrl = audio?.audioUrl,
+            audioError = audio?.error,
         )
     }
 }
