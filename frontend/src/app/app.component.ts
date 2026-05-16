@@ -157,6 +157,7 @@ export class AppComponent implements OnInit, OnDestroy {
   spellingWords: SpellingWord[] = [];
   spellingWordIndex: number | null = null;
   spellingPendingIndices: number[] = [];
+  startingSpellingMode: SpellingSessionMode | null = null;
   score = 0;
   currentIndex: number | null = null;
   currentDirection: PracticeDirection = 'product_to_factors';
@@ -327,9 +328,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async startSpelling(mode: SpellingSessionMode): Promise<void> {
-    this.loading = true;
     this.activeGame = 'spelling';
     this.resetRoundState();
+    this.startingSpellingMode = mode;
+    this.render();
     try {
       const [stats, settings, session] = await Promise.all([
         this.apiGet<SpellingStatsSnapshot>('spelling/stats'),
@@ -341,9 +343,6 @@ export class AppComponent implements OnInit, OnDestroy {
       this.spellingWords = session.words;
       this.spellingPendingIndices = this.spellingWords.map((_, index) => index);
       if (this.settings.audioSource === 'backend_mp3') {
-        this.screen = 'audioPrep';
-        this.loading = false;
-        this.render();
         await this.prepareBackendAudio();
         return;
       }
@@ -356,7 +355,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.checkTtsSupport();
       }
     } finally {
-      this.loading = false;
+      this.startingSpellingMode = null;
       this.render();
     }
   }
@@ -502,6 +501,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.serverStats = emptyStatsByDirection();
     this.spellingWords = [];
     this.spellingPendingIndices = [];
+    this.startingSpellingMode = null;
     this.spellingStats = {};
     this.audioPrepItems = [];
     this.audioPrepError = null;
@@ -523,6 +523,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.serverStats = emptyStatsByDirection();
         this.spellingWords = [];
         this.spellingPendingIndices = [];
+        this.startingSpellingMode = null;
         this.spellingStats = {};
         this.screen = 'login';
         return;
@@ -540,6 +541,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.serverStats = emptyStatsByDirection();
       this.spellingWords = [];
       this.spellingPendingIndices = [];
+      this.startingSpellingMode = null;
       this.spellingStats = {};
       this.screen = this.tests.length > 0 ? 'start' : 'settings';
     } catch {
@@ -607,7 +609,6 @@ export class AppComponent implements OnInit, OnDestroy {
           error: null,
         },
       ]);
-      this.render();
 
       await Promise.all(this.audioPrepItems.map((item) => this.loadAudioItemStatus(item)));
       this.backendAudioUrls = Object.fromEntries(
@@ -620,14 +621,18 @@ export class AppComponent implements OnInit, OnDestroy {
           .filter((item) => item.kind === 'spelling' && item.audioUrl)
           .map((item) => [item.normalized, item.audioUrl as string]),
       );
-      this.render();
 
       const missingItems = this.audioPrepItems.filter((item) => item.status !== 'ready');
+      if (missingItems.length > 0) {
+        this.screen = 'audioPrep';
+        this.render();
+      }
       await this.generateMissingAudio(missingItems);
       if (this.audioPrepItems.some((item) => item.status === 'error')) return;
       this.audioPrepLoading = false;
       this.startSpellingGame();
     } catch (error) {
+      this.screen = 'audioPrep';
       this.audioPrepError = error instanceof Error ? error.message : 'Audio se nepodařilo připravit.';
     } finally {
       this.audioPrepLoading = false;
@@ -883,6 +888,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.score = 0;
     this.currentIndex = null;
     this.spellingWordIndex = null;
+    this.startingSpellingMode = null;
     this.currentDirection = 'product_to_factors';
     this.currentFactorQuestion = null;
     this.spellingPendingIndices = [];

@@ -117,11 +117,11 @@
     </div>
 
     <div class="mode-list">
-      <button class="primary-button mode-button" type="button" (click)="startSpelling('latest')" [disabled]="loading">
-        {{ loading ? 'Načítám...' : 'Nová slovíčka' }}
+      <button class="primary-button mode-button" type="button" (click)="startSpelling('latest')" [disabled]="loading || startingSpellingMode !== null">
+        {{ startingSpellingMode === 'latest' ? 'Načítám...' : 'Nová slovíčka' }}
       </button>
-      <button class="primary-button mode-button" type="button" (click)="startSpelling('older')" [disabled]="loading">
-        {{ loading ? 'Načítám...' : 'Starší slovíčka' }}
+      <button class="primary-button mode-button" type="button" (click)="startSpelling('older')" [disabled]="loading || startingSpellingMode !== null">
+        {{ startingSpellingMode === 'older' ? 'Načítám...' : 'Starší slovíčka' }}
       </button>
     </div>
   </section>
