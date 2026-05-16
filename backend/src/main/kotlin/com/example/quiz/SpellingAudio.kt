@@ -53,9 +53,9 @@ object SpellingAudioService {
                     word = word.text,
                     normalized = word.normalized,
                     status = if (wordReady) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
-                    audioUrl = if (wordReady) audioUrl(word.id, SpellingAudioKind.word) else null,
+                    audioUrl = if (wordReady) audioUrl(word, SpellingAudioKind.word) else null,
                     spellingStatus = if (spellingReady) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
-                    spellingAudioUrl = if (spellingReady) audioUrl(word.id, SpellingAudioKind.spelling) else null,
+                    spellingAudioUrl = if (spellingReady) audioUrl(word, SpellingAudioKind.spelling) else null,
                 )
             },
         )
@@ -75,7 +75,7 @@ object SpellingAudioService {
             normalized = word.normalized,
             status = SpellingAudioStatus.ready,
             kind = kind,
-            audioUrl = audioUrl(word.id, kind),
+            audioUrl = audioUrl(word, kind),
         )
     }
 
@@ -121,7 +121,9 @@ object SpellingAudioService {
         return sha256Hex(listOf(kind.name, word.normalized, ttsModel(), ttsVoice(), ttsInstructions(kind)).joinToString("\u001f"))
     }
 
-    private fun audioUrl(wordId: Long, kind: SpellingAudioKind): String = "/api/spelling/audio/words/$wordId.mp3?kind=${kind.name}"
+    private fun audioUrl(word: SpellingWord, kind: SpellingAudioKind): String {
+        return "/api/spelling/audio/words/${word.id}.mp3?kind=${kind.name}&v=${audioCacheKey(word, kind)}"
+    }
 
     private fun ttsModel(): String = System.getenv("OPENAI_TTS_MODEL")?.takeIf { it.isNotBlank() }
         ?: defaultOpenAiTtsModel

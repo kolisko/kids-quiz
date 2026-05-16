@@ -186,6 +186,7 @@ fun Application.module() {
                         call.respond(HttpStatusCode.NotFound, mapOf("error" to "audio_not_found"))
                         return@get
                     }
+                    call.response.headers.append(HttpHeaders.CacheControl, "no-store")
                     call.respondBytes(
                         bytes = java.nio.file.Files.readAllBytes(audioFile),
                         contentType = ContentType.Audio.MPEG,
