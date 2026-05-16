@@ -128,7 +128,8 @@ tasks.register<Exec>("configureRemoteCaddy") {
             mkdir -p '$root'
             cat > '$root/Caddyfile' <<CADDY_EOF
             $addresses {
-                header Cache-Control "no-store"
+                @noStore not path_regexp ^/api/flipcards/images/.+\.(webp|png|jpe?g)$
+                header @noStore Cache-Control "no-store"
                 reverse_proxy app:8080
             }
             CADDY_EOF
