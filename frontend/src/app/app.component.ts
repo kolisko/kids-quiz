@@ -198,6 +198,8 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardWordIndex: number | null = null;
   flipcardOptions: FlipcardOption[] = [];
   flipcardAttemptFailed = false;
+  flipcardImageLoaded = false;
+  flipcardImageError: string | null = null;
   spellingWordIndex: number | null = null;
   spellingPendingIndices: number[] = [];
   startingSpellingMode: SpellingSessionMode | null = null;
@@ -263,6 +265,10 @@ export class AppComponent implements OnInit, OnDestroy {
   get currentFlipcardImageUrl(): string | null {
     const word = this.currentFlipcardWord;
     return word ? this.flipcardImageUrls[word.normalized] ?? null : null;
+  }
+
+  get flipcardAnswersDisabled(): boolean {
+    return !this.flipcardImageLoaded || this.flipcardImageError !== null;
   }
 
   get currentAnswerText(): string {
@@ -626,6 +632,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardQueue = [];
     this.flipcardWordIndex = null;
     this.flipcardOptions = [];
+    this.flipcardImageLoaded = false;
+    this.flipcardImageError = null;
     this.spellingPendingIndices = [];
     this.startingSpellingMode = null;
     this.spellingStats = {};
@@ -851,6 +859,7 @@ export class AppComponent implements OnInit, OnDestroy {
       }
       await this.generateMissingAudio(missingItems);
       if (this.audioPrepItems.some((item) => item.status === 'error')) return;
+      await this.preloadFlipcardImages();
       this.audioPrepLoading = false;
       this.startFlipcardGame();
     } catch (error) {
@@ -880,6 +889,27 @@ export class AppComponent implements OnInit, OnDestroy {
       status: 'ready',
       audioUrl: response.imageUrl,
       error: null,
+    });
+  }
+
+  private async preloadFlipcardImages(): Promise<void> {
+    const urls = this.flipcardWords
+      .map((word) => this.flipcardImageUrls[word.normalized])
+      .filter((url): url is string => Boolean(url));
+    await Promise.all(urls.map((url) => this.preloadImage(url)));
+  }
+
+  private async preloadImage(url: string): Promise<void> {
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = url;
+    if (image.decode) {
+      await image.decode();
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('Obrázek se nepodařilo načíst.'));
     });
   }
 
@@ -1032,11 +1062,13 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     this.flipcardWordIndex = nextIndex;
     this.flipcardAttemptFailed = false;
+    this.flipcardImageLoaded = false;
+    this.flipcardImageError = null;
     this.flipcardOptions = this.buildFlipcardOptions(nextIndex);
     this.answerVisible = false;
     this.timedOut = false;
     this.secondsLeft = this.settings.secondsLimit;
-    this.startTimer();
+    this.render();
   }
 
   private buildFlipcardOptions(index: number): FlipcardOption[] {
@@ -1049,7 +1081,7 @@ export class AppComponent implements OnInit, OnDestroy {
   selectFlipcardOption(option: FlipcardOption): void {
     const current = this.currentFlipcardWord;
     const currentIndex = this.flipcardWordIndex;
-    if (!current || currentIndex === null || option.disabled) return;
+    if (!current || currentIndex === null || option.disabled || this.flipcardAnswersDisabled) return;
     this.playFlipcardWordAudio(option.word);
     if (option.word.normalized !== current.normalized) {
       this.disableFlipcardOption(option.word.normalized);
@@ -1076,6 +1108,21 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardOptions = this.flipcardOptions.map((option) => (
       option.word.normalized === normalized ? { ...option, disabled: true } : option
     ));
+    this.render();
+  }
+
+  onFlipcardImageLoad(): void {
+    if (this.activeGame !== 'flipcards' || this.flipcardWordIndex === null) return;
+    this.flipcardImageLoaded = true;
+    this.flipcardImageError = null;
+    this.startTimer();
+    this.render();
+  }
+
+  onFlipcardImageError(): void {
+    this.clearTimer();
+    this.flipcardImageLoaded = false;
+    this.flipcardImageError = 'Obrázek se nepodařilo načíst.';
     this.render();
   }
 
@@ -1249,6 +1296,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardQueue = [];
     this.flipcardOptions = [];
     this.flipcardAttemptFailed = false;
+    this.flipcardImageLoaded = false;
+    this.flipcardImageError = null;
     this.startingSpellingMode = null;
     this.currentDirection = 'product_to_factors';
     this.currentFactorQuestion = null;

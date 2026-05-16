@@ -232,18 +232,18 @@ fun Application.module() {
                         }
                     call.respond(FlipcardAnswerResultResponse(word = word, stats = stats))
                 }
-                get("/images/{word}.png") {
+                get("/images/{word}.{ext}") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    val word = call.requireFlipcardImageWord(".png") ?: return@get
+                    val word = call.requireFlipcardImageWord() ?: return@get
                     val imageFile = FlipcardImageService.imageFile(word)
                     if (imageFile == null) {
                         call.respond(HttpStatusCode.NotFound, mapOf("error" to "image_not_found"))
                         return@get
                     }
-                    call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+                    call.response.headers.append(HttpHeaders.CacheControl, "public, max-age=31536000, immutable")
                     call.respondBytes(
                         bytes = java.nio.file.Files.readAllBytes(imageFile),
-                        contentType = ContentType.Image.PNG,
+                        contentType = ContentType.parse(FlipcardImageService.imageContentType()),
                     )
                 }
                 get("/images/{word}") {
@@ -359,8 +359,8 @@ private suspend fun ApplicationCall.requireSpellingAudioKind(): SpellingAudioKin
     return kind
 }
 
-private suspend fun ApplicationCall.requireFlipcardImageWord(suffix: String = ""): String? {
-    val word = parameters["word"]?.removeSuffix(suffix)?.trim()
+private suspend fun ApplicationCall.requireFlipcardImageWord(): String? {
+    val word = parameters["word"]?.trim()
     if (word.isNullOrBlank()) {
         respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
         return null

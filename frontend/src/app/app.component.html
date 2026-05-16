@@ -266,14 +266,23 @@
         <div class="question-card flipcard-card">
           <span class="label">Co je na obrázku?</span>
           <div class="flipcard-image-frame">
-            <img *ngIf="currentFlipcardImageUrl" [src]="currentFlipcardImageUrl" [alt]="currentFlipcardWord?.text ?? 'Flipcard'">
+            <div class="flipcard-image-loader" *ngIf="!flipcardImageLoaded">
+              {{ flipcardImageError ?? 'Načítám obrázek...' }}
+            </div>
+            <img
+              *ngIf="currentFlipcardImageUrl"
+              [class.flipcard-image-hidden]="!flipcardImageLoaded"
+              [src]="currentFlipcardImageUrl"
+              [alt]="currentFlipcardWord?.text ?? 'Flipcard'"
+              (load)="onFlipcardImageLoad()"
+              (error)="onFlipcardImageError()">
           </div>
           <div class="flipcard-options">
             <button
               class="primary-button flipcard-option-button"
               type="button"
               *ngFor="let option of flipcardOptions"
-              [disabled]="option.disabled"
+              [disabled]="option.disabled || flipcardAnswersDisabled"
               (click)="selectFlipcardOption(option)">
               {{ option.word.text }}
             </button>

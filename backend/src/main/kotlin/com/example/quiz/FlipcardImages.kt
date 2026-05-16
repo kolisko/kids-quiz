@@ -26,6 +26,8 @@ private val imageJson = Json {
 
 private const val defaultOpenAiImageModel = "gpt-image-1-mini"
 private const val defaultOpenAiImageSize = "1024x1024"
+private const val defaultOpenAiImageQuality = "low"
+private const val defaultOpenAiImageFormat = "webp"
 private const val defaultFlipcardImagePrompt =
     "Create a bright, friendly, child-safe flashcard picture for the English word %s. Show one clear object or simple scene, no text, no letters, no watermark, centered subject, colorful educational style."
 
@@ -34,6 +36,8 @@ private data class OpenAiImageRequest(
     val model: String,
     val prompt: String,
     val size: String,
+    val quality: String,
+    val output_format: String,
     val n: Int = 1,
 )
 
@@ -88,6 +92,8 @@ object FlipcardImageService {
                 model = imageModel(),
                 prompt = imagePrompt(word),
                 size = imageSize(),
+                quality = imageQuality(),
+                output_format = imageFormat(),
             ),
         )
         val request = HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/images/generations"))
@@ -114,15 +120,18 @@ object FlipcardImageService {
     }
 
     private fun imagePath(word: FlipcardWord): Path {
-        return runtimeDataPath("images", "flipcards").resolve("${imageCacheKey(word)}.png")
+        return runtimeDataPath("images", "flipcards").resolve("${imageCacheKey(word)}.${imageFormat()}")
     }
 
     private fun imageCacheKey(word: FlipcardWord): String {
-        return sha256Hex(listOf(word.normalized, imageModel(), imageSize(), imagePromptTemplate()).joinToString("\u001f"))
+        return sha256Hex(
+            listOf(word.normalized, imageModel(), imageSize(), imageQuality(), imageFormat(), imagePromptTemplate())
+                .joinToString("\u001f"),
+        )
     }
 
     private fun imageUrl(word: FlipcardWord): String {
-        return "/api/flipcards/images/${urlEncodePathSegment(word.text)}.png?v=${imageCacheKey(word)}"
+        return "/api/flipcards/images/${urlEncodePathSegment(word.text)}.${imageFormat()}?v=${imageCacheKey(word)}"
     }
 
     private fun imageModel(): String = System.getenv("OPENAI_IMAGE_MODEL")?.takeIf { it.isNotBlank() }
@@ -130,6 +139,25 @@ object FlipcardImageService {
 
     private fun imageSize(): String = System.getenv("OPENAI_IMAGE_SIZE")?.takeIf { it.isNotBlank() }
         ?: defaultOpenAiImageSize
+
+    fun imageContentType(): String {
+        return when (imageFormat()) {
+            "jpeg", "jpg" -> "image/jpeg"
+            "png" -> "image/png"
+            else -> "image/webp"
+        }
+    }
+
+    private fun imageQuality(): String = System.getenv("OPENAI_IMAGE_QUALITY")?.takeIf { it.isNotBlank() }
+        ?: defaultOpenAiImageQuality
+
+    private fun imageFormat(): String {
+        return when (System.getenv("OPENAI_IMAGE_FORMAT")?.trim()?.lowercase()) {
+            "png" -> "png"
+            "jpeg", "jpg" -> "jpeg"
+            else -> defaultOpenAiImageFormat
+        }
+    }
 
     private fun imagePromptTemplate(): String = System.getenv("OPENAI_FLIPCARD_IMAGE_PROMPT")?.takeIf { it.isNotBlank() }
         ?: defaultFlipcardImagePrompt
