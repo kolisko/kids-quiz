@@ -900,16 +900,39 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async preloadImage(url: string): Promise<void> {
-    const image = new Image();
-    image.decoding = 'async';
-    image.src = url;
-    if (image.decode) {
-      await image.decode();
-      return;
-    }
     await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error('Obrázek se nepodařilo načíst.'));
+      const image = new Image();
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(new Error('Obrázek se nepodařilo načíst včas.'));
+      }, 15000);
+      const cleanup = () => {
+        window.clearTimeout(timeout);
+        image.onload = null;
+        image.onerror = null;
+      };
+      image.onload = async () => {
+        try {
+          if (image.decode) {
+            await Promise.race([
+              image.decode(),
+              new Promise<void>((decodeResolve) => window.setTimeout(decodeResolve, 3000)),
+            ]);
+          }
+        } finally {
+          cleanup();
+          resolve();
+        }
+      };
+      image.onerror = () => {
+        cleanup();
+        reject(new Error('Obrázek se nepodařilo načíst.'));
+      };
+      image.decoding = 'async';
+      image.src = url;
+      if (image.complete && image.naturalWidth > 0) {
+        image.onload(new Event('load'));
+      }
     });
   }
 
