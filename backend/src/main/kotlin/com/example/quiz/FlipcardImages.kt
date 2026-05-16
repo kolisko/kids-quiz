@@ -65,10 +65,10 @@ object FlipcardImageService {
         )
     }
 
-    fun enqueueGeneration(rawWord: String): FlipcardImageResponse? {
+    fun enqueueGeneration(rawWord: String, force: Boolean = false): FlipcardImageResponse? {
         val word = flipcardImageWord(rawWord) ?: return null
         val outputPath = imagePath(word)
-        if (Files.isRegularFile(outputPath)) {
+        if (!force && Files.isRegularFile(outputPath)) {
             ArtifactGenerationQueue.clear(imageJobKey(word))
             return FlipcardImageResponse(
                 word = word.text,
@@ -78,7 +78,7 @@ object FlipcardImageService {
             )
         }
         val job = ArtifactGenerationQueue.enqueue(imageJobKey(word), ArtifactJobPool.image) {
-            if (!Files.isRegularFile(outputPath)) {
+            if (force || !Files.isRegularFile(outputPath)) {
                 generateToFile(word, outputPath)
             }
         }
@@ -150,7 +150,12 @@ object FlipcardImageService {
     }
 
     private fun imageUrl(word: FlipcardWord): String {
-        return "/api/flipcards/images/${urlEncodePathSegment(word.text)}.${imageFormat()}?v=${imageCacheKey(word)}"
+        return "/api/flipcards/images/${urlEncodePathSegment(word.text)}.${imageFormat()}?v=${imageCacheKey(word)}-${imageVersion(word)}"
+    }
+
+    private fun imageVersion(word: FlipcardWord): Long {
+        val path = imagePath(word)
+        return runCatching { Files.getLastModifiedTime(path).toMillis() }.getOrDefault(0L)
     }
 
     private fun imageModel(): String = System.getenv("OPENAI_IMAGE_MODEL")?.takeIf { it.isNotBlank() }

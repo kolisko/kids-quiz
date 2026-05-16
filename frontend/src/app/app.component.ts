@@ -742,13 +742,22 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async generateAssetImage(asset: FlipcardAsset): Promise<void> {
     if (asset.imageStatus === 'ready' || this.assetImageIsGenerating(asset)) return;
+    await this.enqueueAssetImage(asset, false);
+  }
+
+  async regenerateAssetImage(asset: FlipcardAsset): Promise<void> {
+    if (this.assetImageIsGenerating(asset)) return;
+    await this.enqueueAssetImage(asset, true);
+  }
+
+  private async enqueueAssetImage(asset: FlipcardAsset, force: boolean): Promise<void> {
     this.assetImageGenerating = { ...this.assetImageGenerating, [asset.normalized]: true };
     const { [asset.normalized]: _removed, ...nextErrors } = this.assetImageErrors;
     this.assetImageErrors = nextErrors;
     this.render();
 
     try {
-      const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(asset.word), {});
+      const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(asset.word, force), {});
       await this.applyAssetImageResponse(response);
       if (response.status !== 'ready') {
         this.startAssetLibraryPolling();
@@ -1436,8 +1445,9 @@ export class AppComponent implements OnInit, OnDestroy {
     return `spelling/audio/words/${encodeURIComponent(word)}?kind=${kind}`;
   }
 
-  private flipcardImagePath(word: string): string {
-    return `flipcards/images/${encodeURIComponent(word)}`;
+  private flipcardImagePath(word: string, force = false): string {
+    const suffix = force ? '?force=true' : '';
+    return `flipcards/images/${encodeURIComponent(word)}${suffix}`;
   }
 
   private async delay(milliseconds: number): Promise<void> {

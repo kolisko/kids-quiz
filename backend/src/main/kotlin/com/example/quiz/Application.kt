@@ -264,8 +264,9 @@ fun Application.module() {
                 post("/images/{word}") {
                     if (!Auth.requireAuthenticated(call)) return@post
                     val word = call.requireFlipcardImageWord() ?: return@post
+                    val force = call.request.queryParameters["force"] == "true"
                     try {
-                        val response = FlipcardImageService.enqueueGeneration(word)
+                        val response = FlipcardImageService.enqueueGeneration(word, force)
                             ?: run {
                                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                                 return@post

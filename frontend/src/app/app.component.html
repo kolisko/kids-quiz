@@ -274,6 +274,15 @@
         >
           {{ assetImageIsGenerating(asset) ? 'Stahuji...' : 'Stáhnout obrázek' }}
         </button>
+        <button
+          *ngIf="asset.imageUrl"
+          class="asset-regenerate-button"
+          type="button"
+          (click)="regenerateAssetImage(asset)"
+          [disabled]="assetImageIsGenerating(asset)"
+        >
+          Přegenerovat
+        </button>
         <span class="asset-error" *ngIf="assetImageError(asset)">{{ assetImageError(asset) }}</span>
       </article>
     </div>
