@@ -160,8 +160,9 @@ fun Application.module() {
                 post("/audio/words/{wordId}") {
                     if (!Auth.requireAuthenticated(call)) return@post
                     val wordId = call.requireSpellingWordId() ?: return@post
+                    val kind = call.requireSpellingAudioKind() ?: return@post
                     try {
-                        val response = SpellingAudioService.generate(wordId)
+                        val response = SpellingAudioService.generate(wordId, kind)
                             ?: run {
                                 call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
                                 return@post
@@ -179,7 +180,8 @@ fun Application.module() {
                 get("/audio/words/{wordId}.mp3") {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val wordId = call.requireSpellingWordId() ?: return@get
-                    val audioFile = SpellingAudioService.audioFile(wordId)
+                    val kind = call.requireSpellingAudioKind() ?: return@get
+                    val audioFile = SpellingAudioService.audioFile(wordId, kind)
                     if (audioFile == null) {
                         call.respond(HttpStatusCode.NotFound, mapOf("error" to "audio_not_found"))
                         return@get
@@ -261,6 +263,16 @@ private suspend fun ApplicationCall.requireSpellingWordId(): Long? {
         return null
     }
     return wordId
+}
+
+private suspend fun ApplicationCall.requireSpellingAudioKind(): SpellingAudioKind? {
+    val rawKind = request.queryParameters["kind"] ?: SpellingAudioKind.word.name
+    val kind = SpellingAudioKind.entries.firstOrNull { it.name == rawKind }
+    if (kind == null) {
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_audio_kind"))
+        return null
+    }
+    return kind
 }
 
 private suspend fun ApplicationCall.requirePracticeDirection(): PracticeDirection? {

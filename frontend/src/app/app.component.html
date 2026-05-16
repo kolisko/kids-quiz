@@ -238,6 +238,9 @@
         <button class="primary-button answer-button" type="button" *ngIf="activeGame === 'spelling' && !answerVisible" (click)="replaySpellingAudio()">
           Přehrát znovu
         </button>
+        <button class="primary-button answer-button" type="button" *ngIf="activeGame === 'spelling' && answerVisible" (click)="replaySpellingAnswerAudio()">
+          Přehrát znovu
+        </button>
         <button class="primary-button answer-button" [ngClass]="{ 'wide-action': activeGame !== 'spelling' }" type="button" *ngIf="!answerVisible" (click)="showAnswer()">
           Ukázat odpověď
         </button>

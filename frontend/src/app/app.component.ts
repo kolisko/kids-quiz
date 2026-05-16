@@ -75,6 +75,8 @@ interface SpellingAudioWordStatus {
   normalized: string;
   status: 'ready' | 'missing';
   audioUrl: string | null;
+  spellingStatus: 'ready' | 'missing';
+  spellingAudioUrl: string | null;
 }
 
 interface SpellingAudioStatusResponse {
@@ -87,12 +89,14 @@ interface SpellingAudioWordResponse {
   word: string;
   normalized: string;
   status: 'ready';
+  kind: 'word' | 'spelling';
   audioUrl: string;
 }
 
 interface AudioPrepItem {
   wordId: number;
   word: string;
+  kind: 'word' | 'spelling';
   status: AudioPrepStatus;
   audioUrl: string | null;
   error: string | null;
@@ -184,6 +188,7 @@ export class AppComponent implements OnInit, OnDestroy {
   audioPrepError: string | null = null;
   audioPrepLoading = false;
   backendAudioUrls: Record<number, string> = {};
+  backendSpellingAudioUrls: Record<number, string> = {};
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
     product_to_factors: new Map<number, number>(),
@@ -221,7 +226,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentAnswerText(): string {
     if (this.activeGame === 'spelling') {
-      return this.currentSpellingWord?.text ?? '';
+      return formatSpellingAnswer(this.currentSpellingWord?.text ?? '');
     }
     if (!this.currentQuestion) return '';
     return this.currentDirection === 'factors_to_product'
@@ -379,10 +384,17 @@ export class AppComponent implements OnInit, OnDestroy {
   showAnswer(): void {
     this.answerVisible = true;
     this.clearTimer();
+    if (this.activeGame === 'spelling') {
+      window.setTimeout(() => this.playCurrentSpellingLettersAudio(), 120);
+    }
   }
 
   replaySpellingAudio(): void {
     this.playCurrentSpellingAudio();
+  }
+
+  replaySpellingAnswerAudio(): void {
+    this.playCurrentSpellingLettersAudio();
   }
 
   async retryAudioGeneration(): Promise<void> {
@@ -506,6 +518,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.audioPrepItems = [];
     this.audioPrepError = null;
     this.backendAudioUrls = {};
+    this.backendSpellingAudioUrls = {};
     this.screen = this.tests.length > 0 ? 'start' : 'settings';
     this.render();
   }
@@ -586,18 +599,35 @@ export class AppComponent implements OnInit, OnDestroy {
     this.audioPrepLoading = true;
     this.audioPrepError = null;
     this.backendAudioUrls = {};
+    this.backendSpellingAudioUrls = {};
     try {
       const status = await this.apiGet<SpellingAudioStatusResponse>(`spelling/audio/status?setId=${setId}`);
-      this.audioPrepItems = status.words.map((word) => ({
-        wordId: word.wordId,
-        word: word.word,
-        status: word.status === 'ready' ? 'ready' : 'pending',
-        audioUrl: word.audioUrl,
-        error: null,
-      }));
+      this.audioPrepItems = status.words.flatMap((word) => [
+        {
+          wordId: word.wordId,
+          word: word.word,
+          kind: 'word' as const,
+          status: word.status === 'ready' ? 'ready' as const : 'pending' as const,
+          audioUrl: word.audioUrl,
+          error: null,
+        },
+        {
+          wordId: word.wordId,
+          word: formatSpellingAnswer(word.word),
+          kind: 'spelling' as const,
+          status: word.spellingStatus === 'ready' ? 'ready' as const : 'pending' as const,
+          audioUrl: word.spellingAudioUrl,
+          error: null,
+        },
+      ]);
       this.backendAudioUrls = Object.fromEntries(
         this.audioPrepItems
-          .filter((item) => item.audioUrl)
+          .filter((item) => item.kind === 'word' && item.audioUrl)
+          .map((item) => [item.wordId, item.audioUrl as string]),
+      );
+      this.backendSpellingAudioUrls = Object.fromEntries(
+        this.audioPrepItems
+          .filter((item) => item.kind === 'spelling' && item.audioUrl)
           .map((item) => [item.wordId, item.audioUrl as string]),
       );
       this.render();
@@ -628,26 +658,33 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async generateAudioItem(item: AudioPrepItem): Promise<void> {
-    this.updateAudioPrepItem(item.wordId, { status: 'generating', error: null });
+    this.updateAudioPrepItem(item.wordId, item.kind, { status: 'generating', error: null });
     try {
-      const response = await this.apiPost<SpellingAudioWordResponse>(`spelling/audio/words/${item.wordId}`, {});
-      this.backendAudioUrls = {
-        ...this.backendAudioUrls,
-        [response.wordId]: response.audioUrl,
-      };
-      this.updateAudioPrepItem(item.wordId, { status: 'ready', audioUrl: response.audioUrl, error: null });
+      const response = await this.apiPost<SpellingAudioWordResponse>(`spelling/audio/words/${item.wordId}?kind=${item.kind}`, {});
+      if (response.kind === 'spelling') {
+        this.backendSpellingAudioUrls = {
+          ...this.backendSpellingAudioUrls,
+          [response.wordId]: response.audioUrl,
+        };
+      } else {
+        this.backendAudioUrls = {
+          ...this.backendAudioUrls,
+          [response.wordId]: response.audioUrl,
+        };
+      }
+      this.updateAudioPrepItem(item.wordId, item.kind, { status: 'ready', audioUrl: response.audioUrl, error: null });
     } catch (error) {
       this.audioPrepError = error instanceof Error ? error.message : 'Generování selhalo.';
-      this.updateAudioPrepItem(item.wordId, {
+      this.updateAudioPrepItem(item.wordId, item.kind, {
         status: 'error',
         error: this.audioPrepError,
       });
     }
   }
 
-  private updateAudioPrepItem(wordId: number, update: Partial<AudioPrepItem>): void {
+  private updateAudioPrepItem(wordId: number, kind: AudioPrepItem['kind'], update: Partial<AudioPrepItem>): void {
     this.audioPrepItems = this.audioPrepItems.map((item) => (
-      item.wordId === wordId ? { ...item, ...update } : item
+      item.wordId === wordId && item.kind === kind ? { ...item, ...update } : item
     ));
     this.render();
   }
@@ -847,6 +884,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.audioPrepError = null;
     this.audioPrepLoading = false;
     this.backendAudioUrls = {};
+    this.backendSpellingAudioUrls = {};
     this.answerVisible = false;
     this.timedOut = false;
     this.flash = null;
@@ -922,10 +960,46 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  private playCurrentSpellingLettersAudio(): void {
+    if (this.settings.audioSource === 'backend_mp3') {
+      this.playCurrentBackendSpellingAudio();
+      return;
+    }
+    const word = this.currentSpellingWord?.text;
+    const speech = window.speechSynthesis;
+    if (!word) return;
+    if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
+      this.setTtsUnsupported('Web Speech API neni v tomto prohlizeci dostupne.');
+      return;
+    }
+    speech.cancel();
+    const utterance = new SpeechSynthesisUtterance(formatSpellingSpeech(word));
+    utterance.lang = 'en-US';
+    utterance.rate = 0.82;
+    utterance.onerror = (event) => {
+      this.setTtsUnsupported('Prehrani spelling TTS skoncilo chybou.', event.error, speech.getVoices().length);
+    };
+    try {
+      speech.speak(utterance);
+    } catch (error) {
+      this.setTtsUnsupported('Prehrani spelling TTS selhalo.', error instanceof Error ? error.message : String(error), speech.getVoices().length);
+    }
+  }
+
   private playCurrentBackendAudio(): void {
     const wordId = this.currentSpellingWord?.id;
     if (!wordId) return;
     const audioUrl = this.backendAudioUrls[wordId];
+    if (!audioUrl) return;
+    this.stopBackendAudio();
+    this.backendAudio = new Audio(audioUrl);
+    void this.backendAudio.play();
+  }
+
+  private playCurrentBackendSpellingAudio(): void {
+    const wordId = this.currentSpellingWord?.id;
+    if (!wordId) return;
+    const audioUrl = this.backendSpellingAudioUrls[wordId];
     if (!audioUrl) return;
     this.stopBackendAudio();
     this.backendAudio = new Audio(audioUrl);
@@ -1037,6 +1111,18 @@ function answerCountLabel(count: number): string {
 
 function parseSpellingWords(rawWords: string): string[] {
   return rawWords.split(',').map((word) => word.trim()).filter(Boolean);
+}
+
+function spellingLetters(word: string): string[] {
+  return word.trim().split('').filter((letter) => /[\p{L}\p{N}]/u.test(letter));
+}
+
+function formatSpellingAnswer(word: string): string {
+  return spellingLetters(word).map((letter) => letter.toLocaleUpperCase('en-US')).join('-');
+}
+
+function formatSpellingSpeech(word: string): string {
+  return spellingLetters(word).map((letter) => letter.toLocaleUpperCase('en-US')).join(', ');
 }
 
 function emptyStatsByDirection(): Record<PracticeDirection, Record<string, QuestionStats>> {

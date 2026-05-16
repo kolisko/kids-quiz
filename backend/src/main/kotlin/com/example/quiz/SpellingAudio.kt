@@ -21,6 +21,8 @@ private const val defaultOpenAiTtsModel = "gpt-4o-mini-tts"
 private const val defaultOpenAiTtsVoice = "marin"
 private const val defaultOpenAiTtsInstructions =
     "Pronounce this single English spelling word clearly in American English. Say only the word."
+private const val defaultOpenAiSpellingTtsInstructions =
+    "Spell this English word clearly one letter at a time. Say only the letters."
 
 @Serializable
 private data class OpenAiTtsRequest(
@@ -44,24 +46,27 @@ object SpellingAudioService {
         return SpellingAudioStatusResponse(
             setId = setId,
             words = words.map { word ->
-                val ready = Files.isRegularFile(audioPath(word))
+                val wordReady = Files.isRegularFile(audioPath(word, SpellingAudioKind.word))
+                val spellingReady = Files.isRegularFile(audioPath(word, SpellingAudioKind.spelling))
                 SpellingAudioWordStatus(
                     wordId = word.id,
                     word = word.text,
                     normalized = word.normalized,
-                    status = if (ready) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
-                    audioUrl = if (ready) audioUrl(word.id) else null,
+                    status = if (wordReady) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
+                    audioUrl = if (wordReady) audioUrl(word.id, SpellingAudioKind.word) else null,
+                    spellingStatus = if (spellingReady) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
+                    spellingAudioUrl = if (spellingReady) audioUrl(word.id, SpellingAudioKind.spelling) else null,
                 )
             },
         )
     }
 
-    fun generate(wordId: Long): SpellingAudioWordResponse? {
+    fun generate(wordId: Long, kind: SpellingAudioKind): SpellingAudioWordResponse? {
         val word = SpellingStore.readWordForAudio(wordId) ?: return null
         synchronized(lock) {
-            val outputPath = audioPath(word)
+            val outputPath = audioPath(word, kind)
             if (!Files.isRegularFile(outputPath)) {
-                generateToFile(word, outputPath)
+                generateToFile(word, kind, outputPath)
             }
         }
         return SpellingAudioWordResponse(
@@ -69,17 +74,18 @@ object SpellingAudioService {
             word = word.text,
             normalized = word.normalized,
             status = SpellingAudioStatus.ready,
-            audioUrl = audioUrl(word.id),
+            kind = kind,
+            audioUrl = audioUrl(word.id, kind),
         )
     }
 
-    fun audioFile(wordId: Long): Path? {
+    fun audioFile(wordId: Long, kind: SpellingAudioKind): Path? {
         val word = SpellingStore.readWordForAudio(wordId) ?: return null
-        val path = audioPath(word)
+        val path = audioPath(word, kind)
         return path.takeIf { Files.isRegularFile(it) }
     }
 
-    private fun generateToFile(word: SpellingWord, outputPath: Path) {
+    private fun generateToFile(word: SpellingWord, kind: SpellingAudioKind, outputPath: Path) {
         val apiKey = System.getenv("OPENAI_API_KEY")?.takeIf { it.isNotBlank() }
             ?: throw SpellingAudioException("tts_not_configured")
         Files.createDirectories(outputPath.parent)
@@ -88,8 +94,8 @@ object SpellingAudioService {
             OpenAiTtsRequest(
                 model = ttsModel(),
                 voice = ttsVoice(),
-                input = word.text,
-                instructions = ttsInstructions(),
+                input = ttsInput(word, kind),
+                instructions = ttsInstructions(kind),
             ),
         )
         val request = HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/audio/speech"))
@@ -107,15 +113,15 @@ object SpellingAudioService {
         Files.move(tempPath, outputPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 
-    private fun audioPath(word: SpellingWord): Path {
-        return runtimeDataPath("audio", "spelling").resolve("${audioCacheKey(word)}.mp3")
+    private fun audioPath(word: SpellingWord, kind: SpellingAudioKind): Path {
+        return runtimeDataPath("audio", "spelling").resolve("${audioCacheKey(word, kind)}.mp3")
     }
 
-    private fun audioCacheKey(word: SpellingWord): String {
-        return sha256Hex(listOf(word.normalized, ttsModel(), ttsVoice(), ttsInstructions()).joinToString("\u001f"))
+    private fun audioCacheKey(word: SpellingWord, kind: SpellingAudioKind): String {
+        return sha256Hex(listOf(kind.name, word.normalized, ttsModel(), ttsVoice(), ttsInstructions(kind)).joinToString("\u001f"))
     }
 
-    private fun audioUrl(wordId: Long): String = "/api/spelling/audio/words/$wordId.mp3"
+    private fun audioUrl(wordId: Long, kind: SpellingAudioKind): String = "/api/spelling/audio/words/$wordId.mp3?kind=${kind.name}"
 
     private fun ttsModel(): String = System.getenv("OPENAI_TTS_MODEL")?.takeIf { it.isNotBlank() }
         ?: defaultOpenAiTtsModel
@@ -123,8 +129,27 @@ object SpellingAudioService {
     private fun ttsVoice(): String = System.getenv("OPENAI_TTS_VOICE")?.takeIf { it.isNotBlank() }
         ?: defaultOpenAiTtsVoice
 
-    private fun ttsInstructions(): String = System.getenv("OPENAI_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
-        ?: defaultOpenAiTtsInstructions
+    private fun ttsInstructions(kind: SpellingAudioKind): String {
+        return when (kind) {
+            SpellingAudioKind.word -> System.getenv("OPENAI_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                ?: defaultOpenAiTtsInstructions
+            SpellingAudioKind.spelling -> System.getenv("OPENAI_SPELLING_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                ?: defaultOpenAiSpellingTtsInstructions
+        }
+    }
+
+    private fun ttsInput(word: SpellingWord, kind: SpellingAudioKind): String {
+        return when (kind) {
+            SpellingAudioKind.word -> word.text
+            SpellingAudioKind.spelling -> spellingLetters(word.text).joinToString(", ")
+        }
+    }
+
+    private fun spellingLetters(word: String): List<String> {
+        return word.trim()
+            .filter { it.isLetterOrDigit() }
+            .map { it.uppercaseChar().toString() }
+    }
 
     private fun sha256Hex(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())

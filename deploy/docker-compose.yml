@@ -12,6 +12,7 @@ services:
       OPENAI_TTS_MODEL: ${OPENAI_TTS_MODEL:-gpt-4o-mini-tts}
       OPENAI_TTS_VOICE: ${OPENAI_TTS_VOICE:-marin}
       OPENAI_TTS_INSTRUCTIONS: ${OPENAI_TTS_INSTRUCTIONS:-Pronounce this single English spelling word clearly in American English. Say only the word.}
+      OPENAI_SPELLING_TTS_INSTRUCTIONS: ${OPENAI_SPELLING_TTS_INSTRUCTIONS:-Spell this English word clearly one letter at a time. Say only the letters.}
     volumes:
       - /opt/kids-quiz/data:/data
     expose:

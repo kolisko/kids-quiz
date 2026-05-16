@@ -31,6 +31,11 @@ enum class SpellingAudioStatus {
     missing,
 }
 
+enum class SpellingAudioKind {
+    word,
+    spelling,
+}
+
 @Serializable
 data class Question(
     val id: Long,
@@ -113,6 +118,8 @@ data class SpellingAudioWordStatus(
     val normalized: String,
     val status: SpellingAudioStatus,
     val audioUrl: String? = null,
+    val spellingStatus: SpellingAudioStatus = SpellingAudioStatus.missing,
+    val spellingAudioUrl: String? = null,
 )
 
 @Serializable
@@ -127,6 +134,7 @@ data class SpellingAudioWordResponse(
     val word: String,
     val normalized: String,
     val status: SpellingAudioStatus,
+    val kind: SpellingAudioKind = SpellingAudioKind.word,
     val audioUrl: String,
 )
 
