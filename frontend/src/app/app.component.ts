@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, ListRestart, LucideAngularModule, MessageCircleOff, Settings } from 'lucide-angular';
+import { ArrowLeft, ListRestart, LucideAngularModule, MessageCircleOff, Play, Settings } from 'lucide-angular';
 
 type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'finished';
 type QuizTestType = 'multiplication' | 'english';
@@ -126,6 +126,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly settingsIcon = Settings;
   readonly newTestIcon = ListRestart;
   readonly ttsUnavailableIcon = MessageCircleOff;
+  readonly playIcon = Play;
   readonly practiceModes: PracticeModeOption[] = [
     { mode: 'product_to_factors', label: 'Najdi násobení' },
     { mode: 'factors_to_product', label: 'Spočítej výsledek' },
@@ -245,8 +246,13 @@ export class AppComponent implements OnInit, OnDestroy {
     ].join('\n');
   }
 
-  get audioPrepReadyCount(): number {
-    return this.audioPrepItems.filter((item) => item.status === 'ready').length;
+  get visibleAudioPrepItems(): AudioPrepItem[] {
+    return this.audioPrepItems.filter((item) => item.status === 'generating' || item.status === 'error');
+  }
+
+  get audioPrepSummary(): string {
+    if (this.hasAudioPrepErrors) return 'Některé audio se nepodařilo připravit.';
+    return this.visibleAudioPrepItems.length > 0 ? 'Generuji chybějící audio...' : 'Kontroluji audio...';
   }
 
   get hasAudioPrepErrors(): boolean {

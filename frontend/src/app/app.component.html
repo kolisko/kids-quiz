@@ -204,14 +204,14 @@
     <div class="question-card">
       <span class="label">Audio</span>
       <h1>Připravuji výslovnost</h1>
-      <p class="audio-prep-summary">{{ audioPrepReadyCount }} / {{ audioPrepItems.length }} hotovo</p>
-      <div class="audio-prep-list">
-        <div class="audio-prep-row" *ngFor="let item of audioPrepItems" [ngClass]="'audio-prep-' + item.status">
+      <p class="audio-prep-summary">{{ audioPrepSummary }}</p>
+      <div class="audio-prep-list" *ngIf="visibleAudioPrepItems.length > 0">
+        <div class="audio-prep-row" *ngFor="let item of visibleAudioPrepItems" [ngClass]="'audio-prep-' + item.status">
           <span>{{ item.word }}</span>
           <div class="audio-prep-track">
             <span class="audio-prep-fill"></span>
           </div>
-          <strong>{{ item.status === 'ready' ? 'Hotovo' : item.status === 'generating' ? 'Generuji' : item.status === 'error' ? 'Chyba' : 'Čeká' }}</strong>
+          <strong>{{ item.status === 'error' ? 'Chyba' : 'Generuji' }}</strong>
         </div>
       </div>
       <p class="error settings-error" *ngIf="audioPrepError">{{ audioPrepError }}</p>
@@ -228,6 +228,15 @@
   <section class="play-surface" *ngIf="screen === 'play'">
     <ng-container *ngIf="hasCurrentPrompt; else noQuestion">
       <div class="question-card">
+        <button
+          class="icon-button replay-audio-button"
+          type="button"
+          *ngIf="activeGame === 'spelling'"
+          (click)="answerVisible ? replaySpellingAnswerAudio() : replaySpellingAudio()"
+          title="Přehrát znovu"
+          aria-label="Přehrát znovu">
+          <lucide-icon [img]="playIcon" [size]="26"></lucide-icon>
+        </button>
         <span class="label">{{ answerVisible ? 'Odpověď' : 'Otázka' }}</span>
         <h1>{{ answerVisible ? currentAnswerText : currentQuestionText }}</h1>
         <p class="answer-hint" *ngIf="!answerVisible && currentAnswerHint">{{ currentAnswerHint }}</p>
@@ -235,13 +244,7 @@
       </div>
 
       <div class="main-actions answer-actions">
-        <button class="primary-button answer-button" type="button" *ngIf="activeGame === 'spelling' && !answerVisible" (click)="replaySpellingAudio()">
-          Přehrát znovu
-        </button>
-        <button class="primary-button answer-button" type="button" *ngIf="activeGame === 'spelling' && answerVisible" (click)="replaySpellingAnswerAudio()">
-          Přehrát znovu
-        </button>
-        <button class="primary-button answer-button" [ngClass]="{ 'wide-action': activeGame !== 'spelling' }" type="button" *ngIf="!answerVisible" (click)="showAnswer()">
+        <button class="primary-button answer-button wide-action" type="button" *ngIf="!answerVisible" (click)="showAnswer()">
           Ukázat odpověď
         </button>
         <button class="primary-button answer-button wide-action" type="button" *ngIf="answerVisible && timedOut" (click)="nextAfterTimeout()">

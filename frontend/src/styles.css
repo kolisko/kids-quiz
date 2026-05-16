@@ -149,8 +149,18 @@ lucide-icon {
 }
 
 .question-card {
+  position: relative;
   width: min(1100px, 100%);
   text-align: center;
+}
+
+.replay-audio-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+  color: #0f766e;
+  border-color: rgba(15, 118, 110, 0.2);
+  background: rgba(240, 253, 250, 0.92);
 }
 
 .label {
@@ -765,5 +775,16 @@ textarea {
     min-height: 6.75rem;
     padding-inline: 1.25rem;
     font-size: clamp(1.2rem, 5vw, 1.65rem);
+  }
+
+  .replay-audio-button {
+    top: -0.35rem;
+    right: -0.1rem;
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .question-card h1 {
+    padding-inline: 0.25rem;
   }
 }
