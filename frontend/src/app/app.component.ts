@@ -377,8 +377,24 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.flipcardAssets.filter((asset) => asset.imageStatus === 'missing' || asset.imageStatus === 'error').length;
   }
 
+  get queuedImageAssetsCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.imageStatus === 'queued' || asset.imageStatus === 'generating').length;
+  }
+
+  get readyImageAssetsCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.imageStatus === 'ready').length;
+  }
+
   get missingAudioAssetsCount(): number {
     return this.flipcardAssets.filter((asset) => asset.audioStatus === 'missing' || asset.audioStatus === 'error').length;
+  }
+
+  get queuedAudioAssetsCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.audioStatus === 'queued' || asset.audioStatus === 'generating').length;
+  }
+
+  get readyAudioAssetsCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.audioStatus === 'ready').length;
   }
 
   get bulkImageGenerationActive(): boolean {

@@ -250,7 +250,12 @@
       <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetImages()" [disabled]="missingImageAssetsCount === 0 || bulkImageGenerationActive">
         Stáhnout všechny chybějící obrázky
       </button>
-      <span>{{ missingImageAssetsCount }} chybí</span>
+      <div class="asset-counts" aria-label="Souhrn obrázků">
+        <span>Celkem {{ flipcardAssets.length }}</span>
+        <span>Hotovo {{ readyImageAssetsCount }}</span>
+        <span>Ve frontě {{ queuedImageAssetsCount }}</span>
+        <span>Chybí {{ missingImageAssetsCount }}</span>
+      </div>
     </div>
 
     <div class="asset-grid" *ngIf="!assetLibraryLoading && assetLibraryTab === 'images'">
@@ -277,7 +282,12 @@
       <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetAudio()" [disabled]="missingAudioAssetsCount === 0 || bulkAudioGenerationActive">
         Stáhnout všechna chybějící audia
       </button>
-      <span>{{ missingAudioAssetsCount }} chybí</span>
+      <div class="asset-counts" aria-label="Souhrn audia">
+        <span>Celkem {{ flipcardAssets.length }}</span>
+        <span>Hotovo {{ readyAudioAssetsCount }}</span>
+        <span>Ve frontě {{ queuedAudioAssetsCount }}</span>
+        <span>Chybí {{ missingAudioAssetsCount }}</span>
+      </div>
     </div>
 
     <div class="asset-list" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">

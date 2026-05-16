@@ -641,7 +641,17 @@ textarea {
   margin: 0.5rem 0 1rem;
 }
 
-.asset-toolbar span {
+.asset-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
+.asset-counts span {
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.68);
   color: #4b5563;
   font-weight: 900;
 }
