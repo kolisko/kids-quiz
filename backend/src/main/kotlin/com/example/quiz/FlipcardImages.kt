@@ -27,7 +27,7 @@ private val imageJson = Json {
 private const val defaultOpenAiImageModel = "gpt-image-1-mini"
 private const val defaultOpenAiImageSize = "1024x1024"
 private const val defaultFlipcardImagePrompt =
-    "Create a bright, friendly, child-safe flashcard picture for the English word: %s. Show one clear object or simple scene, no text, no letters, no watermark, centered subject, colorful educational style."
+    "Create a bright, friendly, child-safe flashcard picture for the English word %s. Show one clear object or simple scene, no text, no letters, no watermark, centered subject, colorful educational style."
 
 @Serializable
 private data class OpenAiImageRequest(

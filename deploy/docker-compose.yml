@@ -15,7 +15,7 @@ services:
       OPENAI_SPELLING_TTS_INSTRUCTIONS: ${OPENAI_SPELLING_TTS_INSTRUCTIONS:-Spell this English word clearly one letter at a time. Say only the letters.}
       OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-image-1-mini}
       OPENAI_IMAGE_SIZE: ${OPENAI_IMAGE_SIZE:-1024x1024}
-      OPENAI_FLIPCARD_IMAGE_PROMPT: ${OPENAI_FLIPCARD_IMAGE_PROMPT:-Create a bright, friendly, child-safe flashcard picture for the English word: %s. Show one clear object or simple scene, no text, no letters, no watermark, centered subject, colorful educational style.}
+      OPENAI_FLIPCARD_IMAGE_PROMPT: ${OPENAI_FLIPCARD_IMAGE_PROMPT:-Create a bright, friendly, child-safe flashcard picture for the English word %s. Show one clear object or simple scene, no text, no letters, no watermark, centered subject, colorful educational style.}
     volumes:
       - /opt/kids-quiz/data:/data
     expose:
