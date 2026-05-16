@@ -16,7 +16,7 @@ services:
       OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-image-1-mini}
       OPENAI_IMAGE_SIZE: ${OPENAI_IMAGE_SIZE:-1024x1024}
       OPENAI_IMAGE_QUALITY: ${OPENAI_IMAGE_QUALITY:-low}
-      OPENAI_IMAGE_FORMAT: ${OPENAI_IMAGE_FORMAT:-webp}
+      OPENAI_IMAGE_FORMAT: ${OPENAI_IMAGE_FORMAT:-jpeg}
       OPENAI_FLIPCARD_IMAGE_PROMPT: ${OPENAI_FLIPCARD_IMAGE_PROMPT:-Create a bright, friendly, child-safe flashcard picture for the English word %s. Show one clear object or simple scene, no text, no letters, no watermark, centered subject, colorful educational style.}
     volumes:
       - /opt/kids-quiz/data:/data

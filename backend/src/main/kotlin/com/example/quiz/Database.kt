@@ -28,6 +28,7 @@ private const val englishTestName = "Angličtina"
 private const val defaultSecondsLimit = 30
 private const val defaultTargetScore = 10
 private val defaultAudioSource = AudioSource.browser_tts
+private val defaultFlipcardSource = FlipcardSource.all_words
 
 @Serializable
 private data class LegacyQuestion(val q: String, val a: String)
@@ -170,6 +171,12 @@ object DatabaseMigrator {
                 connection.transaction {
                     addEnglishFlipcards()
                     recordMigration(10, "add_english_flipcards")
+                }
+            }
+            if (11 !in applied) {
+                connection.transaction {
+                    addFlipcardSourceSetting()
+                    recordMigration(11, "add_flipcard_source_setting")
                 }
             }
         }
@@ -547,14 +554,15 @@ object DatabaseMigrator {
                     seconds_limit INTEGER NOT NULL DEFAULT $defaultSecondsLimit CHECK(seconds_limit >= 1),
                     target_score INTEGER NOT NULL DEFAULT $defaultTargetScore CHECK(target_score >= 1),
                     audio_source TEXT NOT NULL DEFAULT '${defaultAudioSource.name}',
+                    flipcard_source TEXT NOT NULL DEFAULT '${defaultFlipcardSource.name}',
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """.trimIndent(),
             )
             statement.executeUpdate(
                 """
-                INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, updated_at)
-                VALUES(1, $defaultSecondsLimit, $defaultTargetScore, '${defaultAudioSource.name}', CURRENT_TIMESTAMP)
+                INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, flipcard_source, updated_at)
+                VALUES(1, $defaultSecondsLimit, $defaultTargetScore, '${defaultAudioSource.name}', '${defaultFlipcardSource.name}', CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET
                     seconds_limit = $defaultSecondsLimit,
                     updated_at = CURRENT_TIMESTAMP
@@ -580,6 +588,28 @@ object DatabaseMigrator {
                 UPDATE app_settings
                 SET audio_source = '${defaultAudioSource.name}'
                 WHERE audio_source IS NULL OR audio_source = ''
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addFlipcardSourceSetting() {
+        createStatement().use { statement ->
+            val columns = statement.executeQuery("PRAGMA table_info(app_settings)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            if ("flipcard_source" !in columns) {
+                statement.executeUpdate(
+                    "ALTER TABLE app_settings ADD COLUMN flipcard_source TEXT NOT NULL DEFAULT '${defaultFlipcardSource.name}'",
+                )
+            }
+            statement.executeUpdate(
+                """
+                UPDATE app_settings
+                SET flipcard_source = '${defaultFlipcardSource.name}'
+                WHERE flipcard_source IS NULL OR flipcard_source = ''
                 """.trimIndent(),
             )
         }
@@ -840,7 +870,7 @@ fun Connection.readAppSettings(): AppSettings {
     ensureAppSettingsRow()
     return prepareStatement(
         """
-        SELECT seconds_limit, target_score, audio_source
+        SELECT seconds_limit, target_score, audio_source, flipcard_source
         FROM app_settings
         WHERE id = 1
         """.trimIndent(),
@@ -851,6 +881,7 @@ fun Connection.readAppSettings(): AppSettings {
                 secondsLimit = rows.getInt("seconds_limit"),
                 targetScore = rows.getInt("target_score"),
                 audioSource = rows.getString("audio_source").toAudioSource(),
+                flipcardSource = rows.getString("flipcard_source").toFlipcardSource(),
             )
         }
     }
@@ -861,18 +892,20 @@ fun Connection.replaceAppSettings(settings: AppSettings) {
     val targetScore = settings.targetScore.coerceAtLeast(1)
     prepareStatement(
         """
-        INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, updated_at)
-        VALUES(1, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, flipcard_source, updated_at)
+        VALUES(1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             seconds_limit = excluded.seconds_limit,
             target_score = excluded.target_score,
             audio_source = excluded.audio_source,
+            flipcard_source = excluded.flipcard_source,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
         statement.setInt(1, secondsLimit)
         statement.setInt(2, targetScore)
         statement.setString(3, settings.audioSource.name)
+        statement.setString(4, settings.flipcardSource.name)
         statement.executeUpdate()
     }
 }
@@ -1327,8 +1360,8 @@ private fun Connection.lastInsertRowId(): Long {
 private fun Connection.ensureAppSettingsRow() {
     prepareStatement(
         """
-        INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, updated_at)
-        VALUES(1, $defaultSecondsLimit, $defaultTargetScore, '${defaultAudioSource.name}', CURRENT_TIMESTAMP)
+        INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, flipcard_source, updated_at)
+        VALUES(1, $defaultSecondsLimit, $defaultTargetScore, '${defaultAudioSource.name}', '${defaultFlipcardSource.name}', CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO NOTHING
         """.trimIndent(),
     ).use { it.executeUpdate() }
@@ -1361,7 +1394,7 @@ private fun Connection.readSpellingStat(normalizedWord: String): QuestionStats {
     }
 }
 
-private fun Connection.readFlipcardWords(): List<FlipcardWord> {
+fun Connection.readFlipcardWords(): List<FlipcardWord> {
     return prepareStatement(
         """
         SELECT word, normalized_word
@@ -1509,6 +1542,10 @@ private val defaultFlipcardWords = listOf(
 
 private fun String?.toAudioSource(): AudioSource {
     return AudioSource.entries.firstOrNull { it.name == this } ?: defaultAudioSource
+}
+
+private fun String?.toFlipcardSource(): FlipcardSource {
+    return FlipcardSource.entries.firstOrNull { it.name == this } ?: defaultFlipcardSource
 }
 
 private fun timestamp(): String = backupTimestampFormatter.format(Instant.now())

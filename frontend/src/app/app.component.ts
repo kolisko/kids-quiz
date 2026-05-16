@@ -3,7 +3,7 @@ import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ArrowLeft, ListRestart, LucideAngularModule, MessageCircleOff, Play, Settings } from 'lucide-angular';
 
-type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'finished';
+type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'finished';
 type QuizTestType = 'multiplication' | 'english';
 type ActiveGame = 'multiplication' | 'spelling' | 'flipcards';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
@@ -12,11 +12,14 @@ type SpellingSessionMode = 'latest' | 'older';
 type TtsStatus = 'checking' | 'supported' | 'unsupported';
 type AudioSource = 'browser_tts' | 'backend_mp3';
 type AudioPrepStatus = 'pending' | 'generating' | 'ready' | 'error';
+type FlipcardSource = 'all_words' | 'ready_only';
+type AssetLibraryTab = 'images' | 'audio';
 
 interface GameSettings {
   secondsLimit: number;
   targetScore: number;
   audioSource: AudioSource;
+  flipcardSource: FlipcardSource;
 }
 
 interface Question {
@@ -122,6 +125,19 @@ interface FlipcardImageResponse {
   imageUrl: string | null;
 }
 
+interface FlipcardAsset {
+  word: string;
+  normalized: string;
+  imageStatus: 'ready' | 'missing';
+  imageUrl: string | null;
+  audioStatus: 'ready' | 'missing';
+  audioUrl: string | null;
+}
+
+interface FlipcardAssetsResponse {
+  items: FlipcardAsset[];
+}
+
 interface FlipcardStatsSnapshot {
   statsByWord: Record<string, QuestionStats>;
 }
@@ -177,7 +193,7 @@ export class AppComponent implements OnInit, OnDestroy {
   password = '';
   snapshotNumber = 'dev';
 
-  settings: GameSettings = { secondsLimit: 30, targetScore: 10, audioSource: 'browser_tts' };
+  settings: GameSettings = { secondsLimit: 30, targetScore: 10, audioSource: 'browser_tts', flipcardSource: 'all_words' };
   tests: QuizTest[] = [];
   selectedTest: QuizTest | null = null;
   activeGame: ActiveGame = 'multiplication';
@@ -218,9 +234,14 @@ export class AppComponent implements OnInit, OnDestroy {
   audioPrepItems: AudioPrepItem[] = [];
   audioPrepError: string | null = null;
   audioPrepLoading = false;
+  assetLibraryTab: AssetLibraryTab = 'images';
+  flipcardAssets: FlipcardAsset[] = [];
+  assetLibraryLoading = false;
+  assetLibraryError: string | null = null;
   backendAudioUrls: Record<string, string> = {};
   backendSpellingAudioUrls: Record<string, string> = {};
   flipcardImageUrls: Record<string, string> = {};
+  flipcardAdvancing = false;
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
     product_to_factors: new Map<number, number>(),
@@ -231,6 +252,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private ttsVoicesTimerId: number | null = null;
   private ttsVoicesChangedHandler: (() => void) | null = null;
   private backendAudio: HTMLAudioElement | null = null;
+  private readonly flipcardImagePreloads = new Map<string, HTMLImageElement>();
+  private readonly flipcardAudioPreloads = new Map<string, HTMLAudioElement>();
 
   constructor(private readonly changeDetector: ChangeDetectorRef) {}
 
@@ -268,7 +291,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get flipcardAnswersDisabled(): boolean {
-    return !this.flipcardImageLoaded || this.flipcardImageError !== null;
+    return this.flipcardAdvancing || !this.flipcardImageLoaded || this.flipcardImageError !== null;
   }
 
   get currentAnswerText(): string {
@@ -432,7 +455,13 @@ export class AppComponent implements OnInit, OnDestroy {
       this.flipcardWords = session.words;
       this.flipcardQueue = this.flipcardWords.map((_, index) => index);
       if (this.flipcardWords.length < 3) {
-        this.screen = 'play';
+        if (this.settings.flipcardSource === 'ready_only') {
+          this.audioPrepItems = [];
+          this.audioPrepError = 'Pro ready-only test jsou potřeba aspoň 3 připravená slovíčka.';
+          this.screen = 'audioPrep';
+        } else {
+          this.screen = 'play';
+        }
         return;
       }
       await this.prepareFlipcardAssets();
@@ -573,6 +602,34 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  async openFlipcardAssetLibrary(): Promise<void> {
+    this.clearTimer();
+    this.ttsDetailsVisible = false;
+    this.assetLibraryError = null;
+    this.assetLibraryLoading = true;
+    this.screen = 'assetLibrary';
+    this.render();
+    try {
+      await this.loadFlipcardAssets();
+    } catch {
+      this.assetLibraryError = 'Knihovnu se nepodařilo načíst.';
+    } finally {
+      this.assetLibraryLoading = false;
+      this.render();
+    }
+  }
+
+  setAssetLibraryTab(tab: AssetLibraryTab): void {
+    this.assetLibraryTab = tab;
+  }
+
+  playAssetAudio(asset: FlipcardAsset): void {
+    if (!asset.audioUrl) return;
+    this.stopBackendAudio();
+    this.backendAudio = new Audio(asset.audioUrl);
+    void this.backendAudio.play();
+  }
+
   async saveSettingsOnly(): Promise<void> {
     this.settingsSaved = false;
     this.settingsError = null;
@@ -643,6 +700,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.backendAudioUrls = {};
     this.backendSpellingAudioUrls = {};
     this.flipcardImageUrls = {};
+    this.flipcardAdvancing = false;
+    this.clearFlipcardPreloads();
     this.screen = this.tests.length > 0 ? 'start' : 'settings';
     this.render();
   }
@@ -717,6 +776,7 @@ export class AppComponent implements OnInit, OnDestroy {
       secondsLimit: Math.max(1, Math.floor(Number(this.settings.secondsLimit) || 10)),
       targetScore: Math.max(1, Math.floor(Number(this.settings.targetScore) || 10)),
       audioSource: this.settings.audioSource === 'backend_mp3' ? 'backend_mp3' : 'browser_tts',
+      flipcardSource: this.settings.flipcardSource === 'ready_only' ? 'ready_only' : 'all_words',
     };
   }
 
@@ -725,6 +785,7 @@ export class AppComponent implements OnInit, OnDestroy {
       secondsLimit: Math.max(1, Math.floor(Number(settings.secondsLimit) || 30)),
       targetScore: Math.max(1, Math.floor(Number(settings.targetScore) || 10)),
       audioSource: settings.audioSource === 'backend_mp3' ? 'backend_mp3' : 'browser_tts',
+      flipcardSource: settings.flipcardSource === 'ready_only' ? 'ready_only' : 'all_words',
     };
     this.secondsLeft = this.settings.secondsLimit;
   }
@@ -789,6 +850,12 @@ export class AppComponent implements OnInit, OnDestroy {
       );
 
       const missingItems = this.audioPrepItems.filter((item) => item.status !== 'ready');
+      if (this.settings.flipcardSource === 'ready_only' && missingItems.length > 0) {
+        this.screen = 'audioPrep';
+        this.audioPrepError = 'Pro test z připravených slov chybí obrázek nebo audio.';
+        this.render();
+        return;
+      }
       if (missingItems.length > 0) {
         this.screen = 'audioPrep';
         this.render();
@@ -1092,6 +1159,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.timedOut = false;
     this.secondsLeft = this.settings.secondsLimit;
     this.render();
+    this.preloadAdjacentFlipcardAssets();
   }
 
   private buildFlipcardOptions(index: number): FlipcardOption[] {
@@ -1101,22 +1169,27 @@ export class AppComponent implements OnInit, OnDestroy {
     return shuffled([correct, ...distractors]).map((word) => ({ word, disabled: false }));
   }
 
-  selectFlipcardOption(option: FlipcardOption): void {
+  async selectFlipcardOption(option: FlipcardOption): Promise<void> {
     const current = this.currentFlipcardWord;
     const currentIndex = this.flipcardWordIndex;
     if (!current || currentIndex === null || option.disabled || this.flipcardAnswersDisabled) return;
-    this.playFlipcardWordAudio(option.word);
+    this.flipcardAdvancing = true;
+    this.render();
     if (option.word.normalized !== current.normalized) {
       this.disableFlipcardOption(option.word.normalized);
+      await this.playFlipcardWordAudio(option.word);
+      this.flipcardAdvancing = false;
       if (!this.flipcardAttemptFailed) {
         this.flipcardAttemptFailed = true;
         this.score -= 1;
         this.showPenalty();
         void this.recordFlipcardAnswer(currentIndex, false, false);
       }
+      this.render();
       return;
     }
 
+    await this.playFlipcardWordAudio(option.word);
     this.flipcardQueue = this.flipcardQueue.filter((index) => index !== currentIndex);
     if (this.flipcardAttemptFailed) {
       this.flipcardQueue = [...this.flipcardQueue, currentIndex];
@@ -1124,6 +1197,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.score += 1;
       void this.recordFlipcardAnswer(currentIndex, true, false);
     }
+    this.flipcardAdvancing = false;
     this.pickQuestion();
   }
 
@@ -1217,15 +1291,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (index === null || this.answerVisible) return;
     this.clearTimer();
     if (this.activeGame === 'flipcards') {
-      this.timedOut = true;
-      this.score -= 1;
-      this.playFlipcardWordAudio(this.flipcardWords[index]);
-      void this.recordFlipcardAnswer(index, false, true);
-      this.flipcardQueue = this.flipcardQueue.filter((candidate) => candidate !== index);
-      this.flipcardQueue = [...this.flipcardQueue, index];
-      this.showPenalty();
-      window.setTimeout(() => this.pickQuestion(), 450);
-      this.render();
+      void this.handleFlipcardTimeout(index);
       return;
     }
     this.timedOut = true;
@@ -1235,6 +1301,20 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.recordAnswer(index, false, true);
     this.showPenalty();
     this.render();
+  }
+
+  private async handleFlipcardTimeout(index: number): Promise<void> {
+    this.timedOut = true;
+    this.flipcardAdvancing = true;
+    this.score -= 1;
+    void this.recordFlipcardAnswer(index, false, true);
+    this.flipcardQueue = this.flipcardQueue.filter((candidate) => candidate !== index);
+    this.flipcardQueue = [...this.flipcardQueue, index];
+    this.showPenalty();
+    this.render();
+    await this.playFlipcardWordAudio(this.flipcardWords[index]);
+    this.flipcardAdvancing = false;
+    this.pickQuestion();
   }
 
   private revealAnswer(): void {
@@ -1331,6 +1411,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.backendAudioUrls = {};
     this.backendSpellingAudioUrls = {};
     this.flipcardImageUrls = {};
+    this.flipcardAdvancing = false;
+    this.clearFlipcardPreloads();
     this.answerVisible = false;
     this.timedOut = false;
     this.flash = null;
@@ -1374,6 +1456,11 @@ export class AppComponent implements OnInit, OnDestroy {
   private async loadFlipcardWords(): Promise<void> {
     const response = await this.apiGet<FlipcardWordsResponse>('flipcards/words');
     this.flipcardWordInput = response.words;
+  }
+
+  private async loadFlipcardAssets(): Promise<void> {
+    const response = await this.apiGet<FlipcardAssetsResponse>('flipcards/assets');
+    this.flipcardAssets = response.items ?? [];
   }
 
   private lastConfiguredSpellingSetIndex(): number {
@@ -1457,33 +1544,104 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.backendAudio.play();
   }
 
-  private playFlipcardWordAudio(word: FlipcardWord | undefined): void {
+  private preloadAdjacentFlipcardAssets(): void {
+    const indices = [this.flipcardWordIndex, this.nextFlipcardQueueIndex()]
+      .filter((index): index is number => index !== null && index !== undefined);
+    const keep = new Set<string>();
+    for (const index of indices) {
+      const word = this.flipcardWords[index];
+      if (!word) continue;
+      keep.add(word.normalized);
+      const imageUrl = this.flipcardImageUrls[word.normalized];
+      if (imageUrl && !this.flipcardImagePreloads.has(word.normalized)) {
+        const image = new Image();
+        image.decoding = 'async';
+        image.src = imageUrl;
+        this.flipcardImagePreloads.set(word.normalized, image);
+      }
+      const audioUrl = this.backendAudioUrls[word.normalized];
+      if (this.settings.audioSource === 'backend_mp3' && audioUrl && !this.flipcardAudioPreloads.has(word.normalized)) {
+        const audio = new Audio(audioUrl);
+        audio.preload = 'auto';
+        audio.load();
+        this.flipcardAudioPreloads.set(word.normalized, audio);
+      }
+    }
+    for (const key of Array.from(this.flipcardImagePreloads.keys())) {
+      if (!keep.has(key)) this.flipcardImagePreloads.delete(key);
+    }
+    for (const key of Array.from(this.flipcardAudioPreloads.keys())) {
+      if (!keep.has(key)) this.flipcardAudioPreloads.delete(key);
+    }
+  }
+
+  private nextFlipcardQueueIndex(): number | null {
+    if (this.flipcardWordIndex === null) return null;
+    return this.flipcardQueue.find((index) => index !== this.flipcardWordIndex) ?? null;
+  }
+
+  private clearFlipcardPreloads(): void {
+    this.flipcardImagePreloads.clear();
+    this.flipcardAudioPreloads.clear();
+  }
+
+  private async playFlipcardWordAudio(word: FlipcardWord | undefined): Promise<void> {
     if (!word) return;
     if (this.settings.audioSource === 'backend_mp3') {
       const audioUrl = this.backendAudioUrls[word.normalized];
       if (!audioUrl) return;
       this.stopBackendAudio();
-      this.backendAudio = new Audio(audioUrl);
-      void this.backendAudio.play();
+      this.backendAudio = this.flipcardAudioPreloads.get(word.normalized) ?? new Audio(audioUrl);
+      this.backendAudio.currentTime = 0;
+      await this.playAudioElement(this.backendAudio);
       return;
     }
+    await this.speakFlipcardWord(word);
+  }
+
+  private async playAudioElement(audio: HTMLAudioElement): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const timeout = window.setTimeout(() => done(), 7000);
+      const done = () => {
+        window.clearTimeout(timeout);
+        audio.removeEventListener('ended', done);
+        audio.removeEventListener('error', done);
+        resolve();
+      };
+      audio.addEventListener('ended', done, { once: true });
+      audio.addEventListener('error', done, { once: true });
+      void audio.play().catch(() => done());
+    });
+  }
+
+  private async speakFlipcardWord(word: FlipcardWord): Promise<void> {
     const speech = window.speechSynthesis;
     if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
       this.setTtsUnsupported('Web Speech API neni v tomto prohlizeci dostupne.');
       return;
     }
-    speech.cancel();
-    const utterance = new SpeechSynthesisUtterance(word.text);
-    utterance.lang = 'en-US';
-    utterance.rate = 0.86;
-    utterance.onerror = (event) => {
-      this.setTtsUnsupported('Prehrani TTS skoncilo chybou.', event.error, speech.getVoices().length);
-    };
-    try {
-      speech.speak(utterance);
-    } catch (error) {
-      this.setTtsUnsupported('Prehrani TTS selhalo.', error instanceof Error ? error.message : String(error), speech.getVoices().length);
-    }
+    await new Promise<void>((resolve) => {
+      speech.cancel();
+      const utterance = new SpeechSynthesisUtterance(word.text);
+      const timeout = window.setTimeout(() => resolve(), 8000);
+      const done = () => {
+        window.clearTimeout(timeout);
+        resolve();
+      };
+      utterance.lang = 'en-US';
+      utterance.rate = 0.86;
+      utterance.onend = done;
+      utterance.onerror = (event) => {
+        this.setTtsUnsupported('Prehrani TTS skoncilo chybou.', event.error, speech.getVoices().length);
+        done();
+      };
+      try {
+        speech.speak(utterance);
+      } catch (error) {
+        this.setTtsUnsupported('Prehrani TTS selhalo.', error instanceof Error ? error.message : String(error), speech.getVoices().length);
+        done();
+      }
+    });
   }
 
   private stopBackendAudio(): void {

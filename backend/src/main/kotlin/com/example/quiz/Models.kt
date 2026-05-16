@@ -26,6 +26,12 @@ enum class AudioSource {
 }
 
 @Serializable
+enum class FlipcardSource {
+    all_words,
+    ready_only,
+}
+
+@Serializable
 enum class SpellingAudioStatus {
     ready,
     missing,
@@ -86,6 +92,7 @@ data class AppSettings(
     val secondsLimit: Int = 30,
     val targetScore: Int = 10,
     val audioSource: AudioSource = AudioSource.browser_tts,
+    val flipcardSource: FlipcardSource = FlipcardSource.all_words,
 )
 
 @Serializable
@@ -202,4 +209,19 @@ data class FlipcardImageResponse(
     val normalized: String,
     val status: FlipcardImageStatus,
     val imageUrl: String? = null,
+)
+
+@Serializable
+data class FlipcardAsset(
+    val word: String,
+    val normalized: String,
+    val imageStatus: FlipcardImageStatus,
+    val imageUrl: String? = null,
+    val audioStatus: SpellingAudioStatus,
+    val audioUrl: String? = null,
+)
+
+@Serializable
+data class FlipcardAssetsResponse(
+    val items: List<FlipcardAsset>,
 )

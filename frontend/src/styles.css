@@ -304,7 +304,7 @@ lucide-icon {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .flipcard-image-hidden {
@@ -577,6 +577,79 @@ textarea {
   font-size: 1.25rem;
 }
 
+.asset-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.asset-tabs button {
+  min-height: 3.2rem;
+  border: 2px solid rgba(31, 41, 55, 0.12);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.76);
+  color: #111827;
+  font: inherit;
+  font-weight: 950;
+}
+
+.asset-tabs .asset-tab-active {
+  border-color: #0f766e;
+  background: #99f6e4;
+}
+
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 1rem;
+}
+
+.asset-card,
+.asset-row {
+  border: 2px solid rgba(31, 41, 55, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 12px 30px rgba(31, 41, 55, 0.1);
+}
+
+.asset-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+}
+
+.asset-card img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.asset-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.asset-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.asset-ready {
+  color: #0f766e;
+  font-weight: 950;
+}
+
+.asset-missing {
+  color: #b91c1c;
+  font-weight: 950;
+}
+
 .audio-prep-screen {
   text-align: center;
 }
@@ -838,6 +911,7 @@ textarea {
 
   .audio-source-options,
   .audio-prep-row,
+  .asset-row,
   .flipcard-options {
     grid-template-columns: 1fr;
   }

@@ -118,7 +118,25 @@ object FlipcardStore {
 
     fun readSession(limit: Int): FlipcardSession = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.readFlipcardSession(limit)
+            when (connection.readAppSettings().flipcardSource) {
+                FlipcardSource.all_words -> connection.readFlipcardSession(limit)
+                FlipcardSource.ready_only -> {
+                    val words = connection.readFlipcardWords()
+                        .filter { word ->
+                            val asset = flipcardAsset(word)
+                            asset.imageStatus == FlipcardImageStatus.ready && asset.audioStatus == SpellingAudioStatus.ready
+                        }
+                        .shuffled()
+                        .take(limit.coerceAtLeast(1))
+                    FlipcardSession(words = words)
+                }
+            }
+        }
+    }
+
+    fun readAssets(): FlipcardAssetsResponse = synchronized(lock) {
+        Database.useConnection { connection ->
+            FlipcardAssetsResponse(items = connection.readFlipcardWords().map(::flipcardAsset))
         }
     }
 
@@ -132,5 +150,18 @@ object FlipcardStore {
         Database.useConnection { connection ->
             connection.recordFlipcardStats(word, correct, timedOut)
         }
+    }
+
+    private fun flipcardAsset(word: FlipcardWord): FlipcardAsset {
+        val image = FlipcardImageService.status(word.text)
+        val audio = SpellingAudioService.status(word.text, SpellingAudioKind.word)
+        return FlipcardAsset(
+            word = word.text,
+            normalized = word.normalized,
+            imageStatus = image?.status ?: FlipcardImageStatus.missing,
+            imageUrl = image?.imageUrl,
+            audioStatus = audio?.status ?: SpellingAudioStatus.missing,
+            audioUrl = audio?.audioUrl,
+        )
     }
 }

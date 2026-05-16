@@ -214,6 +214,10 @@ fun Application.module() {
                     val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceAtLeast(1) ?: 10
                     call.respond(FlipcardStore.readSession(limit))
                 }
+                get("/assets") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    call.respond(FlipcardStore.readAssets())
+                }
                 get("/stats") {
                     if (!Auth.requireAuthenticated(call)) return@get
                     call.respond(FlipcardStatsSnapshot(statsByWord = FlipcardStore.snapshot()))

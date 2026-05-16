@@ -200,6 +200,19 @@
 
     <section class="settings-section">
       <h2>Angličtina - Flipcards</h2>
+      <div class="audio-source-options">
+        <label class="audio-source-option">
+          <input type="radio" name="flipcardSource" value="all_words" [(ngModel)]="settings.flipcardSource">
+          Všechna slovíčka
+        </label>
+        <label class="audio-source-option">
+          <input type="radio" name="flipcardSource" value="ready_only" [(ngModel)]="settings.flipcardSource">
+          Pouze připravená slovíčka
+        </label>
+      </div>
+      <button class="primary-button compact-button" type="button" (click)="openFlipcardAssetLibrary()">
+        Flipcards knihovna
+      </button>
       <label>
         Slovíčka oddělená čárkou
         <textarea
@@ -214,6 +227,46 @@
     <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading">
       Uložit
     </button>
+  </section>
+
+  <section class="settings-panel" *ngIf="screen === 'assetLibrary'">
+    <div class="settings-header">
+      <button class="icon-button" type="button" (click)="openSettings()" title="Zpět do nastavení" aria-label="Zpět do nastavení">
+        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+      </button>
+      <h1>Flipcards knihovna</h1>
+      <span class="header-spacer" aria-hidden="true"></span>
+    </div>
+
+    <div class="asset-tabs">
+      <button type="button" [class.asset-tab-active]="assetLibraryTab === 'images'" (click)="setAssetLibraryTab('images')">Obrázky</button>
+      <button type="button" [class.asset-tab-active]="assetLibraryTab === 'audio'" (click)="setAssetLibraryTab('audio')">Audio</button>
+    </div>
+
+    <p class="settings-note" *ngIf="assetLibraryLoading">Načítám knihovnu...</p>
+    <p class="error settings-error" *ngIf="assetLibraryError">{{ assetLibraryError }}</p>
+
+    <div class="asset-grid" *ngIf="!assetLibraryLoading && assetLibraryTab === 'images'">
+      <article class="asset-card" *ngFor="let asset of flipcardAssets">
+        <strong>{{ asset.word }}</strong>
+        <span [class.asset-ready]="asset.imageStatus === 'ready'" [class.asset-missing]="asset.imageStatus !== 'ready'">
+          {{ asset.imageStatus === 'ready' ? 'Hotovo' : 'Chybí obrázek' }}
+        </span>
+        <img *ngIf="asset.imageUrl" [src]="asset.imageUrl" [alt]="asset.word">
+      </article>
+    </div>
+
+    <div class="asset-list" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">
+      <article class="asset-row" *ngFor="let asset of flipcardAssets">
+        <strong>{{ asset.word }}</strong>
+        <span [class.asset-ready]="asset.audioStatus === 'ready'" [class.asset-missing]="asset.audioStatus !== 'ready'">
+          {{ asset.audioStatus === 'ready' ? 'Hotovo' : 'Chybí audio' }}
+        </span>
+        <button class="icon-button" type="button" (click)="playAssetAudio(asset)" [disabled]="!asset.audioUrl" title="Přehrát" aria-label="Přehrát">
+          <lucide-icon [img]="playIcon" [size]="24"></lucide-icon>
+        </button>
+      </article>
+    </div>
   </section>
 
   <section class="audio-prep-screen" *ngIf="screen === 'audioPrep'">
