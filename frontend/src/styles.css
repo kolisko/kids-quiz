@@ -627,6 +627,23 @@ textarea {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.asset-image-placeholder {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 2px dashed rgba(15, 118, 110, 0.36);
+  border-radius: 0.4rem;
+  background: rgba(204, 251, 241, 0.5);
+  color: #0f766e;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 950;
+}
+
+.asset-image-placeholder:disabled {
+  cursor: wait;
+  opacity: 0.76;
+}
+
 .asset-list {
   display: grid;
   gap: 0.75rem;
@@ -648,6 +665,12 @@ textarea {
 .asset-missing {
   color: #b91c1c;
   font-weight: 950;
+}
+
+.asset-error {
+  color: #b91c1c;
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .audio-prep-screen {

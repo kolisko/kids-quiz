@@ -250,9 +250,19 @@
       <article class="asset-card" *ngFor="let asset of flipcardAssets">
         <strong>{{ asset.word }}</strong>
         <span [class.asset-ready]="asset.imageStatus === 'ready'" [class.asset-missing]="asset.imageStatus !== 'ready'">
-          {{ asset.imageStatus === 'ready' ? 'Hotovo' : 'Chybí obrázek' }}
+          {{ asset.imageStatus === 'ready' ? 'Hotovo' : (assetImageIsGenerating(asset) ? 'Generuji obrázek...' : 'Chybí obrázek') }}
         </span>
         <img *ngIf="asset.imageUrl" [src]="asset.imageUrl" [alt]="asset.word">
+        <button
+          *ngIf="!asset.imageUrl"
+          class="asset-image-placeholder"
+          type="button"
+          (click)="generateAssetImage(asset)"
+          [disabled]="assetImageIsGenerating(asset)"
+        >
+          {{ assetImageIsGenerating(asset) ? 'Stahuji...' : 'Stáhnout obrázek' }}
+        </button>
+        <span class="asset-error" *ngIf="assetImageError(asset)">{{ assetImageError(asset) }}</span>
       </article>
     </div>
 

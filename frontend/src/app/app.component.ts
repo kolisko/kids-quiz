@@ -238,6 +238,8 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardAssets: FlipcardAsset[] = [];
   assetLibraryLoading = false;
   assetLibraryError: string | null = null;
+  assetImageGenerating: Record<string, boolean> = {};
+  assetImageErrors: Record<string, string> = {};
   backendAudioUrls: Record<string, string> = {};
   backendSpellingAudioUrls: Record<string, string> = {};
   flipcardImageUrls: Record<string, string> = {};
@@ -606,6 +608,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearTimer();
     this.ttsDetailsVisible = false;
     this.assetLibraryError = null;
+    this.assetImageGenerating = {};
+    this.assetImageErrors = {};
     this.assetLibraryLoading = true;
     this.screen = 'assetLibrary';
     this.render();
@@ -628,6 +632,48 @@ export class AppComponent implements OnInit, OnDestroy {
     this.stopBackendAudio();
     this.backendAudio = new Audio(asset.audioUrl);
     void this.backendAudio.play();
+  }
+
+  assetImageIsGenerating(asset: FlipcardAsset): boolean {
+    return Boolean(this.assetImageGenerating[asset.normalized]);
+  }
+
+  assetImageError(asset: FlipcardAsset): string | null {
+    return this.assetImageErrors[asset.normalized] ?? null;
+  }
+
+  async generateAssetImage(asset: FlipcardAsset): Promise<void> {
+    if (asset.imageStatus === 'ready' || this.assetImageIsGenerating(asset)) return;
+    this.assetImageGenerating = { ...this.assetImageGenerating, [asset.normalized]: true };
+    const { [asset.normalized]: _removed, ...nextErrors } = this.assetImageErrors;
+    this.assetImageErrors = nextErrors;
+    this.render();
+
+    try {
+      const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(asset.word), {});
+      if (!response.imageUrl) {
+        throw new Error('Image URL chybi.');
+      }
+      await this.preloadImage(response.imageUrl);
+      this.flipcardAssets = this.flipcardAssets.map((item) => (
+        item.normalized === response.normalized
+          ? { ...item, imageStatus: 'ready', imageUrl: response.imageUrl }
+          : item
+      ));
+      this.flipcardImageUrls = {
+        ...this.flipcardImageUrls,
+        [response.normalized]: response.imageUrl,
+      };
+    } catch (error) {
+      this.assetImageErrors = {
+        ...this.assetImageErrors,
+        [asset.normalized]: error instanceof Error ? error.message : 'Obrazek se nepodarilo pripravit.',
+      };
+    } finally {
+      const { [asset.normalized]: _removed, ...nextGenerating } = this.assetImageGenerating;
+      this.assetImageGenerating = nextGenerating;
+      this.render();
+    }
   }
 
   async saveSettingsOnly(): Promise<void> {
