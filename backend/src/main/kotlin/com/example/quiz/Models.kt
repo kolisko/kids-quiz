@@ -37,6 +37,12 @@ enum class SpellingAudioKind {
 }
 
 @Serializable
+enum class FlipcardImageStatus {
+    ready,
+    missing,
+}
+
+@Serializable
 data class Question(
     val id: Long,
     val q: String,
@@ -148,4 +154,52 @@ data class SpellingAnswerResultRequest(
 data class SpellingAnswerResultResponse(
     val word: String,
     val stats: QuestionStats,
+)
+
+@Serializable
+data class FlipcardWord(
+    val text: String,
+    val normalized: String,
+)
+
+@Serializable
+data class FlipcardWordsRequest(
+    val words: String = "",
+)
+
+@Serializable
+data class FlipcardWordsResponse(
+    val words: String,
+    val items: List<FlipcardWord> = emptyList(),
+)
+
+@Serializable
+data class FlipcardSession(
+    val words: List<FlipcardWord>,
+)
+
+@Serializable
+data class FlipcardStatsSnapshot(
+    val statsByWord: Map<String, QuestionStats> = emptyMap(),
+)
+
+@Serializable
+data class FlipcardAnswerResultRequest(
+    val word: String,
+    val correct: Boolean,
+    val timedOut: Boolean = false,
+)
+
+@Serializable
+data class FlipcardAnswerResultResponse(
+    val word: String,
+    val stats: QuestionStats,
+)
+
+@Serializable
+data class FlipcardImageResponse(
+    val word: String,
+    val normalized: String,
+    val status: FlipcardImageStatus,
+    val imageUrl: String? = null,
 )

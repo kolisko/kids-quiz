@@ -280,6 +280,45 @@ lucide-icon {
   overflow-wrap: anywhere;
 }
 
+.flipcard-card {
+  display: grid;
+  justify-items: center;
+}
+
+.flipcard-image-frame {
+  display: grid;
+  place-items: center;
+  width: min(68vh, 32rem, 92vw);
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 2px solid rgba(31, 41, 55, 0.1);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 20px 46px rgba(31, 41, 55, 0.12);
+}
+
+.flipcard-image-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.flipcard-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(100%, 58rem);
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+}
+
+.flipcard-option-button {
+  min-height: 5.4rem;
+  padding: 1rem;
+  font-size: clamp(1.1rem, 2.6vw, 1.75rem);
+  overflow-wrap: anywhere;
+}
+
 .answer-hint,
 .timeout-note,
 .settings-panel p,
@@ -759,8 +798,13 @@ textarea {
   }
 
   .audio-source-options,
-  .audio-prep-row {
+  .audio-prep-row,
+  .flipcard-options {
     grid-template-columns: 1fr;
+  }
+
+  .flipcard-image-frame {
+    width: min(58vh, 88vw);
   }
 
   .audio-prep-row strong {

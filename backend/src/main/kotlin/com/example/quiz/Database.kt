@@ -166,6 +166,12 @@ object DatabaseMigrator {
                     recordMigration(9, "add_audio_source_setting")
                 }
             }
+            if (10 !in applied) {
+                connection.transaction {
+                    addEnglishFlipcards()
+                    recordMigration(10, "add_english_flipcards")
+                }
+            }
         }
         migrated = true
     }
@@ -577,6 +583,36 @@ object DatabaseMigrator {
                 """.trimIndent(),
             )
         }
+    }
+
+    private fun Connection.addEnglishFlipcards() {
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS flipcard_words (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    word TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL UNIQUE,
+                    sort_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_flipcard_words_sort_order ON flipcard_words(sort_order, id)")
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS flipcard_word_stats (
+                    normalized_word TEXT PRIMARY KEY,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    timeout INTEGER NOT NULL DEFAULT 0 CHECK(timeout >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+        }
+        replaceFlipcardWords(defaultFlipcardWords.joinToString(", "))
     }
 
     private fun Connection.readExistingQuestionRows(): List<ExistingQuestionRow> {
@@ -991,6 +1027,114 @@ fun Connection.recordSpellingStats(word: String, correct: Boolean, timedOut: Boo
     return normalized to readSpellingStat(normalized)
 }
 
+fun Connection.readFlipcardWordsResponse(): FlipcardWordsResponse {
+    val words = readFlipcardWords()
+    return FlipcardWordsResponse(
+        words = words.joinToString(", ") { it.text },
+        items = words,
+    )
+}
+
+fun Connection.replaceFlipcardWords(rawWords: String) {
+    val words = parseFlipcardWords(rawWords)
+        .distinctBy { normalizeFlipcardWord(it) }
+    transaction {
+        prepareStatement("DELETE FROM flipcard_words").use { it.executeUpdate() }
+        prepareStatement(
+            """
+            INSERT INTO flipcard_words(word, normalized_word, sort_order, updated_at)
+            VALUES(?, ?, ?, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).use { statement ->
+            words.forEachIndexed { index, word ->
+                statement.setString(1, word)
+                statement.setString(2, normalizeFlipcardWord(word))
+                statement.setInt(3, index)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+    }
+}
+
+fun Connection.readFlipcardSession(limit: Int): FlipcardSession {
+    val safeLimit = limit.coerceAtLeast(1)
+    return prepareStatement(
+        """
+        SELECT word, normalized_word
+        FROM flipcard_words
+        ORDER BY RANDOM()
+        LIMIT ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setInt(1, safeLimit)
+        statement.executeQuery().use { rows ->
+            FlipcardSession(
+                words = buildList {
+                    while (rows.next()) {
+                        add(
+                            FlipcardWord(
+                                text = rows.getString("word"),
+                                normalized = rows.getString("normalized_word"),
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+    }
+}
+
+fun Connection.readFlipcardStats(): Map<String, QuestionStats> {
+    return prepareStatement(
+        """
+        SELECT normalized_word, correct, wrong, timeout
+        FROM flipcard_word_stats
+        ORDER BY normalized_word
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            buildMap {
+                while (rows.next()) {
+                    put(
+                        rows.getString("normalized_word"),
+                        QuestionStats(
+                            correct = rows.getInt("correct"),
+                            wrong = rows.getInt("wrong"),
+                            timeout = rows.getInt("timeout"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun Connection.recordFlipcardStats(word: String, correct: Boolean, timedOut: Boolean): Pair<String, QuestionStats>? {
+    val normalized = normalizeFlipcardWord(word)
+    if (normalized.isBlank() || !flipcardWordExists(normalized)) {
+        return null
+    }
+    prepareStatement(
+        """
+        INSERT INTO flipcard_word_stats(normalized_word, correct, wrong, timeout, updated_at)
+        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(normalized_word) DO UPDATE SET
+            correct = flipcard_word_stats.correct + excluded.correct,
+            wrong = flipcard_word_stats.wrong + excluded.wrong,
+            timeout = flipcard_word_stats.timeout + excluded.timeout,
+            updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, normalized)
+        statement.setInt(2, if (correct) 1 else 0)
+        statement.setInt(3, if (!correct && !timedOut) 1 else 0)
+        statement.setInt(4, if (timedOut) 1 else 0)
+        statement.executeUpdate()
+    }
+    return normalized to readFlipcardStat(normalized)
+}
+
 fun Connection.testExists(testId: Long): Boolean {
     return prepareStatement("SELECT 1 FROM tests WHERE id = ?").use { statement ->
         statement.setLong(1, testId)
@@ -1217,6 +1361,56 @@ private fun Connection.readSpellingStat(normalizedWord: String): QuestionStats {
     }
 }
 
+private fun Connection.readFlipcardWords(): List<FlipcardWord> {
+    return prepareStatement(
+        """
+        SELECT word, normalized_word
+        FROM flipcard_words
+        ORDER BY sort_order, id
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) {
+                    add(
+                        FlipcardWord(
+                            text = rows.getString("word"),
+                            normalized = rows.getString("normalized_word"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun Connection.flipcardWordExists(normalizedWord: String): Boolean {
+    return prepareStatement("SELECT 1 FROM flipcard_words WHERE normalized_word = ? LIMIT 1").use { statement ->
+        statement.setString(1, normalizedWord)
+        statement.executeQuery().use { rows -> rows.next() }
+    }
+}
+
+private fun Connection.readFlipcardStat(normalizedWord: String): QuestionStats {
+    return prepareStatement(
+        """
+        SELECT correct, wrong, timeout
+        FROM flipcard_word_stats
+        WHERE normalized_word = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, normalizedWord)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return QuestionStats()
+            QuestionStats(
+                correct = rows.getInt("correct"),
+                wrong = rows.getInt("wrong"),
+                timeout = rows.getInt("timeout"),
+            )
+        }
+    }
+}
+
 private fun Connection.questionBelongsToTest(testId: Long, questionId: Long): Boolean {
     return prepareStatement("SELECT 1 FROM questions WHERE test_id = ? AND id = ?").use { statement ->
         statement.setLong(1, testId)
@@ -1280,6 +1474,38 @@ private fun parseSpellingWords(rawWords: String): List<String> {
 }
 
 private fun normalizeSpellingWord(word: String): String = word.trim().lowercase()
+
+private fun parseFlipcardWords(rawWords: String): List<String> {
+    return rawWords.split(',')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+}
+
+fun normalizeFlipcardWord(word: String): String = word.trim().lowercase()
+
+private val defaultFlipcardWords = listOf(
+    "apple", "banana", "orange", "pear", "grape", "lemon", "strawberry", "watermelon", "pineapple", "peach",
+    "cherry", "blueberry", "raspberry", "mango", "kiwi", "plum", "melon", "coconut", "carrot", "potato",
+    "tomato", "corn", "peas", "onion", "pumpkin", "cucumber", "pepper", "lettuce", "broccoli", "mushroom",
+    "cat", "dog", "bird", "fish", "horse", "cow", "pig", "sheep", "goat", "duck",
+    "chicken", "rabbit", "mouse", "bear", "lion", "tiger", "elephant", "giraffe", "zebra", "monkey",
+    "panda", "koala", "kangaroo", "frog", "snake", "turtle", "whale", "dolphin", "shark", "octopus",
+    "house", "school", "park", "garden", "kitchen", "bedroom", "bathroom", "window", "door", "table",
+    "chair", "bed", "sofa", "lamp", "clock", "book", "pencil", "pen", "paper", "bag",
+    "ball", "doll", "kite", "train", "car", "bus", "bike", "boat", "plane", "truck",
+    "sun", "moon", "star", "cloud", "rain", "snow", "wind", "rainbow", "tree", "flower",
+    "grass", "leaf", "rock", "river", "lake", "sea", "beach", "mountain", "road", "bridge",
+    "shirt", "pants", "dress", "skirt", "shoe", "sock", "hat", "coat", "glove", "scarf",
+    "eye", "ear", "nose", "mouth", "hand", "foot", "leg", "arm", "head", "hair",
+    "baby", "boy", "girl", "mother", "father", "family", "friend", "teacher", "doctor", "farmer",
+    "happy", "sad", "big", "small", "hot", "cold", "fast", "slow", "red", "blue",
+    "green", "yellow", "black", "white", "pink", "purple", "brown", "gray", "circle", "square",
+    "triangle", "heart", "number", "letter", "music", "song", "drum", "guitar", "piano", "bell",
+    "cake", "bread", "milk", "water", "juice", "egg", "cheese", "rice", "soup", "cookie",
+    "spoon", "fork", "cup", "plate", "bowl", "toothbrush", "soap", "towel", "brush", "comb",
+    "fire", "waterfall", "castle", "robot", "rocket", "crown", "flag", "map", "key", "box",
+    "toy", "game", "slide", "swing", "pool", "farm", "forest", "zoo", "shop", "library",
+)
 
 private fun String?.toAudioSource(): AudioSource {
     return AudioSource.entries.firstOrNull { it.name == this } ?: defaultAudioSource

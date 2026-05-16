@@ -1,4 +1,7 @@
 import org.gradle.api.tasks.Sync
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 plugins {
     base
@@ -16,13 +19,8 @@ val imageContextDir = deployDir.map { it.dir("image-context") }
 val remoteFilesDir = deployDir.map { it.dir("remote") }
 val frontendDir = layout.projectDirectory.dir("frontend")
 val frontendDistDir = frontendDir.dir("dist/kids-quiz/browser")
-val snapshotNumber = providers.environmentVariable("GITHUB_SHA")
-    .map { it.take(7) }
-    .orElse(
-        providers.exec {
-            commandLine("git", "rev-parse", "--short=7", "HEAD")
-        }.standardOutput.asText.map { it.trim() },
-    )
+val snapshotFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(ZoneOffset.UTC)
+val snapshotNumber = providers.provider { snapshotFormatter.format(Instant.now()) }
 
 tasks.register<Exec>("frontendNpmInstall") {
     group = "build"

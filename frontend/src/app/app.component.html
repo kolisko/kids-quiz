@@ -1,5 +1,5 @@
 <div class="app">
-  <span class="snapshot-badge">snapshot {{ snapshotNumber }}</span>
+  <span class="snapshot-badge">build {{ snapshotNumber }}</span>
 
   <div class="top-bar" *ngIf="screen === 'play'">
     <div class="score-pill">
@@ -8,7 +8,7 @@
     </div>
     <div class="timer-pill">{{ secondsLeft }} s</div>
     <div class="top-actions">
-      <div class="tts-status" *ngIf="activeGame === 'spelling' && settings.audioSource === 'browser_tts' && ttsStatus === 'unsupported'">
+      <div class="tts-status" *ngIf="(activeGame === 'spelling' || activeGame === 'flipcards') && settings.audioSource === 'browser_tts' && ttsStatus === 'unsupported'">
         <button
           class="icon-button tts-status-button"
           type="button"
@@ -106,6 +106,9 @@
       <button class="primary-button mode-button" type="button" (click)="openSpellingModes()" [disabled]="loading">
         Spelling
       </button>
+      <button class="primary-button mode-button" type="button" (click)="startFlipcards()" [disabled]="loading">
+        Flipcards
+      </button>
     </div>
   </section>
 
@@ -195,6 +198,17 @@
       </button>
     </section>
 
+    <section class="settings-section">
+      <h2>Angličtina - Flipcards</h2>
+      <label>
+        Slovíčka oddělená čárkou
+        <textarea
+          rows="5"
+          [(ngModel)]="flipcardWordInput"
+          name="flipcardWords"></textarea>
+      </label>
+    </section>
+
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>
     <p class="error settings-error" *ngIf="settingsError">{{ settingsError }}</p>
     <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading">
@@ -204,8 +218,8 @@
 
   <section class="audio-prep-screen" *ngIf="screen === 'audioPrep'">
     <div class="question-card">
-      <span class="label">Audio</span>
-      <h1>Připravuji výslovnost</h1>
+      <span class="label">Příprava</span>
+      <h1>Připravuji test</h1>
       <p class="audio-prep-summary">{{ audioPrepSummary }}</p>
       <div class="audio-prep-list" *ngIf="visibleAudioPrepItems.length > 0">
         <div class="audio-prep-row" *ngFor="let item of visibleAudioPrepItems" [ngClass]="'audio-prep-' + item.status">
@@ -229,7 +243,7 @@
 
   <section class="play-surface" *ngIf="screen === 'play'">
     <ng-container *ngIf="hasCurrentPrompt; else noQuestion">
-      <div class="question-card">
+      <div class="question-card" *ngIf="activeGame !== 'flipcards'; else flipcardCard">
         <button
           class="icon-button replay-audio-button"
           type="button"
@@ -244,8 +258,26 @@
         <p class="answer-hint" *ngIf="!answerVisible && currentAnswerHint">{{ currentAnswerHint }}</p>
         <p class="timeout-note" *ngIf="timedOut">Čas vypršel, bod je odečtený.</p>
       </div>
+      <ng-template #flipcardCard>
+        <div class="question-card flipcard-card">
+          <span class="label">Co je na obrázku?</span>
+          <div class="flipcard-image-frame">
+            <img *ngIf="currentFlipcardImageUrl" [src]="currentFlipcardImageUrl" [alt]="currentFlipcardWord?.text ?? 'Flipcard'">
+          </div>
+          <div class="flipcard-options">
+            <button
+              class="primary-button flipcard-option-button"
+              type="button"
+              *ngFor="let option of flipcardOptions"
+              [disabled]="option.disabled"
+              (click)="selectFlipcardOption(option)">
+              {{ option.word.text }}
+            </button>
+          </div>
+        </div>
+      </ng-template>
 
-      <div class="main-actions answer-actions">
+      <div class="main-actions answer-actions" *ngIf="activeGame !== 'flipcards'">
         <button class="primary-button answer-button wide-action" type="button" *ngIf="!answerVisible" (click)="showAnswer()">
           Ukázat odpověď
         </button>
@@ -260,9 +292,9 @@
     </ng-container>
     <ng-template #noQuestion>
       <div class="empty-state">
-        <h1>{{ activeGame === 'spelling' ? 'Žádné spelling seznamy' : 'Žádné otázky' }}</h1>
+        <h1>{{ activeGame === 'spelling' ? 'Žádné spelling seznamy' : activeGame === 'flipcards' ? 'Aspoň 3 flipcards slovíčka' : 'Žádné otázky' }}</h1>
         <div class="main-actions">
-          <button class="primary-button finish-play-button wide-action" type="button" *ngIf="activeGame === 'spelling'" (click)="openSettings()">Nastavení</button>
+          <button class="primary-button finish-play-button wide-action" type="button" *ngIf="activeGame === 'spelling' || activeGame === 'flipcards'" (click)="openSettings()">Nastavení</button>
           <button class="primary-button finish-play-button wide-action" type="button" (click)="returnToTestSelection()">Vybrat test</button>
         </div>
       </div>

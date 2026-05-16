@@ -195,6 +195,87 @@ fun Application.module() {
                     }
                 }
             }
+            route("/flipcards") {
+                get("/words") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    call.respond(FlipcardStore.readWords())
+                }
+                put("/words") {
+                    if (!Auth.requireAuthenticated(call)) return@put
+                    val request = runCatching { call.receive<FlipcardWordsRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@put
+                    }
+                    call.respond(FlipcardStore.replaceWords(request.words))
+                }
+                get("/session") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceAtLeast(1) ?: 10
+                    call.respond(FlipcardStore.readSession(limit))
+                }
+                get("/stats") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    call.respond(FlipcardStatsSnapshot(statsByWord = FlipcardStore.snapshot()))
+                }
+                post("/stats/answer") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val request = runCatching { call.receive<FlipcardAnswerResultRequest>() }.getOrNull()
+                    if (request == null || request.word.isBlank()) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@post
+                    }
+                    val (word, stats) = FlipcardStore.record(request.word, request.correct, request.timedOut)
+                        ?: run {
+                            call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
+                            return@post
+                        }
+                    call.respond(FlipcardAnswerResultResponse(word = word, stats = stats))
+                }
+                get("/images/{word}.png") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val word = call.requireFlipcardImageWord(".png") ?: return@get
+                    val imageFile = FlipcardImageService.imageFile(word)
+                    if (imageFile == null) {
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "image_not_found"))
+                        return@get
+                    }
+                    call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+                    call.respondBytes(
+                        bytes = java.nio.file.Files.readAllBytes(imageFile),
+                        contentType = ContentType.Image.PNG,
+                    )
+                }
+                get("/images/{word}") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val word = call.requireFlipcardImageWord() ?: return@get
+                    val response = FlipcardImageService.status(word)
+                        ?: run {
+                            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
+                            return@get
+                        }
+                    call.respond(response)
+                }
+                post("/images/{word}") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val word = call.requireFlipcardImageWord() ?: return@post
+                    try {
+                        val response = FlipcardImageService.generate(word)
+                            ?: run {
+                                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
+                                return@post
+                            }
+                        call.respond(response)
+                    } catch (error: FlipcardImageException) {
+                        val status = if (error.message == "image_generation_not_configured") {
+                            HttpStatusCode.ServiceUnavailable
+                        } else {
+                            HttpStatusCode.BadGateway
+                        }
+                        call.respond(status, mapOf("error" to (error.message ?: "image_generation_failed")))
+                    }
+                }
+            }
             route("/tests/{testId}") {
                 get("/questions") {
                     if (!Auth.requireAuthenticated(call)) return@get
@@ -276,6 +357,15 @@ private suspend fun ApplicationCall.requireSpellingAudioKind(): SpellingAudioKin
         return null
     }
     return kind
+}
+
+private suspend fun ApplicationCall.requireFlipcardImageWord(suffix: String = ""): String? {
+    val word = parameters["word"]?.removeSuffix(suffix)?.trim()
+    if (word.isNullOrBlank()) {
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
+        return null
+    }
+    return word
 }
 
 private suspend fun ApplicationCall.requirePracticeDirection(): PracticeDirection? {

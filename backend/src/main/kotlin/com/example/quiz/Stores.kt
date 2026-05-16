@@ -99,3 +99,38 @@ object SpellingStore {
         }
     }
 }
+
+object FlipcardStore {
+    private val lock = Any()
+
+    fun readWords(): FlipcardWordsResponse = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readFlipcardWordsResponse()
+        }
+    }
+
+    fun replaceWords(words: String): FlipcardWordsResponse = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.replaceFlipcardWords(words)
+            connection.readFlipcardWordsResponse()
+        }
+    }
+
+    fun readSession(limit: Int): FlipcardSession = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readFlipcardSession(limit)
+        }
+    }
+
+    fun snapshot(): Map<String, QuestionStats> = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readFlipcardStats()
+        }
+    }
+
+    fun record(word: String, correct: Boolean, timedOut: Boolean): Pair<String, QuestionStats>? = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.recordFlipcardStats(word, correct, timedOut)
+        }
+    }
+}
