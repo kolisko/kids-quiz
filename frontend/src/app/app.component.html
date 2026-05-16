@@ -246,6 +246,13 @@
     <p class="settings-note" *ngIf="assetLibraryLoading">Načítám knihovnu...</p>
     <p class="error settings-error" *ngIf="assetLibraryError">{{ assetLibraryError }}</p>
 
+    <div class="asset-toolbar" *ngIf="!assetLibraryLoading && assetLibraryTab === 'images'">
+      <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetImages()" [disabled]="missingImageAssetsCount === 0 || bulkImageGenerationActive">
+        Stáhnout všechny chybějící obrázky
+      </button>
+      <span>{{ missingImageAssetsCount }} chybí</span>
+    </div>
+
     <div class="asset-grid" *ngIf="!assetLibraryLoading && assetLibraryTab === 'images'">
       <article class="asset-card" *ngFor="let asset of flipcardAssets">
         <strong>{{ asset.word }}</strong>
@@ -266,15 +273,23 @@
       </article>
     </div>
 
+    <div class="asset-toolbar" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">
+      <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetAudio()" [disabled]="missingAudioAssetsCount === 0 || bulkAudioGenerationActive">
+        Stáhnout všechna chybějící audia
+      </button>
+      <span>{{ missingAudioAssetsCount }} chybí</span>
+    </div>
+
     <div class="asset-list" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">
       <article class="asset-row" *ngFor="let asset of flipcardAssets">
         <strong>{{ asset.word }}</strong>
         <span [class.asset-ready]="asset.audioStatus === 'ready'" [class.asset-missing]="asset.audioStatus !== 'ready'">
-          {{ asset.audioStatus === 'ready' ? 'Hotovo' : 'Chybí audio' }}
+          {{ assetAudioStatusLabel(asset) }}
         </span>
         <button class="icon-button" type="button" (click)="playAssetAudio(asset)" [disabled]="!asset.audioUrl" title="Přehrát" aria-label="Přehrát">
           <lucide-icon [img]="playIcon" [size]="24"></lucide-icon>
         </button>
+        <span class="asset-error" *ngIf="assetAudioError(asset)">{{ assetAudioError(asset) }}</span>
       </article>
     </div>
   </section>

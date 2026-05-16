@@ -563,6 +563,20 @@ textarea {
   font-size: 0.98rem;
 }
 
+.secondary-button {
+  border: 2px solid rgba(15, 118, 110, 0.24);
+  border-radius: 0.5rem;
+  background: rgba(204, 251, 241, 0.78);
+  color: #0f766e;
+  font: inherit;
+  font-weight: 950;
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .settings-note {
   min-height: 1.6rem;
   margin: 1.25rem 0 0;
@@ -597,6 +611,20 @@ textarea {
 .asset-tabs .asset-tab-active {
   border-color: #0f766e;
   background: #99f6e4;
+}
+
+.asset-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0.5rem 0 1rem;
+}
+
+.asset-toolbar span {
+  color: #4b5563;
+  font-weight: 900;
 }
 
 .asset-grid {
@@ -668,6 +696,7 @@ textarea {
 }
 
 .asset-error {
+  grid-column: 1 / -1;
   color: #b91c1c;
   font-size: 0.86rem;
   font-weight: 800;

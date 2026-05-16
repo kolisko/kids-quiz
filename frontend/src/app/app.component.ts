@@ -15,6 +15,7 @@ type ArtifactStatus = 'ready' | 'missing' | 'queued' | 'generating' | 'error';
 type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
+type PollToken = { cancelled: boolean };
 
 interface GameSettings {
   secondsLimit: number;
@@ -244,7 +245,9 @@ export class AppComponent implements OnInit, OnDestroy {
   assetLibraryLoading = false;
   assetLibraryError: string | null = null;
   assetImageGenerating: Record<string, boolean> = {};
+  assetAudioGenerating: Record<string, boolean> = {};
   assetImageErrors: Record<string, string> = {};
+  assetAudioErrors: Record<string, string> = {};
   backendAudioUrls: Record<string, string> = {};
   backendSpellingAudioUrls: Record<string, string> = {};
   flipcardImageUrls: Record<string, string> = {};
@@ -259,6 +262,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private ttsVoicesTimerId: number | null = null;
   private ttsVoicesChangedHandler: (() => void) | null = null;
   private backendAudio: HTMLAudioElement | null = null;
+  private assetLibraryPollToken: PollToken | null = null;
+  private audioPrepPollToken: PollToken | null = null;
   private readonly flipcardImagePreloads = new Map<string, HTMLImageElement>();
   private readonly flipcardAudioPreloads = new Map<string, HTMLAudioElement>();
 
@@ -365,6 +370,22 @@ export class AppComponent implements OnInit, OnDestroy {
     return !this.audioPrepLoading || this.hasAudioPrepErrors;
   }
 
+  get missingImageAssetsCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.imageStatus === 'missing' || asset.imageStatus === 'error').length;
+  }
+
+  get missingAudioAssetsCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.audioStatus === 'missing' || asset.audioStatus === 'error').length;
+  }
+
+  get bulkImageGenerationActive(): boolean {
+    return Object.values(this.assetImageGenerating).some(Boolean);
+  }
+
+  get bulkAudioGenerationActive(): boolean {
+    return Object.values(this.assetAudioGenerating).some(Boolean);
+  }
+
   audioPrepItemTypeLabel(item: AudioPrepItem): string {
     if (item.kind === 'flipcard_image') return 'Obrázek';
     if (item.kind === 'spelling') return 'Spelling audio';
@@ -385,6 +406,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.cancelAssetLibraryPolling();
+    this.cancelAudioPrepPolling();
     this.clearTimer();
     this.clearFlashTimer();
     this.clearTtsVoiceCheck();
@@ -417,7 +440,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.resetRoundState();
     if (test.type === 'english') {
       this.activeGame = 'spelling';
-      this.screen = 'category';
+      this.setScreen('category');
       this.loading = false;
       this.render();
       return;
@@ -434,9 +457,9 @@ export class AppComponent implements OnInit, OnDestroy {
         factors_to_product: factorStats.statsByQuestionId ?? {},
       };
       this.questions = questions;
-      this.screen = 'mode';
+      this.setScreen('mode');
     } catch {
-      this.screen = 'login';
+      this.setScreen('login');
     } finally {
       this.loading = false;
       this.render();
@@ -444,7 +467,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   openSpellingModes(): void {
-    this.screen = 'spellingMode';
+    this.setScreen('spellingMode');
   }
 
   async startFlipcards(): Promise<void> {
@@ -466,9 +489,9 @@ export class AppComponent implements OnInit, OnDestroy {
         if (this.settings.flipcardSource === 'ready_only') {
           this.audioPrepItems = [];
           this.audioPrepError = 'Pro ready-only test jsou potřeba aspoň 3 připravená slovíčka.';
-          this.screen = 'audioPrep';
+          this.setScreen('audioPrep');
         } else {
-          this.screen = 'play';
+          this.setScreen('play');
         }
         return;
       }
@@ -476,7 +499,7 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       this.flipcardWords = [];
       this.flipcardQueue = [];
-      this.screen = 'play';
+      this.setScreen('play');
       if (this.settings.audioSource === 'browser_tts') {
         this.checkTtsSupport();
       }
@@ -509,7 +532,7 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       this.spellingWords = [];
       this.spellingPendingIndices = [];
-      this.screen = 'play';
+      this.setScreen('play');
       if (this.settings.audioSource === 'browser_tts') {
         this.checkTtsSupport();
       }
@@ -523,7 +546,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.activeGame = 'multiplication';
     this.selectedMode = mode;
     this.resetRoundState();
-    this.screen = 'play';
+    this.setScreen('play');
     this.pickQuestion();
     this.render();
   }
@@ -589,11 +612,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async openSettings(): Promise<void> {
+    this.setScreen('settings');
     this.clearTimer();
     this.ttsDetailsVisible = false;
     this.settingsSaved = false;
     this.settingsError = null;
-    this.screen = 'settings';
     this.loading = true;
     this.render();
     try {
@@ -613,14 +636,18 @@ export class AppComponent implements OnInit, OnDestroy {
   async openFlipcardAssetLibrary(): Promise<void> {
     this.clearTimer();
     this.ttsDetailsVisible = false;
+    this.cancelAssetLibraryPolling();
     this.assetLibraryError = null;
     this.assetImageGenerating = {};
+    this.assetAudioGenerating = {};
     this.assetImageErrors = {};
+    this.assetAudioErrors = {};
     this.assetLibraryLoading = true;
-    this.screen = 'assetLibrary';
+    this.setScreen('assetLibrary');
     this.render();
     try {
       await this.loadFlipcardAssets();
+      this.startAssetLibraryPolling();
     } catch {
       this.assetLibraryError = 'Knihovnu se nepodařilo načíst.';
     } finally {
@@ -638,6 +665,24 @@ export class AppComponent implements OnInit, OnDestroy {
     this.stopBackendAudio();
     this.backendAudio = new Audio(asset.audioUrl);
     void this.backendAudio.play();
+  }
+
+  assetAudioIsGenerating(asset: FlipcardAsset): boolean {
+    return Boolean(this.assetAudioGenerating[asset.normalized])
+      || asset.audioStatus === 'queued'
+      || asset.audioStatus === 'generating';
+  }
+
+  assetAudioError(asset: FlipcardAsset): string | null {
+    return this.assetAudioErrors[asset.normalized] ?? asset.audioError ?? null;
+  }
+
+  assetAudioStatusLabel(asset: FlipcardAsset): string {
+    if (asset.audioStatus === 'ready') return 'Hotovo';
+    if (asset.audioStatus === 'queued') return 'Ve frontě';
+    if (asset.audioStatus === 'generating') return 'Generuji audio...';
+    if (asset.audioStatus === 'error') return 'Chyba';
+    return 'Chybí audio';
   }
 
   assetImageIsGenerating(asset: FlipcardAsset): boolean {
@@ -669,7 +714,7 @@ export class AppComponent implements OnInit, OnDestroy {
       const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(asset.word), {});
       await this.applyAssetImageResponse(response);
       if (response.status !== 'ready') {
-        await this.pollAssetImageUntilReady(asset.word, response.normalized);
+        this.startAssetLibraryPolling();
       }
     } catch (error) {
       this.assetImageErrors = {
@@ -683,21 +728,39 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  private async pollAssetImageUntilReady(word: string, normalized: string): Promise<void> {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < 30 * 60 * 1000) {
-      await this.delay(2000);
-      const response = await this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(word));
-      await this.applyAssetImageResponse(response);
-      if (response.status === 'ready') return;
-      if (response.status === 'error') {
-        throw new Error(response.error ?? 'Obrazek se nepodarilo pripravit.');
+  async generateAssetAudio(asset: FlipcardAsset): Promise<void> {
+    if (asset.audioStatus === 'ready' || this.assetAudioIsGenerating(asset)) return;
+    this.assetAudioGenerating = { ...this.assetAudioGenerating, [asset.normalized]: true };
+    const { [asset.normalized]: _removed, ...nextErrors } = this.assetAudioErrors;
+    this.assetAudioErrors = nextErrors;
+    this.render();
+
+    try {
+      const response = await this.apiPost<SpellingAudioWordResponse>(this.spellingAudioPath(asset.word, 'word'), {});
+      this.applyAssetAudioResponse(response);
+      if (response.status !== 'ready') {
+        this.startAssetLibraryPolling();
       }
+    } catch (error) {
+      this.assetAudioErrors = {
+        ...this.assetAudioErrors,
+        [asset.normalized]: error instanceof Error ? error.message : 'Audio se nepodarilo pripravit.',
+      };
+    } finally {
+      const { [asset.normalized]: _removed, ...nextGenerating } = this.assetAudioGenerating;
+      this.assetAudioGenerating = nextGenerating;
+      this.render();
     }
-    this.assetImageErrors = {
-      ...this.assetImageErrors,
-      [normalized]: 'Generování trvá příliš dlouho.',
-    };
+  }
+
+  async generateAllMissingAssetImages(): Promise<void> {
+    const assets = this.flipcardAssets.filter((asset) => asset.imageStatus === 'missing' || asset.imageStatus === 'error');
+    await this.enqueueAssetBatch(assets, (asset) => this.generateAssetImage(asset));
+  }
+
+  async generateAllMissingAssetAudio(): Promise<void> {
+    const assets = this.flipcardAssets.filter((asset) => asset.audioStatus === 'missing' || asset.audioStatus === 'error');
+    await this.enqueueAssetBatch(assets, (asset) => this.generateAssetAudio(asset));
   }
 
   private async applyAssetImageResponse(response: FlipcardImageResponse): Promise<void> {
@@ -719,6 +782,113 @@ export class AppComponent implements OnInit, OnDestroy {
         : item
     ));
     this.render();
+  }
+
+  private applyAssetAudioResponse(response: SpellingAudioWordResponse): void {
+    this.flipcardAssets = this.flipcardAssets.map((item) => (
+      item.normalized === response.normalized
+        ? {
+          ...item,
+          audioStatus: response.status,
+          audioUrl: response.audioUrl ?? item.audioUrl,
+          audioError: response.error ?? null,
+        }
+        : item
+    ));
+    this.render();
+  }
+
+  private async enqueueAssetBatch(assets: FlipcardAsset[], enqueue: (asset: FlipcardAsset) => Promise<void>): Promise<void> {
+    const queue = [...assets];
+    const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+      while (queue.length > 0 && this.screen === 'assetLibrary') {
+        const asset = queue.shift();
+        if (!asset) return;
+        await enqueue(asset);
+      }
+    });
+    await Promise.all(workers);
+    this.startAssetLibraryPolling();
+  }
+
+  private startAssetLibraryPolling(): void {
+    if (this.screen !== 'assetLibrary') return;
+    const hasActiveJobs = this.flipcardAssets.some((asset) => (
+      asset.imageStatus === 'queued'
+      || asset.imageStatus === 'generating'
+      || asset.audioStatus === 'queued'
+      || asset.audioStatus === 'generating'
+    ));
+    if (!hasActiveJobs || this.assetLibraryPollToken) return;
+
+    const token: PollToken = { cancelled: false };
+    this.assetLibraryPollToken = token;
+    void this.pollAssetLibrary(token);
+  }
+
+  private cancelAssetLibraryPolling(): void {
+    if (this.assetLibraryPollToken) {
+      this.assetLibraryPollToken.cancelled = true;
+      this.assetLibraryPollToken = null;
+    }
+  }
+
+  private cancelAudioPrepPolling(): void {
+    if (this.audioPrepPollToken) {
+      this.audioPrepPollToken.cancelled = true;
+      this.audioPrepPollToken = null;
+    }
+  }
+
+  private async pollAssetLibrary(token: PollToken): Promise<void> {
+    while (!token.cancelled && this.screen === 'assetLibrary') {
+      await this.delay(2000);
+      if (token.cancelled || this.screen !== 'assetLibrary') break;
+      const activeAssets = this.flipcardAssets.filter((asset) => (
+        asset.imageStatus === 'queued'
+        || asset.imageStatus === 'generating'
+        || asset.audioStatus === 'queued'
+        || asset.audioStatus === 'generating'
+      ));
+      if (activeAssets.length === 0) break;
+
+      try {
+        await Promise.all(activeAssets.map((asset) => this.refreshAssetLibraryItem(asset, token)));
+      } catch {
+        if (!token.cancelled && this.screen === 'assetLibrary') {
+          this.assetLibraryError = 'Stav knihovny se nepodařilo obnovit.';
+          this.render();
+        }
+      }
+    }
+    if (this.assetLibraryPollToken === token) {
+      this.assetLibraryPollToken = null;
+    }
+  }
+
+  private async refreshAssetLibraryItem(asset: FlipcardAsset, token: PollToken): Promise<void> {
+    const needsImage = asset.imageStatus === 'queued' || asset.imageStatus === 'generating';
+    const needsAudio = asset.audioStatus === 'queued' || asset.audioStatus === 'generating';
+    await Promise.all([
+      needsImage ? this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(asset.word)) : Promise.resolve(null),
+      needsAudio ? this.apiGet<SpellingAudioWordResponse>(this.spellingAudioPath(asset.word, 'word')) : Promise.resolve(null),
+    ]).then(async ([imageResponse, audioResponse]) => {
+      if (token.cancelled || this.screen !== 'assetLibrary') return;
+      if (imageResponse) {
+        await this.applyAssetImageResponse(imageResponse);
+        if (imageResponse.status === 'ready' || imageResponse.status === 'error') {
+          const { [imageResponse.normalized]: _removed, ...nextGenerating } = this.assetImageGenerating;
+          this.assetImageGenerating = nextGenerating;
+        }
+      }
+      if (audioResponse) {
+        this.applyAssetAudioResponse(audioResponse);
+        if (audioResponse.status === 'ready' || audioResponse.status === 'error') {
+          const { [audioResponse.normalized]: _removed, ...nextGenerating } = this.assetAudioGenerating;
+          this.assetAudioGenerating = nextGenerating;
+        }
+      }
+    });
   }
 
   async saveSettingsOnly(): Promise<void> {
@@ -793,7 +963,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardImageUrls = {};
     this.flipcardAdvancing = false;
     this.clearFlipcardPreloads();
-    this.screen = this.tests.length > 0 ? 'start' : 'settings';
+    this.setScreen(this.tests.length > 0 ? 'start' : 'settings');
     this.render();
   }
 
@@ -814,7 +984,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.startingSpellingMode = null;
         this.spellingStats = {};
         this.flipcardStats = {};
-        this.screen = 'login';
+        this.setScreen('login');
         return;
       }
       const [tests, settings] = await Promise.all([
@@ -836,9 +1006,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.startingSpellingMode = null;
       this.spellingStats = {};
       this.flipcardStats = {};
-      this.screen = this.tests.length > 0 ? 'start' : 'settings';
+      this.setScreen(this.tests.length > 0 ? 'start' : 'settings');
     } catch {
-      this.screen = 'login';
+      this.setScreen('login');
     } finally {
       this.loading = false;
       this.render();
@@ -882,7 +1052,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private startSpellingGame(): void {
-    this.screen = 'play';
+    this.setScreen('play');
     if (this.settings.audioSource === 'browser_tts') {
       this.checkTtsSupport();
     } else {
@@ -892,7 +1062,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private startFlipcardGame(): void {
-    this.screen = 'play';
+    this.setScreen('play');
     if (this.settings.audioSource === 'browser_tts') {
       this.checkTtsSupport();
     } else {
@@ -942,7 +1112,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
       const missingItems = this.audioPrepItems.filter((item) => item.status !== 'ready');
       if (missingItems.length > 0) {
-        this.screen = 'audioPrep';
+        this.setScreen('audioPrep');
         this.render();
       }
       await this.generateMissingAudio(missingItems);
@@ -950,7 +1120,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.audioPrepLoading = false;
       this.startSpellingGame();
     } catch (error) {
-      this.screen = 'audioPrep';
+      this.setScreen('audioPrep');
       this.audioPrepError = error instanceof Error ? error.message : 'Audio se nepodařilo připravit.';
     } finally {
       this.audioPrepLoading = false;
@@ -1006,13 +1176,13 @@ export class AppComponent implements OnInit, OnDestroy {
 
       const missingItems = this.audioPrepItems.filter((item) => item.status !== 'ready');
       if (this.settings.flipcardSource === 'ready_only' && missingItems.length > 0) {
-        this.screen = 'audioPrep';
+        this.setScreen('audioPrep');
         this.audioPrepError = 'Pro test z připravených slov chybí obrázek nebo audio.';
         this.render();
         return;
       }
       if (missingItems.length > 0) {
-        this.screen = 'audioPrep';
+        this.setScreen('audioPrep');
         this.render();
       }
       await this.generateMissingAudio(missingItems);
@@ -1021,7 +1191,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.audioPrepLoading = false;
       this.startFlipcardGame();
     } catch (error) {
-      this.screen = 'audioPrep';
+      this.setScreen('audioPrep');
       this.audioPrepError = error instanceof Error ? error.message : 'Obrázky se nepodařilo připravit.';
     } finally {
       this.audioPrepLoading = false;
@@ -1111,34 +1281,47 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async generateMissingAudio(items: AudioPrepItem[]): Promise<void> {
+    this.cancelAudioPrepPolling();
+    const token: PollToken = { cancelled: false };
+    this.audioPrepPollToken = token;
     const queue = [...items];
     const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
-      while (queue.length > 0) {
+      while (queue.length > 0 && !token.cancelled) {
         const item = queue.shift();
         if (!item) return;
-        await this.generateAudioItem(item);
+        await this.generateAudioItem(item, token);
       }
     });
-    await Promise.all(workers);
+    try {
+      await Promise.all(workers);
+    } finally {
+      if (this.audioPrepPollToken === token) {
+        this.audioPrepPollToken = null;
+      }
+    }
   }
 
-  private async generateAudioItem(item: AudioPrepItem): Promise<void> {
+  private async generateAudioItem(item: AudioPrepItem, token: PollToken): Promise<void> {
+    if (token.cancelled) return;
     this.updateAudioPrepItem(item.normalized, item.kind, { status: 'queued', error: null });
     try {
       if (item.kind === 'flipcard_image') {
         const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(item.audioWord), {});
+        if (token.cancelled) return;
         this.applyFlipcardImagePrepResponse(item, response);
         if (response.status !== 'ready') {
-          await this.pollAudioPrepItemUntilReady(item);
+          await this.pollAudioPrepItemUntilReady(item, token);
         }
         return;
       }
       const response = await this.apiPost<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind), {});
+      if (token.cancelled) return;
       this.applySpellingAudioPrepResponse(item, response);
       if (response.status !== 'ready') {
-        await this.pollAudioPrepItemUntilReady(item);
+        await this.pollAudioPrepItemUntilReady(item, token);
       }
     } catch (error) {
+      if (token.cancelled) return;
       this.audioPrepError = error instanceof Error ? error.message : 'Generování selhalo.';
       this.updateAudioPrepItem(item.normalized, item.kind, {
         status: 'error',
@@ -1147,22 +1330,26 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  private async pollAudioPrepItemUntilReady(item: AudioPrepItem): Promise<void> {
+  private async pollAudioPrepItemUntilReady(item: AudioPrepItem, token: PollToken): Promise<void> {
     const startedAt = Date.now();
-    while (Date.now() - startedAt < 30 * 60 * 1000) {
+    while (!token.cancelled && Date.now() - startedAt < 30 * 60 * 1000) {
       await this.delay(2000);
+      if (token.cancelled) return;
       if (item.kind === 'flipcard_image') {
         const response = await this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(item.audioWord));
+        if (token.cancelled) return;
         this.applyFlipcardImagePrepResponse(item, response);
         if (response.status === 'ready') return;
         if (response.status === 'error') throw new Error(response.error ?? 'Generování obrázku selhalo.');
       } else {
         const response = await this.apiGet<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind));
+        if (token.cancelled) return;
         this.applySpellingAudioPrepResponse(item, response);
         if (response.status === 'ready') return;
         if (response.status === 'error') throw new Error(response.error ?? 'Generování audia selhalo.');
       }
     }
+    if (token.cancelled) return;
     throw new Error('Generování trvá příliš dlouho.');
   }
 
@@ -1222,6 +1409,16 @@ export class AppComponent implements OnInit, OnDestroy {
     await new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
   }
 
+  private setScreen(screen: Screen): void {
+    if (this.screen === 'assetLibrary' && screen !== 'assetLibrary') {
+      this.cancelAssetLibraryPolling();
+    }
+    if (this.screen === 'audioPrep' && screen !== 'audioPrep') {
+      this.cancelAudioPrepPolling();
+    }
+    this.screen = screen;
+  }
+
   private pickQuestion(): void {
     this.clearTimer();
     if (this.activeGame === 'spelling') {
@@ -1234,7 +1431,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     if (this.questions.length === 0) {
       this.currentIndex = null;
-      this.screen = this.selectedTest ? 'mode' : 'start';
+      this.setScreen(this.selectedTest ? 'mode' : 'start');
       return;
     }
 
@@ -1270,7 +1467,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (nextIndex === undefined) {
       this.clearTimer();
       this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
-      this.screen = 'finished';
+      this.setScreen('finished');
       return;
     }
     this.spellingWordIndex = nextIndex;
@@ -1299,7 +1496,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (nextIndex === undefined) {
       this.clearTimer();
       this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
-      this.screen = 'finished';
+      this.setScreen('finished');
       return;
     }
     this.flipcardWordIndex = nextIndex;
@@ -1482,7 +1679,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (nextScore < this.settings.targetScore) return false;
     this.clearTimer();
     this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
-    this.screen = 'finished';
+    this.setScreen('finished');
     return true;
   }
 
@@ -1542,6 +1739,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private resetRoundState(): void {
+    this.cancelAssetLibraryPolling();
+    this.cancelAudioPrepPolling();
     this.clearTimer();
     this.stopBackendAudio();
     this.score = 0;
@@ -1853,7 +2052,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async readApiResponse<T>(response: Response, redirectOnUnauthorized: boolean): Promise<T> {
     if (response.status === 401 && redirectOnUnauthorized) {
-      this.screen = 'login';
+      this.setScreen('login');
     }
     if (!response.ok) {
       const body = await response.text();
