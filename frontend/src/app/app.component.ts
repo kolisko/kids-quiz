@@ -316,7 +316,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get audioPrepSummary(): string {
-    if (this.hasAudioPrepErrors) return 'Některé audio se nepodařilo připravit.';
+    if (this.hasAudioPrepErrors) return 'Některé položky se nepodařilo připravit.';
     if (this.visibleAudioPrepItems.length > 0) {
       return `Připravuji ${this.audioPrepReadyCount} / ${this.audioPrepItems.length} položek...`;
     }
@@ -896,7 +896,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const urls = this.flipcardWords
       .map((word) => this.flipcardImageUrls[word.normalized])
       .filter((url): url is string => Boolean(url));
-    await Promise.all(urls.map((url) => this.preloadImage(url)));
+    await Promise.allSettled(urls.map((url) => this.preloadImage(url)));
   }
 
   private async preloadImage(url: string): Promise<void> {
