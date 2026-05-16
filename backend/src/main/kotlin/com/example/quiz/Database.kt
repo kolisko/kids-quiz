@@ -27,6 +27,7 @@ private const val largeMultiplicationTestName = "Velká násobilka"
 private const val englishTestName = "Angličtina"
 private const val defaultSecondsLimit = 30
 private const val defaultTargetScore = 10
+private val defaultAudioSource = AudioSource.browser_tts
 
 @Serializable
 private data class LegacyQuestion(val q: String, val a: String)
@@ -157,6 +158,12 @@ object DatabaseMigrator {
                 connection.transaction {
                     addAppSettings()
                     recordMigration(8, "add_app_settings")
+                }
+            }
+            if (9 !in applied) {
+                connection.transaction {
+                    addAudioSourceSetting()
+                    recordMigration(9, "add_audio_source_setting")
                 }
             }
         }
@@ -533,17 +540,40 @@ object DatabaseMigrator {
                     id INTEGER PRIMARY KEY CHECK(id = 1),
                     seconds_limit INTEGER NOT NULL DEFAULT $defaultSecondsLimit CHECK(seconds_limit >= 1),
                     target_score INTEGER NOT NULL DEFAULT $defaultTargetScore CHECK(target_score >= 1),
+                    audio_source TEXT NOT NULL DEFAULT '${defaultAudioSource.name}',
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """.trimIndent(),
             )
             statement.executeUpdate(
                 """
-                INSERT INTO app_settings(id, seconds_limit, target_score, updated_at)
-                VALUES(1, $defaultSecondsLimit, $defaultTargetScore, CURRENT_TIMESTAMP)
+                INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, updated_at)
+                VALUES(1, $defaultSecondsLimit, $defaultTargetScore, '${defaultAudioSource.name}', CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET
                     seconds_limit = $defaultSecondsLimit,
                     updated_at = CURRENT_TIMESTAMP
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addAudioSourceSetting() {
+        createStatement().use { statement ->
+            val columns = statement.executeQuery("PRAGMA table_info(app_settings)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            if ("audio_source" !in columns) {
+                statement.executeUpdate(
+                    "ALTER TABLE app_settings ADD COLUMN audio_source TEXT NOT NULL DEFAULT '${defaultAudioSource.name}'",
+                )
+            }
+            statement.executeUpdate(
+                """
+                UPDATE app_settings
+                SET audio_source = '${defaultAudioSource.name}'
+                WHERE audio_source IS NULL OR audio_source = ''
                 """.trimIndent(),
             )
         }
@@ -774,7 +804,7 @@ fun Connection.readAppSettings(): AppSettings {
     ensureAppSettingsRow()
     return prepareStatement(
         """
-        SELECT seconds_limit, target_score
+        SELECT seconds_limit, target_score, audio_source
         FROM app_settings
         WHERE id = 1
         """.trimIndent(),
@@ -784,6 +814,7 @@ fun Connection.readAppSettings(): AppSettings {
             AppSettings(
                 secondsLimit = rows.getInt("seconds_limit"),
                 targetScore = rows.getInt("target_score"),
+                audioSource = rows.getString("audio_source").toAudioSource(),
             )
         }
     }
@@ -794,16 +825,18 @@ fun Connection.replaceAppSettings(settings: AppSettings) {
     val targetScore = settings.targetScore.coerceAtLeast(1)
     prepareStatement(
         """
-        INSERT INTO app_settings(id, seconds_limit, target_score, updated_at)
-        VALUES(1, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, updated_at)
+        VALUES(1, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             seconds_limit = excluded.seconds_limit,
             target_score = excluded.target_score,
+            audio_source = excluded.audio_source,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
         statement.setInt(1, secondsLimit)
         statement.setInt(2, targetScore)
+        statement.setString(3, settings.audioSource.name)
         statement.executeUpdate()
     }
 }
@@ -1138,6 +1171,28 @@ private fun Connection.readSpellingWords(setId: Long): List<SpellingWord> {
     }
 }
 
+fun Connection.readSpellingWordsForAudio(setId: Long): List<SpellingWord> = readSpellingWords(setId)
+
+fun Connection.readSpellingWordForAudio(wordId: Long): SpellingWord? {
+    return prepareStatement(
+        """
+        SELECT id, word, normalized_word
+        FROM spelling_words
+        WHERE id = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, wordId)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return null
+            SpellingWord(
+                id = rows.getLong("id"),
+                text = rows.getString("word"),
+                normalized = rows.getString("normalized_word"),
+            )
+        }
+    }
+}
+
 private fun Connection.lastInsertRowId(): Long {
     return createStatement().use { statement ->
         statement.executeQuery("SELECT last_insert_rowid()").use { rows ->
@@ -1150,8 +1205,8 @@ private fun Connection.lastInsertRowId(): Long {
 private fun Connection.ensureAppSettingsRow() {
     prepareStatement(
         """
-        INSERT INTO app_settings(id, seconds_limit, target_score, updated_at)
-        VALUES(1, $defaultSecondsLimit, $defaultTargetScore, CURRENT_TIMESTAMP)
+        INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, updated_at)
+        VALUES(1, $defaultSecondsLimit, $defaultTargetScore, '${defaultAudioSource.name}', CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO NOTHING
         """.trimIndent(),
     ).use { it.executeUpdate() }
@@ -1247,5 +1302,9 @@ private fun parseSpellingWords(rawWords: String): List<String> {
 }
 
 private fun normalizeSpellingWord(word: String): String = word.trim().lowercase()
+
+private fun String?.toAudioSource(): AudioSource {
+    return AudioSource.entries.firstOrNull { it.name == this } ?: defaultAudioSource
+}
 
 private fun timestamp(): String = backupTimestampFormatter.format(Instant.now())

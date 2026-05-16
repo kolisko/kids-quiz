@@ -3,17 +3,20 @@ import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ArrowLeft, ListRestart, LucideAngularModule, MessageCircleOff, Settings } from 'lucide-angular';
 
-type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'play' | 'settings' | 'finished';
+type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'finished';
 type QuizTestType = 'multiplication' | 'english';
 type ActiveGame = 'multiplication' | 'spelling';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
 type PracticeMode = PracticeDirection | 'mix';
 type SpellingSessionMode = 'latest' | 'older';
 type TtsStatus = 'checking' | 'supported' | 'unsupported';
+type AudioSource = 'browser_tts' | 'backend_mp3';
+type AudioPrepStatus = 'pending' | 'generating' | 'ready' | 'error';
 
 interface GameSettings {
   secondsLimit: number;
   targetScore: number;
+  audioSource: AudioSource;
 }
 
 interface Question {
@@ -64,6 +67,35 @@ interface SpellingWord {
   id: number;
   text: string;
   normalized: string;
+}
+
+interface SpellingAudioWordStatus {
+  wordId: number;
+  word: string;
+  normalized: string;
+  status: 'ready' | 'missing';
+  audioUrl: string | null;
+}
+
+interface SpellingAudioStatusResponse {
+  setId: number;
+  words: SpellingAudioWordStatus[];
+}
+
+interface SpellingAudioWordResponse {
+  wordId: number;
+  word: string;
+  normalized: string;
+  status: 'ready';
+  audioUrl: string;
+}
+
+interface AudioPrepItem {
+  wordId: number;
+  word: string;
+  status: AudioPrepStatus;
+  audioUrl: string | null;
+  error: string | null;
 }
 
 interface SpellingSession {
@@ -119,7 +151,7 @@ export class AppComponent implements OnInit, OnDestroy {
   settingsError: string | null = null;
   password = '';
 
-  settings: GameSettings = { secondsLimit: 30, targetScore: 10 };
+  settings: GameSettings = { secondsLimit: 30, targetScore: 10, audioSource: 'browser_tts' };
   tests: QuizTest[] = [];
   selectedTest: QuizTest | null = null;
   activeGame: ActiveGame = 'multiplication';
@@ -135,6 +167,7 @@ export class AppComponent implements OnInit, OnDestroy {
   spellingWords: SpellingWord[] = [];
   spellingWordIndex: number | null = null;
   spellingPendingIndices: number[] = [];
+  activeSpellingSetId: number | null = null;
   score = 0;
   currentIndex: number | null = null;
   currentDirection: PracticeDirection = 'product_to_factors';
@@ -147,6 +180,10 @@ export class AppComponent implements OnInit, OnDestroy {
   ttsStatus: TtsStatus = 'checking';
   ttsDiagnostics: TtsDiagnostics = createTtsDiagnostics('Kontrola TTS jeste neprobehla.', null);
   ttsDetailsVisible = false;
+  audioPrepItems: AudioPrepItem[] = [];
+  audioPrepError: string | null = null;
+  audioPrepLoading = false;
+  backendAudioUrls: Record<number, string> = {};
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
     product_to_factors: new Map<number, number>(),
@@ -156,6 +193,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private flashTimerId: number | null = null;
   private ttsVoicesTimerId: number | null = null;
   private ttsVoicesChangedHandler: (() => void) | null = null;
+  private backendAudio: HTMLAudioElement | null = null;
 
   constructor(private readonly changeDetector: ChangeDetectorRef) {}
 
@@ -218,6 +256,14 @@ export class AppComponent implements OnInit, OnDestroy {
     ].join('\n');
   }
 
+  get audioPrepReadyCount(): number {
+    return this.audioPrepItems.filter((item) => item.status === 'ready').length;
+  }
+
+  get hasAudioPrepErrors(): boolean {
+    return this.audioPrepItems.some((item) => item.status === 'error') || this.audioPrepError !== null;
+  }
+
   async ngOnInit(): Promise<void> {
     await this.loadGameData();
   }
@@ -226,6 +272,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearTimer();
     this.clearFlashTimer();
     this.clearTtsVoiceCheck();
+    this.stopBackendAudio();
   }
 
   async submitLogin(): Promise<void> {
@@ -289,21 +336,31 @@ export class AppComponent implements OnInit, OnDestroy {
     this.activeGame = 'spelling';
     this.resetRoundState();
     try {
-      const [stats, session] = await Promise.all([
+      const [stats, settings, session] = await Promise.all([
         this.apiGet<SpellingStatsSnapshot>('spelling/stats'),
+        this.apiGet<GameSettings>('settings'),
         this.apiGet<SpellingSession>(`spelling/session?mode=${mode}`),
       ]);
+      this.applySettings(settings);
       this.spellingStats = stats.statsByWord ?? {};
+      this.activeSpellingSetId = session.setId;
       this.spellingWords = session.words;
       this.spellingPendingIndices = this.spellingWords.map((_, index) => index);
-      this.screen = 'play';
-      this.checkTtsSupport();
-      this.pickQuestion();
+      if (this.settings.audioSource === 'backend_mp3') {
+        this.screen = 'audioPrep';
+        this.loading = false;
+        this.render();
+        await this.prepareBackendAudio(session.setId);
+        return;
+      }
+      this.startSpellingGame();
     } catch {
       this.spellingWords = [];
       this.spellingPendingIndices = [];
       this.screen = 'play';
-      this.checkTtsSupport();
+      if (this.settings.audioSource === 'browser_tts') {
+        this.checkTtsSupport();
+      }
     } finally {
       this.loading = false;
       this.render();
@@ -326,6 +383,11 @@ export class AppComponent implements OnInit, OnDestroy {
 
   replaySpellingAudio(): void {
     this.playCurrentSpellingAudio();
+  }
+
+  async retryAudioGeneration(): Promise<void> {
+    if (this.activeGame !== 'spelling' || this.activeSpellingSetId === null) return;
+    await this.prepareBackendAudio(this.activeSpellingSetId);
   }
 
   toggleTtsDetails(): void {
@@ -439,7 +501,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.serverStats = emptyStatsByDirection();
     this.spellingWords = [];
     this.spellingPendingIndices = [];
+    this.activeSpellingSetId = null;
     this.spellingStats = {};
+    this.audioPrepItems = [];
+    this.audioPrepError = null;
+    this.backendAudioUrls = {};
     this.screen = this.tests.length > 0 ? 'start' : 'settings';
     this.render();
   }
@@ -456,6 +522,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.serverStats = emptyStatsByDirection();
         this.spellingWords = [];
         this.spellingPendingIndices = [];
+        this.activeSpellingSetId = null;
         this.spellingStats = {};
         this.screen = 'login';
         return;
@@ -473,6 +540,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.serverStats = emptyStatsByDirection();
       this.spellingWords = [];
       this.spellingPendingIndices = [];
+      this.activeSpellingSetId = null;
       this.spellingStats = {};
       this.screen = this.tests.length > 0 ? 'start' : 'settings';
     } catch {
@@ -491,6 +559,7 @@ export class AppComponent implements OnInit, OnDestroy {
     return {
       secondsLimit: Math.max(1, Math.floor(Number(this.settings.secondsLimit) || 10)),
       targetScore: Math.max(1, Math.floor(Number(this.settings.targetScore) || 10)),
+      audioSource: this.settings.audioSource === 'backend_mp3' ? 'backend_mp3' : 'browser_tts',
     };
   }
 
@@ -498,8 +567,89 @@ export class AppComponent implements OnInit, OnDestroy {
     this.settings = {
       secondsLimit: Math.max(1, Math.floor(Number(settings.secondsLimit) || 30)),
       targetScore: Math.max(1, Math.floor(Number(settings.targetScore) || 10)),
+      audioSource: settings.audioSource === 'backend_mp3' ? 'backend_mp3' : 'browser_tts',
     };
     this.secondsLeft = this.settings.secondsLimit;
+  }
+
+  private startSpellingGame(): void {
+    this.screen = 'play';
+    if (this.settings.audioSource === 'browser_tts') {
+      this.checkTtsSupport();
+    } else {
+      this.ttsDetailsVisible = false;
+    }
+    this.pickQuestion();
+  }
+
+  private async prepareBackendAudio(setId: number): Promise<void> {
+    this.audioPrepLoading = true;
+    this.audioPrepError = null;
+    this.backendAudioUrls = {};
+    try {
+      const status = await this.apiGet<SpellingAudioStatusResponse>(`spelling/audio/status?setId=${setId}`);
+      this.audioPrepItems = status.words.map((word) => ({
+        wordId: word.wordId,
+        word: word.word,
+        status: word.status === 'ready' ? 'ready' : 'pending',
+        audioUrl: word.audioUrl,
+        error: null,
+      }));
+      this.backendAudioUrls = Object.fromEntries(
+        this.audioPrepItems
+          .filter((item) => item.audioUrl)
+          .map((item) => [item.wordId, item.audioUrl as string]),
+      );
+      this.render();
+
+      const missingItems = this.audioPrepItems.filter((item) => item.status !== 'ready');
+      await this.generateMissingAudio(missingItems);
+      if (this.audioPrepItems.some((item) => item.status === 'error')) return;
+      this.audioPrepLoading = false;
+      this.startSpellingGame();
+    } catch (error) {
+      this.audioPrepError = error instanceof Error ? error.message : 'Audio se nepodařilo připravit.';
+    } finally {
+      this.audioPrepLoading = false;
+      this.render();
+    }
+  }
+
+  private async generateMissingAudio(items: AudioPrepItem[]): Promise<void> {
+    const queue = [...items];
+    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item) return;
+        await this.generateAudioItem(item);
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  private async generateAudioItem(item: AudioPrepItem): Promise<void> {
+    this.updateAudioPrepItem(item.wordId, { status: 'generating', error: null });
+    try {
+      const response = await this.apiPost<SpellingAudioWordResponse>(`spelling/audio/words/${item.wordId}`, {});
+      this.backendAudioUrls = {
+        ...this.backendAudioUrls,
+        [response.wordId]: response.audioUrl,
+      };
+      this.updateAudioPrepItem(item.wordId, { status: 'ready', audioUrl: response.audioUrl, error: null });
+    } catch (error) {
+      this.audioPrepError = error instanceof Error ? error.message : 'Generování selhalo.';
+      this.updateAudioPrepItem(item.wordId, {
+        status: 'error',
+        error: this.audioPrepError,
+      });
+    }
+  }
+
+  private updateAudioPrepItem(wordId: number, update: Partial<AudioPrepItem>): void {
+    this.audioPrepItems = this.audioPrepItems.map((item) => (
+      item.wordId === wordId ? { ...item, ...update } : item
+    ));
+    this.render();
   }
 
   private pickQuestion(): void {
@@ -685,12 +835,18 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private resetRoundState(): void {
     this.clearTimer();
+    this.stopBackendAudio();
     this.score = 0;
     this.currentIndex = null;
     this.spellingWordIndex = null;
+    this.activeSpellingSetId = null;
     this.currentDirection = 'product_to_factors';
     this.currentFactorQuestion = null;
     this.spellingPendingIndices = [];
+    this.audioPrepItems = [];
+    this.audioPrepError = null;
+    this.audioPrepLoading = false;
+    this.backendAudioUrls = {};
     this.answerVisible = false;
     this.timedOut = false;
     this.flash = null;
@@ -741,6 +897,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private playCurrentSpellingAudio(): void {
+    if (this.settings.audioSource === 'backend_mp3') {
+      this.playCurrentBackendAudio();
+      return;
+    }
     const word = this.currentSpellingWord?.text;
     const speech = window.speechSynthesis;
     if (!word) return;
@@ -760,6 +920,22 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch (error) {
       this.setTtsUnsupported('Prehrani TTS selhalo.', error instanceof Error ? error.message : String(error), speech.getVoices().length);
     }
+  }
+
+  private playCurrentBackendAudio(): void {
+    const wordId = this.currentSpellingWord?.id;
+    if (!wordId) return;
+    const audioUrl = this.backendAudioUrls[wordId];
+    if (!audioUrl) return;
+    this.stopBackendAudio();
+    this.backendAudio = new Audio(audioUrl);
+    void this.backendAudio.play();
+  }
+
+  private stopBackendAudio(): void {
+    if (!this.backendAudio) return;
+    this.backendAudio.pause();
+    this.backendAudio = null;
   }
 
   private setTtsUnsupported(reason: string, lastError: string | null = null, voiceCount?: number): void {
@@ -816,7 +992,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.screen = 'login';
     }
     if (!response.ok) {
-      throw new Error(`API ${response.status}`);
+      const body = await response.text();
+      const apiError = parseApiError(body);
+      throw new Error(apiError ?? `API ${response.status}`);
     }
     return response.json() as Promise<T>;
   }
@@ -879,6 +1057,16 @@ function createTtsDiagnostics(reason: string, lastError: string | null, voiceCou
     lastError,
     userAgent: navigator.userAgent,
   };
+}
+
+function parseApiError(body: string): string | null {
+  if (!body) return null;
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    return typeof parsed.error === 'string' ? parsed.error : null;
+  } catch {
+    return body.slice(0, 160);
+  }
 }
 
 const surprises: AnimalSurprise[] = Array.from({ length: 40 }, (_, index) => ({

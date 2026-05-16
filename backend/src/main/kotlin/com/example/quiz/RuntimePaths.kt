@@ -14,6 +14,10 @@ fun runtimeDataDir(): Path = System.getenv(DataDirEnv)
 
 fun runtimeDataFile(name: String): Path = runtimeDataDir().resolve(name)
 
+fun runtimeDataPath(first: String, vararg more: String): Path {
+    return more.fold(runtimeDataFile(first)) { path, name -> path.resolve(name) }
+}
+
 fun runtimeDatabaseFile(): Path = System.getenv(DatabasePathEnv)
     ?.takeIf { it.isNotBlank() }
     ?.let { Path(it) }

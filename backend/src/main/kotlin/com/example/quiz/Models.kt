@@ -20,6 +20,18 @@ enum class SpellingSessionMode {
 }
 
 @Serializable
+enum class AudioSource {
+    browser_tts,
+    backend_mp3,
+}
+
+@Serializable
+enum class SpellingAudioStatus {
+    ready,
+    missing,
+}
+
+@Serializable
 data class Question(
     val id: Long,
     val q: String,
@@ -62,6 +74,7 @@ data class LoginRequest(
 data class AppSettings(
     val secondsLimit: Int = 30,
     val targetScore: Int = 10,
+    val audioSource: AudioSource = AudioSource.browser_tts,
 )
 
 @Serializable
@@ -91,6 +104,30 @@ data class SpellingWord(
     val id: Long,
     val text: String,
     val normalized: String,
+)
+
+@Serializable
+data class SpellingAudioWordStatus(
+    val wordId: Long,
+    val word: String,
+    val normalized: String,
+    val status: SpellingAudioStatus,
+    val audioUrl: String? = null,
+)
+
+@Serializable
+data class SpellingAudioStatusResponse(
+    val setId: Long,
+    val words: List<SpellingAudioWordStatus>,
+)
+
+@Serializable
+data class SpellingAudioWordResponse(
+    val wordId: Long,
+    val word: String,
+    val normalized: String,
+    val status: SpellingAudioStatus,
+    val audioUrl: String,
 )
 
 @Serializable
