@@ -305,16 +305,41 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get visibleAudioPrepItems(): AudioPrepItem[] {
-    return this.audioPrepItems.filter((item) => item.status === 'generating' || item.status === 'error');
+    const hasWork = this.audioPrepItems.some((item) => item.status === 'generating' || item.status === 'error');
+    return hasWork ? this.audioPrepItems : this.audioPrepItems.filter((item) => item.status === 'generating' || item.status === 'error');
   }
 
   get audioPrepSummary(): string {
     if (this.hasAudioPrepErrors) return 'Některé audio se nepodařilo připravit.';
-    return this.visibleAudioPrepItems.length > 0 ? 'Generuji chybějící audio...' : 'Kontroluji audio...';
+    if (this.visibleAudioPrepItems.length > 0) {
+      return `Připravuji ${this.audioPrepReadyCount} / ${this.audioPrepItems.length} položek...`;
+    }
+    return `Kontroluji ${this.audioPrepItems.length} položek...`;
+  }
+
+  get audioPrepReadyCount(): number {
+    return this.audioPrepItems.filter((item) => item.status === 'ready').length;
   }
 
   get hasAudioPrepErrors(): boolean {
     return this.audioPrepItems.some((item) => item.status === 'error') || this.audioPrepError !== null;
+  }
+
+  get audioPrepActionsVisible(): boolean {
+    return !this.audioPrepLoading || this.hasAudioPrepErrors;
+  }
+
+  audioPrepItemTypeLabel(item: AudioPrepItem): string {
+    if (item.kind === 'flipcard_image') return 'Obrázek';
+    if (item.kind === 'spelling') return 'Spelling audio';
+    return 'Audio slova';
+  }
+
+  audioPrepItemStatusLabel(item: AudioPrepItem): string {
+    if (item.status === 'ready') return 'Hotovo';
+    if (item.status === 'generating') return item.kind === 'flipcard_image' ? 'Generuji' : 'Nahrávám';
+    if (item.status === 'error') return 'Chyba';
+    return 'Čeká';
   }
 
   async ngOnInit(): Promise<void> {

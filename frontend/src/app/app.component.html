@@ -223,18 +223,22 @@
       <p class="audio-prep-summary">{{ audioPrepSummary }}</p>
       <div class="audio-prep-list" *ngIf="visibleAudioPrepItems.length > 0">
         <div class="audio-prep-row" *ngFor="let item of visibleAudioPrepItems" [ngClass]="'audio-prep-' + item.status">
-          <span>{{ item.word }}</span>
+          <span class="audio-prep-word">{{ item.word }}</span>
+          <span class="audio-prep-kind">{{ audioPrepItemTypeLabel(item) }}</span>
           <div class="audio-prep-track">
             <span class="audio-prep-fill"></span>
           </div>
-          <strong>{{ item.status === 'error' ? 'Chyba' : 'Generuji' }}</strong>
+          <strong>{{ audioPrepItemStatusLabel(item) }}</strong>
         </div>
       </div>
       <p class="error settings-error" *ngIf="audioPrepError">{{ audioPrepError }}</p>
       <button class="primary-button compact-button" type="button" *ngIf="hasAudioPrepErrors" (click)="retryAudioGeneration()" [disabled]="audioPrepLoading">
         Zkusit znovu
       </button>
-      <div class="main-actions">
+      <p class="audio-prep-note" *ngIf="audioPrepLoading && !hasAudioPrepErrors">
+        Test se spustí automaticky, jakmile budou všechny položky připravené.
+      </p>
+      <div class="main-actions" *ngIf="audioPrepActionsVisible">
         <button class="primary-button finish-play-button wide-action" type="button" (click)="returnToTestSelection()">Vybrat test</button>
         <button class="primary-button finish-play-button wide-action" type="button" (click)="openSettings()">Nastavení</button>
       </div>
