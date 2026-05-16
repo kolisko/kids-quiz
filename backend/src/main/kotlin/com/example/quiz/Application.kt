@@ -234,7 +234,7 @@ fun Application.module() {
                 }
                 get("/images/{word}.{ext}") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    val word = call.requireFlipcardImageWord() ?: return@get
+                    val word = call.requireFlipcardImageFileWord() ?: return@get
                     val imageFile = FlipcardImageService.imageFile(word)
                     if (imageFile == null) {
                         call.respond(HttpStatusCode.NotFound, mapOf("error" to "image_not_found"))
@@ -362,6 +362,19 @@ private suspend fun ApplicationCall.requireSpellingAudioKind(): SpellingAudioKin
 private suspend fun ApplicationCall.requireFlipcardImageWord(): String? {
     val word = parameters["word"]?.trim()
     if (word.isNullOrBlank()) {
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
+        return null
+    }
+    return word
+}
+
+private suspend fun ApplicationCall.requireFlipcardImageFileWord(): String? {
+    val rawWord = parameters["word"]?.trim()
+    if (!rawWord.isNullOrBlank()) return rawWord
+
+    val fileName = request.path().substringAfterLast('/').trim()
+    val word = fileName.substringBeforeLast('.', missingDelimiterValue = "").trim()
+    if (word.isBlank()) {
         respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
         return null
     }
