@@ -1171,28 +1171,6 @@ private fun Connection.readSpellingWords(setId: Long): List<SpellingWord> {
     }
 }
 
-fun Connection.readSpellingWordsForAudio(setId: Long): List<SpellingWord> = readSpellingWords(setId)
-
-fun Connection.readSpellingWordForAudio(wordId: Long): SpellingWord? {
-    return prepareStatement(
-        """
-        SELECT id, word, normalized_word
-        FROM spelling_words
-        WHERE id = ?
-        """.trimIndent(),
-    ).use { statement ->
-        statement.setLong(1, wordId)
-        statement.executeQuery().use { rows ->
-            if (!rows.next()) return null
-            SpellingWord(
-                id = rows.getLong("id"),
-                text = rows.getString("word"),
-                normalized = rows.getString("normalized_word"),
-            )
-        }
-    }
-}
-
 private fun Connection.lastInsertRowId(): Long {
     return createStatement().use { statement ->
         statement.executeQuery("SELECT last_insert_rowid()").use { rows ->

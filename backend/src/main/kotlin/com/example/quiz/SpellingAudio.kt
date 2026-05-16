@@ -4,9 +4,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.net.URI
+import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -41,28 +43,20 @@ object SpellingAudioService {
         .connectTimeout(Duration.ofSeconds(20))
         .build()
 
-    fun status(setId: Long): SpellingAudioStatusResponse {
-        val words = SpellingStore.readWordsForAudio(setId)
-        return SpellingAudioStatusResponse(
-            setId = setId,
-            words = words.map { word ->
-                val wordReady = Files.isRegularFile(audioPath(word, SpellingAudioKind.word))
-                val spellingReady = Files.isRegularFile(audioPath(word, SpellingAudioKind.spelling))
-                SpellingAudioWordStatus(
-                    wordId = word.id,
-                    word = word.text,
-                    normalized = word.normalized,
-                    status = if (wordReady) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
-                    audioUrl = if (wordReady) audioUrl(word, SpellingAudioKind.word) else null,
-                    spellingStatus = if (spellingReady) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
-                    spellingAudioUrl = if (spellingReady) audioUrl(word, SpellingAudioKind.spelling) else null,
-                )
-            },
+    fun status(rawWord: String, kind: SpellingAudioKind): SpellingAudioWordResponse? {
+        val word = spellingAudioWord(rawWord) ?: return null
+        val ready = Files.isRegularFile(audioPath(word, kind))
+        return SpellingAudioWordResponse(
+            word = word.text,
+            normalized = word.normalized,
+            status = if (ready) SpellingAudioStatus.ready else SpellingAudioStatus.missing,
+            kind = kind,
+            audioUrl = if (ready) audioUrl(word, kind) else null,
         )
     }
 
-    fun generate(wordId: Long, kind: SpellingAudioKind): SpellingAudioWordResponse? {
-        val word = SpellingStore.readWordForAudio(wordId) ?: return null
+    fun generate(rawWord: String, kind: SpellingAudioKind): SpellingAudioWordResponse? {
+        val word = spellingAudioWord(rawWord) ?: return null
         synchronized(lock) {
             val outputPath = audioPath(word, kind)
             if (!Files.isRegularFile(outputPath)) {
@@ -70,7 +64,6 @@ object SpellingAudioService {
             }
         }
         return SpellingAudioWordResponse(
-            wordId = word.id,
             word = word.text,
             normalized = word.normalized,
             status = SpellingAudioStatus.ready,
@@ -79,8 +72,8 @@ object SpellingAudioService {
         )
     }
 
-    fun audioFile(wordId: Long, kind: SpellingAudioKind): Path? {
-        val word = SpellingStore.readWordForAudio(wordId) ?: return null
+    fun audioFile(rawWord: String, kind: SpellingAudioKind): Path? {
+        val word = spellingAudioWord(rawWord) ?: return null
         val path = audioPath(word, kind)
         return path.takeIf { Files.isRegularFile(it) }
     }
@@ -122,7 +115,7 @@ object SpellingAudioService {
     }
 
     private fun audioUrl(word: SpellingWord, kind: SpellingAudioKind): String {
-        return "/api/spelling/audio/words/${word.id}.mp3?kind=${kind.name}&v=${audioCacheKey(word, kind)}"
+        return "/api/spelling/audio/words/${urlEncodePathSegment(word.text)}.mp3?kind=${kind.name}&v=${audioCacheKey(word, kind)}"
     }
 
     private fun ttsModel(): String = System.getenv("OPENAI_TTS_MODEL")?.takeIf { it.isNotBlank() }
@@ -151,6 +144,20 @@ object SpellingAudioService {
         return word.trim()
             .filter { it.isLetterOrDigit() }
             .map { it.uppercaseChar().toString() }
+    }
+
+    private fun spellingAudioWord(rawWord: String): SpellingWord? {
+        val text = rawWord.trim()
+        if (text.isBlank()) return null
+        return SpellingWord(
+            id = 0,
+            text = text,
+            normalized = text.lowercase(),
+        )
+    }
+
+    private fun urlEncodePathSegment(value: String): String {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
     }
 
     private fun sha256Hex(value: String): String {

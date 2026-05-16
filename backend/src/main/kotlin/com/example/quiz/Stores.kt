@@ -87,18 +87,6 @@ object SpellingStore {
         }
     }
 
-    fun readWordsForAudio(setId: Long): List<SpellingWord> = synchronized(lock) {
-        Database.useConnection { connection ->
-            connection.readSpellingWordsForAudio(setId)
-        }
-    }
-
-    fun readWordForAudio(wordId: Long): SpellingWord? = synchronized(lock) {
-        Database.useConnection { connection ->
-            connection.readSpellingWordForAudio(wordId)
-        }
-    }
-
     fun snapshot(): Map<String, QuestionStats> = synchronized(lock) {
         Database.useConnection { connection ->
             connection.readSpellingStats()

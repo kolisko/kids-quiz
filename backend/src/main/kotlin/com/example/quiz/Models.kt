@@ -112,30 +112,12 @@ data class SpellingWord(
 )
 
 @Serializable
-data class SpellingAudioWordStatus(
-    val wordId: Long,
-    val word: String,
-    val normalized: String,
-    val status: SpellingAudioStatus,
-    val audioUrl: String? = null,
-    val spellingStatus: SpellingAudioStatus = SpellingAudioStatus.missing,
-    val spellingAudioUrl: String? = null,
-)
-
-@Serializable
-data class SpellingAudioStatusResponse(
-    val setId: Long,
-    val words: List<SpellingAudioWordStatus>,
-)
-
-@Serializable
 data class SpellingAudioWordResponse(
-    val wordId: Long,
     val word: String,
     val normalized: String,
     val status: SpellingAudioStatus,
     val kind: SpellingAudioKind = SpellingAudioKind.word,
-    val audioUrl: String,
+    val audioUrl: String? = null,
 )
 
 @Serializable

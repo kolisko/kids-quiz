@@ -69,32 +69,17 @@ interface SpellingWord {
   normalized: string;
 }
 
-interface SpellingAudioWordStatus {
-  wordId: number;
+interface SpellingAudioWordResponse {
   word: string;
   normalized: string;
   status: 'ready' | 'missing';
-  audioUrl: string | null;
-  spellingStatus: 'ready' | 'missing';
-  spellingAudioUrl: string | null;
-}
-
-interface SpellingAudioStatusResponse {
-  setId: number;
-  words: SpellingAudioWordStatus[];
-}
-
-interface SpellingAudioWordResponse {
-  wordId: number;
-  word: string;
-  normalized: string;
-  status: 'ready';
   kind: 'word' | 'spelling';
-  audioUrl: string;
+  audioUrl: string | null;
 }
 
 interface AudioPrepItem {
-  wordId: number;
+  audioWord: string;
+  normalized: string;
   word: string;
   kind: 'word' | 'spelling';
   status: AudioPrepStatus;
@@ -171,7 +156,6 @@ export class AppComponent implements OnInit, OnDestroy {
   spellingWords: SpellingWord[] = [];
   spellingWordIndex: number | null = null;
   spellingPendingIndices: number[] = [];
-  activeSpellingSetId: number | null = null;
   score = 0;
   currentIndex: number | null = null;
   currentDirection: PracticeDirection = 'product_to_factors';
@@ -187,8 +171,8 @@ export class AppComponent implements OnInit, OnDestroy {
   audioPrepItems: AudioPrepItem[] = [];
   audioPrepError: string | null = null;
   audioPrepLoading = false;
-  backendAudioUrls: Record<number, string> = {};
-  backendSpellingAudioUrls: Record<number, string> = {};
+  backendAudioUrls: Record<string, string> = {};
+  backendSpellingAudioUrls: Record<string, string> = {};
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
     product_to_factors: new Map<number, number>(),
@@ -348,14 +332,13 @@ export class AppComponent implements OnInit, OnDestroy {
       ]);
       this.applySettings(settings);
       this.spellingStats = stats.statsByWord ?? {};
-      this.activeSpellingSetId = session.setId;
       this.spellingWords = session.words;
       this.spellingPendingIndices = this.spellingWords.map((_, index) => index);
       if (this.settings.audioSource === 'backend_mp3') {
         this.screen = 'audioPrep';
         this.loading = false;
         this.render();
-        await this.prepareBackendAudio(session.setId);
+        await this.prepareBackendAudio();
         return;
       }
       this.startSpellingGame();
@@ -398,8 +381,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async retryAudioGeneration(): Promise<void> {
-    if (this.activeGame !== 'spelling' || this.activeSpellingSetId === null) return;
-    await this.prepareBackendAudio(this.activeSpellingSetId);
+    if (this.activeGame !== 'spelling' || this.spellingWords.length === 0) return;
+    await this.prepareBackendAudio();
   }
 
   toggleTtsDetails(): void {
@@ -513,7 +496,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.serverStats = emptyStatsByDirection();
     this.spellingWords = [];
     this.spellingPendingIndices = [];
-    this.activeSpellingSetId = null;
     this.spellingStats = {};
     this.audioPrepItems = [];
     this.audioPrepError = null;
@@ -535,7 +517,6 @@ export class AppComponent implements OnInit, OnDestroy {
         this.serverStats = emptyStatsByDirection();
         this.spellingWords = [];
         this.spellingPendingIndices = [];
-        this.activeSpellingSetId = null;
         this.spellingStats = {};
         this.screen = 'login';
         return;
@@ -553,7 +534,6 @@ export class AppComponent implements OnInit, OnDestroy {
       this.serverStats = emptyStatsByDirection();
       this.spellingWords = [];
       this.spellingPendingIndices = [];
-      this.activeSpellingSetId = null;
       this.spellingStats = {};
       this.screen = this.tests.length > 0 ? 'start' : 'settings';
     } catch {
@@ -595,40 +575,44 @@ export class AppComponent implements OnInit, OnDestroy {
     this.pickQuestion();
   }
 
-  private async prepareBackendAudio(setId: number): Promise<void> {
+  private async prepareBackendAudio(): Promise<void> {
     this.audioPrepLoading = true;
     this.audioPrepError = null;
     this.backendAudioUrls = {};
     this.backendSpellingAudioUrls = {};
     try {
-      const status = await this.apiGet<SpellingAudioStatusResponse>(`spelling/audio/status?setId=${setId}`);
-      this.audioPrepItems = status.words.flatMap((word) => [
+      this.audioPrepItems = this.spellingWords.flatMap((word) => [
         {
-          wordId: word.wordId,
-          word: word.word,
+          audioWord: word.text,
+          normalized: word.normalized,
+          word: word.text,
           kind: 'word' as const,
-          status: word.status === 'ready' ? 'ready' as const : 'pending' as const,
-          audioUrl: word.audioUrl,
+          status: 'pending' as const,
+          audioUrl: null,
           error: null,
         },
         {
-          wordId: word.wordId,
-          word: formatSpellingAnswer(word.word),
+          audioWord: word.text,
+          normalized: word.normalized,
+          word: formatSpellingAnswer(word.text),
           kind: 'spelling' as const,
-          status: word.spellingStatus === 'ready' ? 'ready' as const : 'pending' as const,
-          audioUrl: word.spellingAudioUrl,
+          status: 'pending' as const,
+          audioUrl: null,
           error: null,
         },
       ]);
+      this.render();
+
+      await Promise.all(this.audioPrepItems.map((item) => this.loadAudioItemStatus(item)));
       this.backendAudioUrls = Object.fromEntries(
         this.audioPrepItems
           .filter((item) => item.kind === 'word' && item.audioUrl)
-          .map((item) => [item.wordId, item.audioUrl as string]),
+          .map((item) => [item.normalized, item.audioUrl as string]),
       );
       this.backendSpellingAudioUrls = Object.fromEntries(
         this.audioPrepItems
           .filter((item) => item.kind === 'spelling' && item.audioUrl)
-          .map((item) => [item.wordId, item.audioUrl as string]),
+          .map((item) => [item.normalized, item.audioUrl as string]),
       );
       this.render();
 
@@ -645,6 +629,16 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  private async loadAudioItemStatus(item: AudioPrepItem): Promise<void> {
+    const response = await this.apiGet<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind));
+    if (response.status !== 'ready' || !response.audioUrl) return;
+    this.updateAudioPrepItem(item.normalized, item.kind, {
+      status: 'ready',
+      audioUrl: response.audioUrl,
+      error: null,
+    });
+  }
+
   private async generateMissingAudio(items: AudioPrepItem[]): Promise<void> {
     const queue = [...items];
     const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
@@ -658,35 +652,42 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async generateAudioItem(item: AudioPrepItem): Promise<void> {
-    this.updateAudioPrepItem(item.wordId, item.kind, { status: 'generating', error: null });
+    this.updateAudioPrepItem(item.normalized, item.kind, { status: 'generating', error: null });
     try {
-      const response = await this.apiPost<SpellingAudioWordResponse>(`spelling/audio/words/${item.wordId}?kind=${item.kind}`, {});
+      const response = await this.apiPost<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind), {});
+      if (!response.audioUrl) {
+        throw new Error('Audio URL chybi.');
+      }
       if (response.kind === 'spelling') {
         this.backendSpellingAudioUrls = {
           ...this.backendSpellingAudioUrls,
-          [response.wordId]: response.audioUrl,
+          [response.normalized]: response.audioUrl,
         };
       } else {
         this.backendAudioUrls = {
           ...this.backendAudioUrls,
-          [response.wordId]: response.audioUrl,
+          [response.normalized]: response.audioUrl,
         };
       }
-      this.updateAudioPrepItem(item.wordId, item.kind, { status: 'ready', audioUrl: response.audioUrl, error: null });
+      this.updateAudioPrepItem(item.normalized, item.kind, { status: 'ready', audioUrl: response.audioUrl, error: null });
     } catch (error) {
       this.audioPrepError = error instanceof Error ? error.message : 'Generování selhalo.';
-      this.updateAudioPrepItem(item.wordId, item.kind, {
+      this.updateAudioPrepItem(item.normalized, item.kind, {
         status: 'error',
         error: this.audioPrepError,
       });
     }
   }
 
-  private updateAudioPrepItem(wordId: number, kind: AudioPrepItem['kind'], update: Partial<AudioPrepItem>): void {
+  private updateAudioPrepItem(normalized: string, kind: AudioPrepItem['kind'], update: Partial<AudioPrepItem>): void {
     this.audioPrepItems = this.audioPrepItems.map((item) => (
-      item.wordId === wordId && item.kind === kind ? { ...item, ...update } : item
+      item.normalized === normalized && item.kind === kind ? { ...item, ...update } : item
     ));
     this.render();
+  }
+
+  private spellingAudioPath(word: string, kind: AudioPrepItem['kind']): string {
+    return `spelling/audio/words/${encodeURIComponent(word)}?kind=${kind}`;
   }
 
   private pickQuestion(): void {
@@ -876,7 +877,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.score = 0;
     this.currentIndex = null;
     this.spellingWordIndex = null;
-    this.activeSpellingSetId = null;
     this.currentDirection = 'product_to_factors';
     this.currentFactorQuestion = null;
     this.spellingPendingIndices = [];
@@ -987,9 +987,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private playCurrentBackendAudio(): void {
-    const wordId = this.currentSpellingWord?.id;
-    if (!wordId) return;
-    const audioUrl = this.backendAudioUrls[wordId];
+    const word = this.currentSpellingWord;
+    if (!word) return;
+    const audioUrl = this.backendAudioUrls[word.normalized];
     if (!audioUrl) return;
     this.stopBackendAudio();
     this.backendAudio = new Audio(audioUrl);
@@ -997,9 +997,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private playCurrentBackendSpellingAudio(): void {
-    const wordId = this.currentSpellingWord?.id;
-    if (!wordId) return;
-    const audioUrl = this.backendSpellingAudioUrls[wordId];
+    const word = this.currentSpellingWord;
+    if (!word) return;
+    const audioUrl = this.backendSpellingAudioUrls[word.normalized];
     if (!audioUrl) return;
     this.stopBackendAudio();
     this.backendAudio = new Audio(audioUrl);

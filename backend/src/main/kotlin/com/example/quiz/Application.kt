@@ -148,23 +148,40 @@ fun Application.module() {
                     }
                     call.respond(SpellingAnswerResultResponse(word = word, stats = stats))
                 }
-                get("/audio/status") {
+                get("/audio/words/{word}.mp3") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    val setId = call.request.queryParameters["setId"]?.toLongOrNull()
-                    if (setId == null) {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_set_id"))
+                    val word = call.requireSpellingAudioWord() ?: return@get
+                    val kind = call.requireSpellingAudioKind() ?: return@get
+                    val audioFile = SpellingAudioService.audioFile(word, kind)
+                    if (audioFile == null) {
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "audio_not_found"))
                         return@get
                     }
-                    call.respond(SpellingAudioService.status(setId))
+                    call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+                    call.respondBytes(
+                        bytes = java.nio.file.Files.readAllBytes(audioFile),
+                        contentType = ContentType.Audio.MPEG,
+                    )
                 }
-                post("/audio/words/{wordId}") {
+                get("/audio/words/{word}") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val word = call.requireSpellingAudioWord() ?: return@get
+                    val kind = call.requireSpellingAudioKind() ?: return@get
+                    val response = SpellingAudioService.status(word, kind)
+                        ?: run {
+                            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
+                            return@get
+                        }
+                    call.respond(response)
+                }
+                post("/audio/words/{word}") {
                     if (!Auth.requireAuthenticated(call)) return@post
-                    val wordId = call.requireSpellingWordId() ?: return@post
+                    val word = call.requireSpellingAudioWord() ?: return@post
                     val kind = call.requireSpellingAudioKind() ?: return@post
                     try {
-                        val response = SpellingAudioService.generate(wordId, kind)
+                        val response = SpellingAudioService.generate(word, kind)
                             ?: run {
-                                call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
+                                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                                 return@post
                             }
                         call.respond(response)
@@ -176,21 +193,6 @@ fun Application.module() {
                         }
                         call.respond(status, mapOf("error" to (error.message ?: "tts_generation_failed")))
                     }
-                }
-                get("/audio/words/{wordId}.mp3") {
-                    if (!Auth.requireAuthenticated(call)) return@get
-                    val wordId = call.requireSpellingWordId() ?: return@get
-                    val kind = call.requireSpellingAudioKind() ?: return@get
-                    val audioFile = SpellingAudioService.audioFile(wordId, kind)
-                    if (audioFile == null) {
-                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "audio_not_found"))
-                        return@get
-                    }
-                    call.response.headers.append(HttpHeaders.CacheControl, "no-store")
-                    call.respondBytes(
-                        bytes = java.nio.file.Files.readAllBytes(audioFile),
-                        contentType = ContentType.Audio.MPEG,
-                    )
                 }
             }
             route("/tests/{testId}") {
@@ -257,13 +259,13 @@ private suspend fun ApplicationCall.requireSpellingSessionMode(): SpellingSessio
     return mode
 }
 
-private suspend fun ApplicationCall.requireSpellingWordId(): Long? {
-    val wordId = parameters["wordId"]?.removeSuffix(".mp3")?.toLongOrNull()
-    if (wordId == null || wordId <= 0) {
-        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word_id"))
+private suspend fun ApplicationCall.requireSpellingAudioWord(): String? {
+    val word = parameters["word"]?.removeSuffix(".mp3")?.trim()
+    if (word.isNullOrBlank()) {
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
         return null
     }
-    return wordId
+    return word
 }
 
 private suspend fun ApplicationCall.requireSpellingAudioKind(): SpellingAudioKind? {
