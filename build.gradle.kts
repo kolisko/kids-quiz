@@ -16,6 +16,13 @@ val imageContextDir = deployDir.map { it.dir("image-context") }
 val remoteFilesDir = deployDir.map { it.dir("remote") }
 val frontendDir = layout.projectDirectory.dir("frontend")
 val frontendDistDir = frontendDir.dir("dist/kids-quiz/browser")
+val snapshotNumber = providers.environmentVariable("GITHUB_SHA")
+    .map { it.take(7) }
+    .orElse(
+        providers.exec {
+            commandLine("git", "rev-parse", "--short=7", "HEAD")
+        }.standardOutput.asText.map { it.trim() },
+    )
 
 tasks.register<Exec>("frontendNpmInstall") {
     group = "build"
@@ -51,6 +58,9 @@ tasks.register<Sync>("stageDockerImageContext") {
     }
     from(frontendDistDir) {
         into("public")
+    }
+    doLast {
+        imageContextDir.get().file("public/snapshot.txt").asFile.writeText("${snapshotNumber.get()}\n")
     }
 }
 

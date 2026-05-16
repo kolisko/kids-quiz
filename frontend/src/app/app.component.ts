@@ -140,6 +140,7 @@ export class AppComponent implements OnInit, OnDestroy {
   settingsSaved = false;
   settingsError: string | null = null;
   password = '';
+  snapshotNumber = 'dev';
 
   settings: GameSettings = { secondsLimit: 30, targetScore: 10, audioSource: 'browser_tts' };
   tests: QuizTest[] = [];
@@ -261,6 +262,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async ngOnInit(): Promise<void> {
+    void this.loadSnapshotNumber();
     await this.loadGameData();
   }
 
@@ -550,6 +552,19 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async loadSettings(): Promise<void> {
     this.applySettings(await this.apiGet<GameSettings>('settings'));
+  }
+
+  private async loadSnapshotNumber(): Promise<void> {
+    try {
+      const response = await fetch(`/snapshot.txt?_=${Date.now()}`, { cache: 'no-store' });
+      const snapshot = (await response.text()).trim();
+      if (response.ok && snapshot) {
+        this.snapshotNumber = snapshot;
+        this.render();
+      }
+    } catch {
+      this.snapshotNumber = 'dev';
+    }
   }
 
   private normalizedSettings(): GameSettings {
