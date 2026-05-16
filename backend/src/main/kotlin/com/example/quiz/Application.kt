@@ -232,23 +232,24 @@ fun Application.module() {
                         }
                     call.respond(FlipcardAnswerResultResponse(word = word, stats = stats))
                 }
-                get("/images/{word}.{ext}") {
-                    if (!Auth.requireAuthenticated(call)) return@get
-                    val word = call.requireFlipcardImageFileWord() ?: return@get
-                    val imageFile = FlipcardImageService.imageFile(word)
-                    if (imageFile == null) {
-                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "image_not_found"))
-                        return@get
-                    }
-                    call.response.headers.append(HttpHeaders.CacheControl, "public, max-age=31536000, immutable")
-                    call.respondBytes(
-                        bytes = java.nio.file.Files.readAllBytes(imageFile),
-                        contentType = ContentType.parse(FlipcardImageService.imageContentType()),
-                    )
-                }
                 get("/images/{word}") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    val word = call.requireFlipcardImageWord() ?: return@get
+                    val rawWord = call.requireFlipcardImageWord() ?: return@get
+                    val assetWord = rawWord.flipcardAssetWordOrNull()
+                    if (assetWord != null) {
+                        val imageFile = FlipcardImageService.imageFile(assetWord)
+                        if (imageFile == null) {
+                            call.respond(HttpStatusCode.NotFound, mapOf("error" to "image_not_found"))
+                            return@get
+                        }
+                        call.response.headers.append(HttpHeaders.CacheControl, "public, max-age=31536000, immutable")
+                        call.respondBytes(
+                            bytes = java.nio.file.Files.readAllBytes(imageFile),
+                            contentType = ContentType.parse(FlipcardImageService.imageContentType()),
+                        )
+                        return@get
+                    }
+                    val word = rawWord
                     val response = FlipcardImageService.status(word)
                         ?: run {
                             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
@@ -368,19 +369,6 @@ private suspend fun ApplicationCall.requireFlipcardImageWord(): String? {
     return word
 }
 
-private suspend fun ApplicationCall.requireFlipcardImageFileWord(): String? {
-    val rawWord = parameters["word"]?.trim()
-    if (!rawWord.isNullOrBlank()) return rawWord
-
-    val fileName = request.path().substringAfterLast('/').trim()
-    val word = fileName.substringBeforeLast('.', missingDelimiterValue = "").trim()
-    if (word.isBlank()) {
-        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
-        return null
-    }
-    return word
-}
-
 private suspend fun ApplicationCall.requirePracticeDirection(): PracticeDirection? {
     val rawDirection = parameters["direction"] ?: return PracticeDirection.product_to_factors
     return runCatching { PracticeDirection.valueOf(rawDirection) }.getOrNull()
@@ -388,6 +376,12 @@ private suspend fun ApplicationCall.requirePracticeDirection(): PracticeDirectio
             respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_direction"))
             null
         }
+}
+
+private fun String.flipcardAssetWordOrNull(): String? {
+    val extension = substringAfterLast('.', missingDelimiterValue = "").lowercase()
+    if (extension !in setOf("webp", "png", "jpeg", "jpg")) return null
+    return substringBeforeLast('.').takeIf { it.isNotBlank() }
 }
 
 private suspend fun io.ktor.server.application.ApplicationCall.respondStaticOrIndex(staticDir: File) {
