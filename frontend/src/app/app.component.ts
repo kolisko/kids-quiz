@@ -370,11 +370,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   showAnswer(): void {
-    this.answerVisible = true;
-    this.clearTimer();
-    if (this.activeGame === 'spelling') {
-      window.setTimeout(() => this.playCurrentSpellingLettersAudio(), 120);
-    }
+    this.revealAnswer();
   }
 
   replaySpellingAudio(): void {
@@ -825,12 +821,20 @@ export class AppComponent implements OnInit, OnDestroy {
     if (index === null || this.answerVisible) return;
     this.clearTimer();
     this.timedOut = true;
-    this.answerVisible = true;
+    this.revealAnswer();
     this.score -= 1;
     this.incrementMistakeWeight(index);
     void this.recordAnswer(index, false, true);
     this.showPenalty();
     this.render();
+  }
+
+  private revealAnswer(): void {
+    this.answerVisible = true;
+    this.clearTimer();
+    if (this.activeGame === 'spelling') {
+      window.setTimeout(() => this.playCurrentSpellingLettersAudio(), 120);
+    }
   }
 
   private finishIfNeeded(nextScore: number): boolean {
