@@ -26,13 +26,13 @@ private const val defaultOpenAiTtsInstructions =
 private const val defaultOpenAiSpellingTtsInstructions =
     "Spell this English word clearly one letter at a time. Say only the letters."
 private const val defaultGermanTtsInstructions =
-    "Pronounce this single German word clearly in standard German. Say only the word."
+    "Pronounce this as a single German word in standard German phonology. Say only the word. Do not use English pronunciation, even if the spelling is identical or similar to English."
 private const val defaultGermanSpellingTtsInstructions =
-    "Spell this German word clearly one letter at a time using German letter names. Say only the letters."
+    "Spell this German word clearly one letter at a time using German letter names. Say only the letters in German. Do not pronounce the full word."
 private const val defaultSpanishTtsInstructions =
-    "Pronounce this single Spanish word clearly in neutral Spanish. Say only the word."
+    "Pronounce this as a single Spanish word in neutral Spanish phonology. Say only the word. Do not use English pronunciation, even if the spelling is identical or similar to English, for example tractor, hotel, radio, animal."
 private const val defaultSpanishSpellingTtsInstructions =
-    "Spell this Spanish word clearly one letter at a time using Spanish letter names. Say only the letters."
+    "Spell this Spanish word clearly one letter at a time using Spanish letter names. Say only the letters in Spanish. Do not pronounce the full word."
 
 @Serializable
 private data class OpenAiTtsRequest(
