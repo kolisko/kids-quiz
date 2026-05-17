@@ -204,6 +204,12 @@ object DatabaseMigrator {
                     recordMigration(14, "migrate_english_audio_cache_keys")
                 }
             }
+            if (15 !in applied) {
+                connection.transaction {
+                    addArtifactJobs()
+                    recordMigration(15, "add_artifact_jobs")
+                }
+            }
         }
         migrated = true
     }
@@ -808,6 +814,29 @@ object DatabaseMigrator {
         }
     }
 
+    private fun Connection.addArtifactJobs() {
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS artifact_jobs (
+                    job_key TEXT PRIMARY KEY,
+                    pool TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('queued', 'generating', 'ready', 'error')),
+                    payload_json TEXT NOT NULL,
+                    error TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TEXT
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_artifact_jobs_pool_status_created ON artifact_jobs(pool, status, created_at)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_artifact_jobs_status_updated ON artifact_jobs(status, updated_at)")
+        }
+    }
+
     private fun Connection.seedFlipcardConceptsAndTranslations() {
         val englishRows = readLegacyFlipcardRows().ifEmpty {
             defaultFlipcardWords.mapIndexed { index, word -> LegacyFlipcardRow(word, normalizeFlipcardWord(word), index) }
@@ -1078,6 +1107,168 @@ fun Connection.transaction(block: Connection.() -> Unit) {
         autoCommit = previousAutoCommit
     }
 }
+
+fun Connection.resetInterruptedArtifactJobs() {
+    prepareStatement(
+        """
+        UPDATE artifact_jobs
+        SET status = 'queued',
+            error = NULL,
+            completed_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'generating'
+        """.trimIndent(),
+    ).use { it.executeUpdate() }
+}
+
+fun Connection.readArtifactJob(jobKey: String): ArtifactJobSnapshot? {
+    return prepareStatement(
+        "SELECT status, error FROM artifact_jobs WHERE job_key = ?",
+    ).use { statement ->
+        statement.setString(1, jobKey)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) {
+                null
+            } else {
+                ArtifactJobSnapshot(
+                    status = ArtifactJobStatus.valueOf(rows.getString("status")),
+                    error = rows.getString("error"),
+                )
+            }
+        }
+    }
+}
+
+fun Connection.upsertArtifactJob(
+    jobKey: String,
+    pool: ArtifactJobPool,
+    kind: ArtifactJobKind,
+    payloadJson: String,
+): ArtifactJobSnapshot {
+    transaction {
+        val existing = readArtifactJob(jobKey)
+        if (existing == null) {
+            prepareStatement(
+                """
+                INSERT INTO artifact_jobs(job_key, pool, kind, status, payload_json, error, attempt_count, created_at, updated_at, completed_at)
+                VALUES(?, ?, ?, 'queued', ?, NULL, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, jobKey)
+                statement.setString(2, pool.name)
+                statement.setString(3, kind.name)
+                statement.setString(4, payloadJson)
+                statement.executeUpdate()
+            }
+            return@transaction
+        }
+        if (existing.status == ArtifactJobStatus.queued || existing.status == ArtifactJobStatus.generating) {
+            return@transaction
+        }
+        prepareStatement(
+            """
+            UPDATE artifact_jobs
+            SET pool = ?,
+                kind = ?,
+                status = 'queued',
+                payload_json = ?,
+                error = NULL,
+                completed_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE job_key = ?
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, pool.name)
+            statement.setString(2, kind.name)
+            statement.setString(3, payloadJson)
+            statement.setString(4, jobKey)
+            statement.executeUpdate()
+        }
+    }
+    return readArtifactJob(jobKey) ?: ArtifactJobSnapshot(status = ArtifactJobStatus.queued)
+}
+
+fun Connection.markArtifactJobReady(jobKey: String) {
+    prepareStatement(
+        """
+        UPDATE artifact_jobs
+        SET status = 'ready',
+            error = NULL,
+            updated_at = CURRENT_TIMESTAMP,
+            completed_at = CURRENT_TIMESTAMP
+        WHERE job_key = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, jobKey)
+        statement.executeUpdate()
+    }
+}
+
+fun Connection.markArtifactJobError(jobKey: String, error: String) {
+    prepareStatement(
+        """
+        UPDATE artifact_jobs
+        SET status = 'error',
+            error = ?,
+            updated_at = CURRENT_TIMESTAMP,
+            completed_at = NULL
+        WHERE job_key = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, error)
+        statement.setString(2, jobKey)
+        statement.executeUpdate()
+    }
+}
+
+fun Connection.claimNextArtifactJob(pool: ArtifactJobPool): ArtifactQueuedJob? {
+    val candidate = prepareStatement(
+        """
+        SELECT job_key, pool, kind, payload_json
+        FROM artifact_jobs
+        WHERE pool = ? AND status = 'queued'
+        ORDER BY created_at, job_key
+        LIMIT 1
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, pool.name)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) {
+                null
+            } else {
+                ArtifactQueuedJob(
+                    jobKey = rows.getString("job_key"),
+                    pool = ArtifactJobPool.valueOf(rows.getString("pool")),
+                    kind = ArtifactJobKind.valueOf(rows.getString("kind")),
+                    payloadJson = rows.getString("payload_json"),
+                )
+            }
+        }
+    } ?: return null
+
+    val updated = prepareStatement(
+        """
+        UPDATE artifact_jobs
+        SET status = 'generating',
+            error = NULL,
+            attempt_count = attempt_count + 1,
+            completed_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE job_key = ? AND status = 'queued'
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, candidate.jobKey)
+        statement.executeUpdate()
+    }
+    return if (updated == 1) candidate else null
+}
+
+data class ArtifactQueuedJob(
+    val jobKey: String,
+    val pool: ArtifactJobPool,
+    val kind: ArtifactJobKind,
+    val payloadJson: String,
+)
 
 fun Connection.readTests(): List<QuizTest> {
     return prepareStatement(

@@ -250,6 +250,14 @@ data class FlipcardAssetsResponse(
 )
 
 @Serializable
+data class FlipcardAssetBulkEnqueueResponse(
+    val total: Int,
+    val queued: Int,
+    val alreadyReady: Int,
+    val alreadyActive: Int,
+)
+
+@Serializable
 data class FlipcardTranslationBackfillStatusResponse(
     val language: LearningLanguage,
     val status: SpellingAudioStatus,

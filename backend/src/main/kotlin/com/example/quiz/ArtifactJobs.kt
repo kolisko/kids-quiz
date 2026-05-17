@@ -1,9 +1,16 @@
 package com.example.quiz
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.LinkedBlockingQueue
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+
+private val artifactJobJson = Json {
+    encodeDefaults = true
+    ignoreUnknownKeys = true
+}
 
 enum class ArtifactJobPool {
     image,
@@ -11,9 +18,18 @@ enum class ArtifactJobPool {
     translation,
 }
 
+enum class ArtifactJobKind {
+    flipcard_image,
+    flipcard_audio_word,
+    spelling_audio_word,
+    spelling_audio_spelling,
+    flipcard_translation,
+}
+
 enum class ArtifactJobStatus {
     queued,
     generating,
+    ready,
     error,
 }
 
@@ -22,45 +38,89 @@ data class ArtifactJobSnapshot(
     val error: String? = null,
 )
 
+@Serializable
+data class FlipcardImageJobPayload(
+    val word: String,
+    val force: Boolean = false,
+)
+
+@Serializable
+data class AudioJobPayload(
+    val word: String,
+    val language: LearningLanguage,
+    val kind: SpellingAudioKind,
+)
+
+@Serializable
+data class TranslationJobPayload(
+    val language: LearningLanguage,
+)
+
 object ArtifactGenerationQueue {
-    private data class Job(
-        val key: String,
-        val pool: ArtifactJobPool,
-        val task: () -> Unit,
-    )
-
-    private data class MutableJobState(
-        @Volatile var status: ArtifactJobStatus,
-        @Volatile var error: String? = null,
-    )
-
-    private val jobs = ConcurrentHashMap<String, MutableJobState>()
-    private val imageQueue = LinkedBlockingQueue<Job>()
-    private val audioQueue = LinkedBlockingQueue<Job>()
-    private val translationQueue = LinkedBlockingQueue<Job>()
     private val imageStarted = AtomicBoolean(false)
     private val audioStarted = AtomicBoolean(false)
     private val translationStarted = AtomicBoolean(false)
+    private val claimLock = Any()
+
+    fun initialize() {
+        Database.useConnection { it.resetInterruptedArtifactJobs() }
+        ArtifactJobPool.entries.forEach(::startWorkers)
+    }
 
     fun snapshot(key: String): ArtifactJobSnapshot? {
-        return jobs[key]?.let { ArtifactJobSnapshot(status = it.status, error = it.error) }
+        return Database.useConnection { it.readArtifactJob(key) }
     }
 
     fun clear(key: String) {
-        jobs.remove(key)
+        markReady(key)
     }
 
-    fun enqueue(key: String, pool: ArtifactJobPool, task: () -> Unit): ArtifactJobSnapshot {
-        val existing = jobs[key]
-        if (existing != null && existing.status != ArtifactJobStatus.error) {
-            return ArtifactJobSnapshot(status = existing.status, error = existing.error)
-        }
+    fun markReady(key: String) {
+        Database.useConnection { it.markArtifactJobReady(key) }
+    }
 
-        val state = MutableJobState(status = ArtifactJobStatus.queued)
-        jobs[key] = state
+    fun enqueue(
+        key: String,
+        pool: ArtifactJobPool,
+        kind: ArtifactJobKind,
+        payloadJson: String,
+    ): ArtifactJobSnapshot {
+        val snapshot = Database.useConnection { it.upsertArtifactJob(key, pool, kind, payloadJson) }
         startWorkers(pool)
-        queue(pool).offer(Job(key = key, pool = pool, task = task))
-        return ArtifactJobSnapshot(status = ArtifactJobStatus.queued)
+        return snapshot
+    }
+
+    fun enqueueFlipcardImage(key: String, word: String, force: Boolean): ArtifactJobSnapshot {
+        return enqueue(
+            key = key,
+            pool = ArtifactJobPool.image,
+            kind = ArtifactJobKind.flipcard_image,
+            payloadJson = artifactJobJson.encodeToString(FlipcardImageJobPayload(word = word, force = force)),
+        )
+    }
+
+    fun enqueueAudio(
+        key: String,
+        word: String,
+        language: LearningLanguage,
+        kind: SpellingAudioKind,
+        jobKind: ArtifactJobKind,
+    ): ArtifactJobSnapshot {
+        return enqueue(
+            key = key,
+            pool = ArtifactJobPool.audio,
+            kind = jobKind,
+            payloadJson = artifactJobJson.encodeToString(AudioJobPayload(word = word, language = language, kind = kind)),
+        )
+    }
+
+    fun enqueueTranslation(key: String, language: LearningLanguage): ArtifactJobSnapshot {
+        return enqueue(
+            key = key,
+            pool = ArtifactJobPool.translation,
+            kind = ArtifactJobKind.flipcard_translation,
+            payloadJson = artifactJobJson.encodeToString(TranslationJobPayload(language = language)),
+        )
     }
 
     private fun startWorkers(pool: ArtifactJobPool) {
@@ -81,36 +141,57 @@ object ArtifactGenerationQueue {
                 name = "artifact-${pool.name}-worker-${index + 1}",
                 isDaemon = true,
             ) {
-                workerLoop(queue(pool))
+                workerLoop(pool)
             }
         }
     }
 
-    private fun workerLoop(queue: LinkedBlockingQueue<Job>) {
+    private fun workerLoop(pool: ArtifactJobPool) {
         while (true) {
-            val job = queue.take()
-            val state = jobs[job.key] ?: continue
-            state.status = ArtifactJobStatus.generating
-            state.error = null
+            val job = claimNext(pool)
+            if (job == null) {
+                Thread.sleep(1000)
+                continue
+            }
             try {
-                job.task()
-                jobs.remove(job.key)
+                ArtifactJobRunner.run(job)
+                Database.useConnection { it.markArtifactJobReady(job.jobKey) }
             } catch (error: Throwable) {
-                state.status = ArtifactJobStatus.error
-                state.error = error.message ?: "generation_failed"
+                Database.useConnection {
+                    it.markArtifactJobError(job.jobKey, error.message ?: "generation_failed")
+                }
             }
         }
     }
 
-    private fun queue(pool: ArtifactJobPool): LinkedBlockingQueue<Job> {
-        return when (pool) {
-            ArtifactJobPool.image -> imageQueue
-            ArtifactJobPool.audio -> audioQueue
-            ArtifactJobPool.translation -> translationQueue
+    private fun claimNext(pool: ArtifactJobPool): ArtifactQueuedJob? {
+        return synchronized(claimLock) {
+            Database.useConnection { it.claimNextArtifactJob(pool) }
         }
     }
 
     private fun workerCount(envName: String, default: Int): Int {
         return System.getenv(envName)?.toIntOrNull()?.coerceIn(1, 8) ?: default
+    }
+}
+
+object ArtifactJobRunner {
+    fun run(job: ArtifactQueuedJob) {
+        when (job.kind) {
+            ArtifactJobKind.flipcard_image -> {
+                val payload = artifactJobJson.decodeFromString<FlipcardImageJobPayload>(job.payloadJson)
+                FlipcardImageService.runQueuedGeneration(payload.word, payload.force)
+            }
+            ArtifactJobKind.flipcard_audio_word,
+            ArtifactJobKind.spelling_audio_word,
+            ArtifactJobKind.spelling_audio_spelling -> {
+                val payload = artifactJobJson.decodeFromString<AudioJobPayload>(job.payloadJson)
+                SpellingAudioService.runQueuedGeneration(payload.word, payload.kind, payload.language)
+            }
+            ArtifactJobKind.flipcard_translation -> {
+                val payload = artifactJobJson.decodeFromString<TranslationJobPayload>(job.payloadJson)
+                FlipcardTranslationService.runQueuedBackfill(payload.language)
+            }
+        }
     }
 }

@@ -67,6 +67,7 @@ fun Application.module() {
     }
 
     DatabaseMigrator.ensureMigrated()
+    ArtifactGenerationQueue.initialize()
     if (FlipcardTranslationService.autoBackfillEnabled()) {
         FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.de)
         FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.es)
@@ -234,6 +235,34 @@ fun Application.module() {
                     val language = call.requireLearningLanguage() ?: return@get
                     call.respond(FlipcardStore.readAssets(language))
                 }
+                post("/images/missing") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
+                    try {
+                        call.respond(FlipcardStore.enqueueMissingImages(language))
+                    } catch (error: FlipcardImageException) {
+                        val status = if (error.message == "image_generation_not_configured") {
+                            HttpStatusCode.ServiceUnavailable
+                        } else {
+                            HttpStatusCode.BadGateway
+                        }
+                        call.respond(status, mapOf("error" to (error.message ?: "image_generation_failed")))
+                    }
+                }
+                post("/audio/missing") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
+                    try {
+                        call.respond(FlipcardStore.enqueueMissingAudio(language))
+                    } catch (error: SpellingAudioException) {
+                        val status = if (error.message == "tts_not_configured") {
+                            HttpStatusCode.ServiceUnavailable
+                        } else {
+                            HttpStatusCode.BadGateway
+                        }
+                        call.respond(status, mapOf("error" to (error.message ?: "tts_generation_failed")))
+                    }
+                }
                 get("/translations/status") {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val language = call.requireLearningLanguage() ?: return@get
@@ -349,7 +378,12 @@ fun Application.module() {
                     val language = call.requirePathLearningLanguage() ?: return@post
                     val word = call.requireSpellingAudioWord() ?: return@post
                     try {
-                        val response = SpellingAudioService.enqueueGeneration(word, SpellingAudioKind.word, language)
+                        val response = SpellingAudioService.enqueueGeneration(
+                            rawWord = word,
+                            kind = SpellingAudioKind.word,
+                            language = language,
+                            jobKind = ArtifactJobKind.flipcard_audio_word,
+                        )
                             ?: run {
                                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                                 return@post

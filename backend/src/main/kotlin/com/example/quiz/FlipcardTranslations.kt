@@ -87,9 +87,7 @@ object FlipcardTranslationService {
         if (language == LearningLanguage.en) return status(language)
         val current = status(language)
         if (current.status == SpellingAudioStatus.ready) return current
-        ArtifactGenerationQueue.enqueue(jobKey(language), ArtifactJobPool.translation) {
-            backfill(language)
-        }
+        ArtifactGenerationQueue.enqueueTranslation(jobKey(language), language)
         return status(language)
     }
 
@@ -100,9 +98,12 @@ object FlipcardTranslationService {
         if (current.status == SpellingAudioStatus.ready || current.status == SpellingAudioStatus.queued || current.status == SpellingAudioStatus.generating) {
             return
         }
-        ArtifactGenerationQueue.enqueue(jobKey(language), ArtifactJobPool.translation) {
-            backfill(language)
-        }
+        ArtifactGenerationQueue.enqueueTranslation(jobKey(language), language)
+    }
+
+    fun runQueuedBackfill(language: LearningLanguage) {
+        if (language == LearningLanguage.en) return
+        backfill(language)
     }
 
     fun autoBackfillEnabled(): Boolean {
@@ -372,6 +373,7 @@ object FlipcardTranslationService {
         return when (this) {
             ArtifactJobStatus.queued -> SpellingAudioStatus.queued
             ArtifactJobStatus.generating -> SpellingAudioStatus.generating
+            ArtifactJobStatus.ready -> SpellingAudioStatus.ready
             ArtifactJobStatus.error -> SpellingAudioStatus.error
         }
     }

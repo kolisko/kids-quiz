@@ -63,6 +63,7 @@ object SpellingAudioService {
             normalized = word.normalized,
             status = when {
                 ready -> SpellingAudioStatus.ready
+                job?.status == ArtifactJobStatus.ready -> SpellingAudioStatus.missing
                 job != null -> job.status.toSpellingAudioStatus()
                 else -> SpellingAudioStatus.missing
             },
@@ -76,11 +77,15 @@ object SpellingAudioService {
         rawWord: String,
         kind: SpellingAudioKind,
         language: LearningLanguage = LearningLanguage.en,
+        jobKind: ArtifactJobKind = when (kind) {
+            SpellingAudioKind.word -> ArtifactJobKind.spelling_audio_word
+            SpellingAudioKind.spelling -> ArtifactJobKind.spelling_audio_spelling
+        },
     ): SpellingAudioWordResponse? {
         val word = spellingAudioWord(rawWord) ?: return null
         val outputPath = audioPath(word, kind, language)
         if (Files.isRegularFile(outputPath)) {
-            ArtifactGenerationQueue.clear(audioJobKey(word, kind, language))
+            ArtifactGenerationQueue.markReady(audioJobKey(word, kind, language))
             return SpellingAudioWordResponse(
                 word = word.text,
                 normalized = word.normalized,
@@ -89,11 +94,13 @@ object SpellingAudioService {
                 audioUrl = audioUrl(word, kind, language),
             )
         }
-        val job = ArtifactGenerationQueue.enqueue(audioJobKey(word, kind, language), ArtifactJobPool.audio) {
-            if (!Files.isRegularFile(outputPath)) {
-                generateToFile(word, kind, language, outputPath)
-            }
-        }
+        val job = ArtifactGenerationQueue.enqueueAudio(
+            key = audioJobKey(word, kind, language),
+            word = word.text,
+            language = language,
+            kind = kind,
+            jobKind = jobKind,
+        )
         return SpellingAudioWordResponse(
             word = word.text,
             normalized = word.normalized,
@@ -112,6 +119,18 @@ object SpellingAudioService {
         val word = spellingAudioWord(rawWord) ?: return null
         val path = audioPath(word, kind, language)
         return path.takeIf { Files.isRegularFile(it) }
+    }
+
+    fun runQueuedGeneration(
+        rawWord: String,
+        kind: SpellingAudioKind,
+        language: LearningLanguage = LearningLanguage.en,
+    ) {
+        val word = spellingAudioWord(rawWord) ?: throw SpellingAudioException("invalid_word")
+        val outputPath = audioPath(word, kind, language)
+        if (!Files.isRegularFile(outputPath)) {
+            generateToFile(word, kind, language, outputPath)
+        }
     }
 
     fun migrateLegacyEnglishCache(rawWords: List<String>) {
@@ -349,6 +368,7 @@ object SpellingAudioService {
         return when (this) {
             ArtifactJobStatus.queued -> SpellingAudioStatus.queued
             ArtifactJobStatus.generating -> SpellingAudioStatus.generating
+            ArtifactJobStatus.ready -> SpellingAudioStatus.ready
             ArtifactJobStatus.error -> SpellingAudioStatus.error
         }
     }

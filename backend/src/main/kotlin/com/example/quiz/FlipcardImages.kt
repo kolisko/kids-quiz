@@ -57,6 +57,7 @@ object FlipcardImageService {
             normalized = word.normalized,
             status = when {
                 ready -> FlipcardImageStatus.ready
+                job?.status == ArtifactJobStatus.ready -> FlipcardImageStatus.missing
                 job != null -> job.status.toFlipcardImageStatus()
                 else -> FlipcardImageStatus.missing
             },
@@ -69,7 +70,7 @@ object FlipcardImageService {
         val word = flipcardImageWord(rawWord) ?: return null
         val outputPath = imagePath(word)
         if (!force && Files.isRegularFile(outputPath)) {
-            ArtifactGenerationQueue.clear(imageJobKey(word))
+            ArtifactGenerationQueue.markReady(imageJobKey(word))
             return FlipcardImageResponse(
                 word = word.text,
                 normalized = word.normalized,
@@ -77,11 +78,7 @@ object FlipcardImageService {
                 imageUrl = imageUrl(word),
             )
         }
-        val job = ArtifactGenerationQueue.enqueue(imageJobKey(word), ArtifactJobPool.image) {
-            if (force || !Files.isRegularFile(outputPath)) {
-                generateToFile(word, outputPath)
-            }
-        }
+        val job = ArtifactGenerationQueue.enqueueFlipcardImage(imageJobKey(word), word.text, force)
         return FlipcardImageResponse(
             word = word.text,
             normalized = word.normalized,
@@ -95,6 +92,14 @@ object FlipcardImageService {
         val word = flipcardImageWord(rawWord) ?: return null
         val path = imagePath(word)
         return path.takeIf { Files.isRegularFile(it) }
+    }
+
+    fun runQueuedGeneration(rawWord: String, force: Boolean = false) {
+        val word = flipcardImageWord(rawWord) ?: throw FlipcardImageException("invalid_word")
+        val outputPath = imagePath(word)
+        if (force || !Files.isRegularFile(outputPath)) {
+            generateToFile(word, outputPath)
+        }
     }
 
     private fun generateToFile(word: FlipcardWord, outputPath: Path) {
@@ -210,6 +215,7 @@ object FlipcardImageService {
         return when (this) {
             ArtifactJobStatus.queued -> FlipcardImageStatus.queued
             ArtifactJobStatus.generating -> FlipcardImageStatus.generating
+            ArtifactJobStatus.ready -> FlipcardImageStatus.ready
             ArtifactJobStatus.error -> FlipcardImageStatus.error
         }
     }

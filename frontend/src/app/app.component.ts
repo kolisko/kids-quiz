@@ -157,6 +157,13 @@ interface FlipcardAssetsResponse {
   items: FlipcardAsset[];
 }
 
+interface FlipcardAssetBulkEnqueueResponse {
+  total: number;
+  queued: number;
+  alreadyReady: number;
+  alreadyActive: number;
+}
+
 interface FlipcardTranslationBackfillStatusResponse {
   language: LearningLanguage;
   status: ArtifactStatus;
@@ -278,6 +285,8 @@ export class AppComponent implements OnInit, OnDestroy {
   assetLibraryError: string | null = null;
   assetImageGenerating: Record<string, boolean> = {};
   assetAudioGenerating: Record<string, boolean> = {};
+  assetImageBulkEnqueueLoading = false;
+  assetAudioBulkEnqueueLoading = false;
   assetImageErrors: Record<string, string> = {};
   assetAudioErrors: Record<string, string> = {};
   translationBackfillStatusByLanguage: Record<LearningLanguage, FlipcardTranslationBackfillStatusResponse | null> = { en: null, de: null, es: null };
@@ -443,11 +452,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get bulkImageGenerationActive(): boolean {
-    return Object.values(this.assetImageGenerating).some(Boolean);
+    return this.assetImageBulkEnqueueLoading || Object.values(this.assetImageGenerating).some(Boolean);
   }
 
   get bulkAudioGenerationActive(): boolean {
-    return Object.values(this.assetAudioGenerating).some(Boolean);
+    return this.assetAudioBulkEnqueueLoading || Object.values(this.assetAudioGenerating).some(Boolean);
   }
 
   get currentTranslationBackfillStatus(): FlipcardTranslationBackfillStatusResponse | null {
@@ -931,13 +940,37 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async generateAllMissingAssetImages(): Promise<void> {
-    const assets = this.flipcardAssets.filter((asset) => asset.imageStatus === 'missing' || asset.imageStatus === 'error');
-    await this.enqueueAssetBatch(assets, (asset) => this.generateAssetImage(asset));
+    if (this.assetImageBulkEnqueueLoading) return;
+    this.assetImageBulkEnqueueLoading = true;
+    this.assetLibraryError = null;
+    this.render();
+    try {
+      await this.apiPost<FlipcardAssetBulkEnqueueResponse>(`flipcards/images/missing?language=${this.settingsLanguage}`, {});
+      await this.loadFlipcardAssets();
+      this.startAssetLibraryPolling();
+    } catch (error) {
+      this.assetLibraryError = error instanceof Error ? error.message : 'Obrázky se nepodařilo přidat do fronty.';
+    } finally {
+      this.assetImageBulkEnqueueLoading = false;
+      this.render();
+    }
   }
 
   async generateAllMissingAssetAudio(): Promise<void> {
-    const assets = this.flipcardAssets.filter((asset) => asset.audioStatus === 'missing' || asset.audioStatus === 'error');
-    await this.enqueueAssetBatch(assets, (asset) => this.generateAssetAudio(asset));
+    if (this.assetAudioBulkEnqueueLoading) return;
+    this.assetAudioBulkEnqueueLoading = true;
+    this.assetLibraryError = null;
+    this.render();
+    try {
+      await this.apiPost<FlipcardAssetBulkEnqueueResponse>(`flipcards/audio/missing?language=${this.settingsLanguage}`, {});
+      await this.loadFlipcardAssets();
+      this.startAssetLibraryPolling();
+    } catch (error) {
+      this.assetLibraryError = error instanceof Error ? error.message : 'Audio se nepodařilo přidat do fronty.';
+    } finally {
+      this.assetAudioBulkEnqueueLoading = false;
+      this.render();
+    }
   }
 
   private async applyAssetImageResponse(response: FlipcardImageResponse): Promise<void> {
@@ -973,19 +1006,6 @@ export class AppComponent implements OnInit, OnDestroy {
         : item
     ));
     this.render();
-  }
-
-  private async enqueueAssetBatch(assets: FlipcardAsset[], enqueue: (asset: FlipcardAsset) => Promise<void>): Promise<void> {
-    const queue = [...assets];
-    const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
-      while (queue.length > 0 && this.screen === 'assetLibrary') {
-        const asset = queue.shift();
-        if (!asset) return;
-        await enqueue(asset);
-      }
-    });
-    await Promise.all(workers);
-    this.startAssetLibraryPolling();
   }
 
   private startAssetLibraryPolling(): void {
