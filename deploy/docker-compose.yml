@@ -18,8 +18,11 @@ services:
       OPENAI_IMAGE_QUALITY: ${OPENAI_IMAGE_QUALITY:-low}
       OPENAI_IMAGE_FORMAT: ${OPENAI_IMAGE_FORMAT:-jpeg}
       OPENAI_FLIPCARD_IMAGE_PROMPT: ${OPENAI_FLIPCARD_IMAGE_PROMPT:-Create a bright, friendly, child-safe flashcard picture for the English word %s. Show one clear object or simple scene, no text, no letters, no watermark, centered subject, colorful educational style.}
+      OPENAI_TRANSLATION_MODEL: ${OPENAI_TRANSLATION_MODEL:-gpt-4.1-mini}
+      OPENAI_TRANSLATION_BATCH_SIZE: ${OPENAI_TRANSLATION_BATCH_SIZE:-50}
       FLIPCARD_IMAGE_WORKERS: ${FLIPCARD_IMAGE_WORKERS:-1}
       SPELLING_AUDIO_WORKERS: ${SPELLING_AUDIO_WORKERS:-2}
+      FLIPCARD_TRANSLATION_WORKERS: ${FLIPCARD_TRANSLATION_WORKERS:-1}
     volumes:
       - /opt/kids-quiz/data:/data
     expose:

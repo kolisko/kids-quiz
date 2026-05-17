@@ -157,6 +157,14 @@ interface FlipcardAssetsResponse {
   items: FlipcardAsset[];
 }
 
+interface FlipcardTranslationBackfillStatusResponse {
+  language: LearningLanguage;
+  status: ArtifactStatus;
+  readyCount: number;
+  totalCount: number;
+  error?: string | null;
+}
+
 interface FlipcardStatsSnapshot {
   statsByWord: Record<string, QuestionStats>;
 }
@@ -271,6 +279,9 @@ export class AppComponent implements OnInit, OnDestroy {
   assetAudioGenerating: Record<string, boolean> = {};
   assetImageErrors: Record<string, string> = {};
   assetAudioErrors: Record<string, string> = {};
+  translationBackfillStatusByLanguage: Record<LearningLanguage, FlipcardTranslationBackfillStatusResponse | null> = { en: null, de: null, es: null };
+  translationBackfillLoading = false;
+  translationBackfillError: string | null = null;
   backendAudioUrls: Record<string, string> = {};
   backendSpellingAudioUrls: Record<string, string> = {};
   flipcardImageUrls: Record<string, string> = {};
@@ -287,6 +298,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private backendAudio: HTMLAudioElement | null = null;
   private assetLibraryPollToken: PollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
+  private translationBackfillPollToken: PollToken | null = null;
   private readonly flipcardImagePreloads = new Map<string, HTMLImageElement>();
   private readonly flipcardAudioPreloads = new Map<string, HTMLAudioElement>();
 
@@ -331,7 +343,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentAnswerText(): string {
     if (this.activeGame === 'spelling') {
-      return formatSpellingAnswer(this.currentSpellingWord?.text ?? '');
+      return formatSpellingAnswer(this.currentSpellingWord?.text ?? '', this.selectedLanguage);
     }
     if (!this.currentQuestion) return '';
     return this.currentDirection === 'factors_to_product'
@@ -437,6 +449,25 @@ export class AppComponent implements OnInit, OnDestroy {
     return Object.values(this.assetAudioGenerating).some(Boolean);
   }
 
+  get currentTranslationBackfillStatus(): FlipcardTranslationBackfillStatusResponse | null {
+    return this.translationBackfillStatusByLanguage[this.settingsLanguage];
+  }
+
+  get translationBackfillVisible(): boolean {
+    return this.settingsLanguage !== 'en';
+  }
+
+  get translationBackfillActive(): boolean {
+    const status = this.currentTranslationBackfillStatus?.status;
+    return this.translationBackfillLoading || status === 'queued' || status === 'generating';
+  }
+
+  get translationBackfillSummary(): string {
+    const status = this.currentTranslationBackfillStatus;
+    if (!status) return 'Stav překladů zatím není načtený.';
+    return `Překlady ${status.readyCount} / ${status.totalCount} - ${this.translationBackfillStatusLabel(status.status)}`;
+  }
+
   audioPrepItemTypeLabel(item: AudioPrepItem): string {
     if (item.kind === 'flipcard_image') return 'Obrázek';
     if (item.kind === 'spelling') return 'Spelling audio';
@@ -459,6 +490,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.cancelAssetLibraryPolling();
     this.cancelAudioPrepPolling();
+    this.cancelTranslationBackfillPolling();
     this.clearTimer();
     this.clearFlashTimer();
     this.clearTtsVoiceCheck();
@@ -744,6 +776,34 @@ export class AppComponent implements OnInit, OnDestroy {
     this.assetLibraryTab = tab;
   }
 
+  selectSettingsLanguage(language: LearningLanguage): void {
+    this.settingsLanguage = language;
+    this.translationBackfillError = null;
+    if (language !== 'en') {
+      void this.loadTranslationBackfillStatus(language);
+    }
+  }
+
+  async backfillTranslations(): Promise<void> {
+    const language = this.settingsLanguage;
+    if (language === 'en' || this.translationBackfillActive) return;
+    this.translationBackfillLoading = true;
+    this.translationBackfillError = null;
+    this.render();
+    try {
+      const status = await this.apiPost<FlipcardTranslationBackfillStatusResponse>(`flipcards/translations/backfill?language=${language}`, {});
+      this.applyTranslationBackfillStatus(status);
+      if (status.status === 'queued' || status.status === 'generating') {
+        this.startTranslationBackfillPolling(language);
+      }
+    } catch (error) {
+      this.translationBackfillError = error instanceof Error ? error.message : 'Překlady se nepodařilo doplnit.';
+    } finally {
+      this.translationBackfillLoading = false;
+      this.render();
+    }
+  }
+
   playAssetAudio(asset: FlipcardAsset): void {
     if (!asset.audioUrl) return;
     this.stopBackendAudio();
@@ -930,6 +990,13 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.audioPrepPollToken) {
       this.audioPrepPollToken.cancelled = true;
       this.audioPrepPollToken = null;
+    }
+  }
+
+  private cancelTranslationBackfillPolling(): void {
+    if (this.translationBackfillPollToken) {
+      this.translationBackfillPollToken.cancelled = true;
+      this.translationBackfillPollToken = null;
     }
   }
 
@@ -1189,7 +1256,7 @@ export class AppComponent implements OnInit, OnDestroy {
         {
           audioWord: word.text,
           normalized: word.normalized,
-          word: formatSpellingAnswer(word.text),
+          word: formatSpellingAnswer(word.text, this.selectedLanguage),
           kind: 'spelling' as const,
           status: 'pending' as const,
           audioUrl: null,
@@ -1515,6 +1582,14 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.languageOptions.find((option) => option.code === language)?.label ?? 'Angličtina';
   }
 
+  private translationBackfillStatusLabel(status: ArtifactStatus): string {
+    if (status === 'ready') return 'hotovo';
+    if (status === 'queued') return 've frontě';
+    if (status === 'generating') return 'doplňuji';
+    if (status === 'error') return 'chyba';
+    return 'chybí';
+  }
+
   private ttsLanguage(): string {
     return this.languageOptions.find((option) => option.code === this.selectedLanguage)?.ttsLang ?? 'en-US';
   }
@@ -1529,6 +1604,9 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     if (this.screen === 'audioPrep' && screen !== 'audioPrep') {
       this.cancelAudioPrepPolling();
+    }
+    if (this.screen === 'settings' && screen !== 'settings') {
+      this.cancelTranslationBackfillPolling();
     }
     this.screen = screen;
   }
@@ -1936,7 +2014,64 @@ export class AppComponent implements OnInit, OnDestroy {
     await Promise.all(this.languageOptions.flatMap((language) => [
       this.loadSpellingSets(language.code),
       this.loadFlipcardWords(language.code),
+      language.code === 'en' ? Promise.resolve() : this.loadTranslationBackfillStatus(language.code),
     ]));
+  }
+
+  private async loadTranslationBackfillStatus(language: LearningLanguage): Promise<void> {
+    const status = await this.apiGet<FlipcardTranslationBackfillStatusResponse>(`flipcards/translations/status?language=${language}`);
+    this.applyTranslationBackfillStatus(status);
+    if (status.status === 'queued' || status.status === 'generating') {
+      this.startTranslationBackfillPolling(language);
+    }
+  }
+
+  private applyTranslationBackfillStatus(status: FlipcardTranslationBackfillStatusResponse): void {
+    this.translationBackfillStatusByLanguage = {
+      ...this.translationBackfillStatusByLanguage,
+      [status.language]: status,
+    };
+  }
+
+  private startTranslationBackfillPolling(language: LearningLanguage): void {
+    if (this.translationBackfillPollToken) return;
+    const token: PollToken = { cancelled: false };
+    this.translationBackfillPollToken = token;
+    void this.pollTranslationBackfill(language, token);
+  }
+
+  private async pollTranslationBackfill(language: LearningLanguage, token: PollToken): Promise<void> {
+    while (!token.cancelled) {
+      await this.delay(2500);
+      if (token.cancelled) break;
+      try {
+        const status = await this.apiGet<FlipcardTranslationBackfillStatusResponse>(`flipcards/translations/status?language=${language}`);
+        if (token.cancelled) break;
+        this.applyTranslationBackfillStatus(status);
+        if (status.status === 'ready') {
+          await this.loadFlipcardWords(language);
+          if (this.screen === 'assetLibrary' && this.settingsLanguage === language) {
+            await this.loadFlipcardAssets();
+          }
+          this.render();
+          break;
+        }
+        if (status.status === 'error') {
+          this.translationBackfillError = status.error ?? 'Doplnění překladů selhalo.';
+          this.render();
+          break;
+        }
+      } catch {
+        if (!token.cancelled) {
+          this.translationBackfillError = 'Stav překladů se nepodařilo obnovit.';
+          this.render();
+        }
+        break;
+      }
+    }
+    if (this.translationBackfillPollToken === token) {
+      this.translationBackfillPollToken = null;
+    }
   }
 
   private async loadSpellingSets(language: LearningLanguage = this.settingsLanguage): Promise<void> {
@@ -2014,7 +2149,7 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     speech.cancel();
-    const utterance = new SpeechSynthesisUtterance(formatSpellingSpeech(word));
+    const utterance = new SpeechSynthesisUtterance(formatSpellingSpeech(word, this.selectedLanguage));
     utterance.lang = this.ttsLanguage();
     utterance.rate = 0.82;
     utterance.onerror = (event) => {
@@ -2255,16 +2390,99 @@ function parseSpellingWords(rawWords: string): string[] {
   return rawWords.split(',').map((word) => word.trim()).filter(Boolean);
 }
 
-function spellingLetters(word: string): string[] {
-  return word.trim().split('').filter((letter) => /[\p{L}\p{N}]/u.test(letter));
+function spellingLetterGroups(word: string): string[][] {
+  return word.trim()
+    .split(/\s+/)
+    .map((part) => part.split('').filter((letter) => /[\p{L}\p{N}]/u.test(letter)))
+    .filter((letters) => letters.length > 0);
 }
 
-function formatSpellingAnswer(word: string): string {
-  return spellingLetters(word).map((letter) => letter.toLocaleUpperCase('en-US')).join('-');
+function formatSpellingAnswer(word: string, language: LearningLanguage): string {
+  return spellingLetterGroups(word)
+    .map((letters) => letters.map((letter) => letter.toLocaleUpperCase(localeForLanguage(language))).join('-'))
+    .join('  ');
 }
 
-function formatSpellingSpeech(word: string): string {
-  return spellingLetters(word).map((letter) => letter.toLocaleUpperCase('en-US')).join(', ');
+function formatSpellingSpeech(word: string, language: LearningLanguage): string {
+  return spellingLetterGroups(word)
+    .map((letters) => letters.map((letter) => spellingSpeechName(letter, language)).join(', '))
+    .join('. ');
+}
+
+function localeForLanguage(language: LearningLanguage): string {
+  if (language === 'de') return 'de-DE';
+  if (language === 'es') return 'es-ES';
+  return 'en-US';
+}
+
+function spellingSpeechName(character: string, language: LearningLanguage): string {
+  const letter = character.toLocaleLowerCase(localeForLanguage(language));
+  if (language === 'de') {
+    return ({
+      a: 'A',
+      b: 'Be',
+      c: 'Ce',
+      d: 'De',
+      e: 'E',
+      f: 'Ef',
+      g: 'Ge',
+      h: 'Ha',
+      i: 'I',
+      j: 'Jot',
+      k: 'Ka',
+      l: 'El',
+      m: 'Em',
+      n: 'En',
+      o: 'O',
+      p: 'Pe',
+      q: 'Ku',
+      r: 'Er',
+      s: 'Es',
+      t: 'Te',
+      u: 'U',
+      v: 'Fau',
+      w: 'We',
+      x: 'Ix',
+      y: 'Ypsilon',
+      z: 'Zett',
+      ä: 'A Umlaut',
+      ö: 'O Umlaut',
+      ü: 'U Umlaut',
+      ß: 'Eszett',
+    } as Record<string, string>)[letter] ?? character;
+  }
+  if (language === 'es') {
+    return ({
+      a: 'a',
+      b: 'be',
+      c: 'ce',
+      d: 'de',
+      e: 'e',
+      f: 'efe',
+      g: 'ge',
+      h: 'hache',
+      i: 'i',
+      j: 'jota',
+      k: 'ka',
+      l: 'ele',
+      m: 'eme',
+      n: 'ene',
+      ñ: 'eñe',
+      o: 'o',
+      p: 'pe',
+      q: 'cu',
+      r: 'erre',
+      s: 'ese',
+      t: 'te',
+      u: 'u',
+      v: 'uve',
+      w: 'uve doble',
+      x: 'equis',
+      y: 'ye',
+      z: 'zeta',
+    } as Record<string, string>)[letter] ?? character;
+  }
+  return character.toLocaleUpperCase('en-US');
 }
 
 function emptyStatsByDirection(): Record<PracticeDirection, Record<string, QuestionStats>> {

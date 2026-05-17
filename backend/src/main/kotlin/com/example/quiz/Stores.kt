@@ -140,6 +140,14 @@ object FlipcardStore {
         }
     }
 
+    fun translationBackfillStatus(language: LearningLanguage): FlipcardTranslationBackfillStatusResponse {
+        return FlipcardTranslationService.status(language)
+    }
+
+    fun enqueueTranslationBackfill(language: LearningLanguage): FlipcardTranslationBackfillStatusResponse {
+        return FlipcardTranslationService.enqueueBackfill(language)
+    }
+
     fun snapshot(language: LearningLanguage): Map<String, QuestionStats> = synchronized(lock) {
         Database.useConnection { connection ->
             connection.readFlipcardStats(language)

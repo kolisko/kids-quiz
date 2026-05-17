@@ -603,6 +603,20 @@ textarea {
   font-weight: 900;
 }
 
+.translation-backfill {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.translation-backfill .settings-note {
+  margin: 0;
+  color: #4b5563 !important;
+  font-weight: 800;
+}
+
 .settings-save-button {
   width: min(100%, 18rem);
   min-height: 5rem;

@@ -248,3 +248,12 @@ data class FlipcardAsset(
 data class FlipcardAssetsResponse(
     val items: List<FlipcardAsset>,
 )
+
+@Serializable
+data class FlipcardTranslationBackfillStatusResponse(
+    val language: LearningLanguage,
+    val status: SpellingAudioStatus,
+    val readyCount: Int,
+    val totalCount: Int,
+    val error: String? = null,
+)

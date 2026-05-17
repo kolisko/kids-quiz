@@ -67,6 +67,8 @@ fun Application.module() {
     }
 
     DatabaseMigrator.ensureMigrated()
+    FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.de)
+    FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.es)
 
     val staticDir = runtimeStaticDir().toFile()
     routing {
@@ -229,6 +231,25 @@ fun Application.module() {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val language = call.requireLearningLanguage() ?: return@get
                     call.respond(FlipcardStore.readAssets(language))
+                }
+                get("/translations/status") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val language = call.requireLearningLanguage() ?: return@get
+                    call.respond(FlipcardStore.translationBackfillStatus(language))
+                }
+                post("/translations/backfill") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
+                    try {
+                        call.respond(FlipcardStore.enqueueTranslationBackfill(language))
+                    } catch (error: FlipcardTranslationException) {
+                        val status = if (error.message == "translation_not_configured") {
+                            HttpStatusCode.ServiceUnavailable
+                        } else {
+                            HttpStatusCode.BadGateway
+                        }
+                        call.respond(status, mapOf("error" to (error.message ?: "translation_backfill_failed")))
+                    }
                 }
                 get("/stats") {
                     if (!Auth.requireAuthenticated(call)) return@get

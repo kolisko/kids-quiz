@@ -191,6 +191,19 @@ object DatabaseMigrator {
                     recordMigration(12, "add_multilingual_language_content")
                 }
             }
+            if (13 !in applied) {
+                connection.transaction {
+                    addFlipcardTranslationBackfillTracking()
+                    recordMigration(13, "add_flipcard_translation_backfill_tracking")
+                }
+            }
+            if (14 !in applied) {
+                val words = connection.readEnglishAudioCacheMigrationWords()
+                SpellingAudioService.migrateLegacyEnglishCache(words)
+                connection.transaction {
+                    recordMigration(14, "migrate_english_audio_cache_keys")
+                }
+            }
         }
         migrated = true
     }
@@ -781,6 +794,20 @@ object DatabaseMigrator {
         seedDefaultSpellingSetsForNewLanguages()
     }
 
+    private fun Connection.addFlipcardTranslationBackfillTracking() {
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS flipcard_translation_backfills (
+                    language TEXT PRIMARY KEY,
+                    concept_count INTEGER NOT NULL DEFAULT 0 CHECK(concept_count >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
     private fun Connection.seedFlipcardConceptsAndTranslations() {
         val englishRows = readLegacyFlipcardRows().ifEmpty {
             defaultFlipcardWords.mapIndexed { index, word -> LegacyFlipcardRow(word, normalizeFlipcardWord(word), index) }
@@ -1364,6 +1391,124 @@ fun Connection.replaceFlipcardWords(rawWords: String, language: LearningLanguage
     }
 }
 
+fun Connection.readFlipcardTranslationBackfillProgress(language: LearningLanguage): Pair<Int, Int> {
+    val total = prepareStatement("SELECT COUNT(*) FROM flipcard_concepts").use { statement ->
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) 0 else rows.getInt(1)
+        }
+    }
+    val lastCount = prepareStatement(
+        "SELECT concept_count FROM flipcard_translation_backfills WHERE language = ?",
+    ).use { statement ->
+        statement.setString(1, language.name)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) 0 else rows.getInt("concept_count")
+        }
+    }
+    return lastCount.coerceAtMost(total) to total
+}
+
+fun Connection.readFlipcardConceptsForTranslation(): List<FlipcardConceptTranslationSource> {
+    return prepareStatement(
+        """
+        SELECT flipcard_concepts.id, flipcard_concepts.concept_key, flipcard_translations.word
+        FROM flipcard_concepts
+        LEFT JOIN flipcard_translations
+            ON flipcard_translations.concept_id = flipcard_concepts.id
+            AND flipcard_translations.language = '${LearningLanguage.en.name}'
+        ORDER BY flipcard_concepts.sort_order, flipcard_concepts.id
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) {
+                    val conceptKey = rows.getString("concept_key")
+                    add(
+                        FlipcardConceptTranslationSource(
+                            conceptId = rows.getLong("id"),
+                            conceptKey = conceptKey,
+                            englishWord = rows.getString("word") ?: conceptKey,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun Connection.replaceGeneratedFlipcardTranslations(
+    language: LearningLanguage,
+    translations: List<GeneratedFlipcardTranslation>,
+) {
+    transaction {
+        prepareStatement("DELETE FROM flipcard_translations WHERE language = ?").use {
+            it.setString(1, language.name)
+            it.executeUpdate()
+        }
+        prepareStatement(
+            """
+            INSERT INTO flipcard_translations(concept_id, language, word, normalized_word, sort_order, updated_at)
+            VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).use { statement ->
+            translations.forEachIndexed { index, translation ->
+                statement.setLong(1, translation.conceptId)
+                statement.setString(2, language.name)
+                statement.setString(3, translation.displayWord)
+                statement.setString(4, normalizeFlipcardWord(translation.displayWord))
+                statement.setInt(5, index)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+        prepareStatement(
+            """
+            INSERT INTO flipcard_translation_backfills(language, concept_count, updated_at)
+            VALUES(?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(language) DO UPDATE SET
+                concept_count = excluded.concept_count,
+                updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, language.name)
+            statement.setInt(2, translations.size)
+            statement.executeUpdate()
+        }
+    }
+}
+
+fun Connection.readEnglishAudioCacheMigrationWords(): List<String> {
+    return prepareStatement(
+        """
+        SELECT word
+        FROM spelling_words
+        WHERE language = '${LearningLanguage.en.name}'
+        UNION
+        SELECT flipcard_translations.word
+        FROM flipcard_translations
+        WHERE flipcard_translations.language = '${LearningLanguage.en.name}'
+        ORDER BY word
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) add(rows.getString("word"))
+            }
+        }
+    }
+}
+
+data class FlipcardConceptTranslationSource(
+    val conceptId: Long,
+    val conceptKey: String,
+    val englishWord: String,
+)
+
+data class GeneratedFlipcardTranslation(
+    val conceptId: Long,
+    val displayWord: String,
+)
+
 fun Connection.readFlipcardSession(limit: Int, language: LearningLanguage = LearningLanguage.en): FlipcardSession {
     val safeLimit = limit.coerceAtLeast(1)
     return prepareStatement(
@@ -1856,7 +2001,7 @@ private val defaultFlipcardWords = listOf(
 )
 
 private val defaultGermanSpellingWords = listOf(
-    "Katze", "Hund", "Apfel", "Sonne", "Mond", "Haus", "Buch", "Ball", "Auto", "Baum",
+    "die Katze", "der Hund", "der Apfel", "die Sonne", "der Mond", "das Haus", "das Buch", "der Ball", "das Auto", "der Baum",
 )
 
 private val defaultSpanishSpellingWords = listOf(

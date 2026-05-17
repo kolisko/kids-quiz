@@ -183,7 +183,7 @@
           type="button"
           *ngFor="let language of languageOptions"
           [class.asset-tab-active]="settingsLanguage === language.code"
-          (click)="settingsLanguage = language.code">
+          (click)="selectSettingsLanguage(language.code)">
           {{ language.label }}
         </button>
       </div>
@@ -234,6 +234,17 @@
       <button class="primary-button compact-button" type="button" (click)="openFlipcardAssetLibrary()">
         Flipcards knihovna
       </button>
+      <div class="translation-backfill" *ngIf="translationBackfillVisible">
+        <strong>{{ translationBackfillSummary }}</strong>
+        <p class="settings-note">
+          Doplnění překladů přepíše slovíčka pro {{ settingsLanguageLabel }} bez anglických fallbacků. Němčina dostane členy der/die/das.
+        </p>
+        <button class="secondary-button compact-button" type="button" (click)="backfillTranslations()" [disabled]="translationBackfillActive">
+          {{ translationBackfillActive ? 'Doplňuji...' : 'Doplnit překlady' }}
+        </button>
+        <p class="error settings-error" *ngIf="translationBackfillError">{{ translationBackfillError }}</p>
+        <p class="error settings-error" *ngIf="currentTranslationBackfillStatus?.error">{{ currentTranslationBackfillStatus?.error }}</p>
+      </div>
       <label>
         Slovíčka oddělená čárkou
         <textarea

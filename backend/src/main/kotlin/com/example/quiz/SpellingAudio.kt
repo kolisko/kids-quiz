@@ -114,6 +114,31 @@ object SpellingAudioService {
         return path.takeIf { Files.isRegularFile(it) }
     }
 
+    fun migrateLegacyEnglishCache(rawWords: List<String>) {
+        val words = rawWords
+            .mapNotNull(::spellingAudioWord)
+        if (words.isEmpty()) return
+        val audioDir = runtimeDataPath("audio", "spelling")
+        if (!Files.isDirectory(audioDir)) return
+        Files.createDirectories(audioDir)
+        val legacyPathsToDelete = mutableSetOf<Path>()
+        words.forEach { word ->
+            SpellingAudioKind.entries.forEach { kind ->
+                val legacyPath = legacyAudioPath(word, kind)
+                val newPath = audioPath(word, kind, LearningLanguage.en)
+                if (Files.isRegularFile(legacyPath) && !Files.exists(newPath)) {
+                    Files.copy(legacyPath, newPath, StandardCopyOption.REPLACE_EXISTING)
+                }
+                if (Files.isRegularFile(legacyPath)) {
+                    legacyPathsToDelete.add(legacyPath)
+                }
+            }
+        }
+        legacyPathsToDelete.forEach { path ->
+            if (Files.isRegularFile(path)) Files.delete(path)
+        }
+    }
+
     private fun generateToFile(
         word: SpellingWord,
         kind: SpellingAudioKind,
@@ -128,7 +153,7 @@ object SpellingAudioService {
             OpenAiTtsRequest(
                 model = ttsModel(),
                 voice = ttsVoice(),
-                input = ttsInput(word, kind),
+                input = ttsInput(word, kind, language),
                 instructions = ttsInstructions(kind, language),
             ),
         )
@@ -151,11 +176,27 @@ object SpellingAudioService {
         return runtimeDataPath("audio", "spelling").resolve("${audioCacheKey(word, kind, language)}.mp3")
     }
 
+    private fun legacyAudioPath(word: SpellingWord, kind: SpellingAudioKind): Path {
+        return runtimeDataPath("audio", "spelling").resolve("${legacyAudioCacheKey(word, kind)}.mp3")
+    }
+
     private fun audioCacheKey(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): String {
         return sha256Hex(
-            listOf(language.name, kind.name, word.normalized, ttsModel(), ttsVoice(), ttsInstructions(kind, language))
+            listOf(
+                language.name,
+                kind.name,
+                word.normalized,
+                ttsModel(),
+                ttsVoice(),
+                ttsInstructions(kind, language),
+                ttsInput(word, kind, language),
+            )
                 .joinToString("\u001f"),
         )
+    }
+
+    private fun legacyAudioCacheKey(word: SpellingWord, kind: SpellingAudioKind): String {
+        return sha256Hex(listOf(kind.name, word.normalized, ttsModel(), ttsVoice(), ttsInstructions(kind, LearningLanguage.en)).joinToString("\u001f"))
     }
 
     private fun audioJobKey(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): String {
@@ -195,17 +236,94 @@ object SpellingAudioService {
         }
     }
 
-    private fun ttsInput(word: SpellingWord, kind: SpellingAudioKind): String {
+    private fun ttsInput(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): String {
         return when (kind) {
             SpellingAudioKind.word -> word.text
-            SpellingAudioKind.spelling -> spellingLetters(word.text).joinToString(", ")
+            SpellingAudioKind.spelling -> spellingSpeechWords(word.text, language)
         }
     }
 
-    private fun spellingLetters(word: String): List<String> {
+    private fun spellingSpeechWords(word: String, language: LearningLanguage): String {
         return word.trim()
-            .filter { it.isLetterOrDigit() }
-            .map { it.uppercaseChar().toString() }
+            .split(Regex("\\s+"))
+            .map { token ->
+                token
+                    .filter { it.isLetterOrDigit() }
+                    .map { spellingSpeechName(it, language) }
+                    .joinToString(", ")
+            }
+            .filter { it.isNotBlank() }
+            .joinToString(". ")
+    }
+
+    private fun spellingSpeechName(character: Char, language: LearningLanguage): String {
+        val letter = character.lowercaseChar()
+        return when (language) {
+            LearningLanguage.en -> letter.uppercaseChar().toString()
+            LearningLanguage.de -> when (letter) {
+                'a' -> "A"
+                'b' -> "Be"
+                'c' -> "Ce"
+                'd' -> "De"
+                'e' -> "E"
+                'f' -> "Ef"
+                'g' -> "Ge"
+                'h' -> "Ha"
+                'i' -> "I"
+                'j' -> "Jot"
+                'k' -> "Ka"
+                'l' -> "El"
+                'm' -> "Em"
+                'n' -> "En"
+                'o' -> "O"
+                'p' -> "Pe"
+                'q' -> "Ku"
+                'r' -> "Er"
+                's' -> "Es"
+                't' -> "Te"
+                'u' -> "U"
+                'v' -> "Fau"
+                'w' -> "We"
+                'x' -> "Ix"
+                'y' -> "Ypsilon"
+                'z' -> "Zett"
+                'ä' -> "A Umlaut"
+                'ö' -> "O Umlaut"
+                'ü' -> "U Umlaut"
+                'ß' -> "Eszett"
+                else -> character.toString()
+            }
+            LearningLanguage.es -> when (letter) {
+                'a' -> "a"
+                'b' -> "be"
+                'c' -> "ce"
+                'd' -> "de"
+                'e' -> "e"
+                'f' -> "efe"
+                'g' -> "ge"
+                'h' -> "hache"
+                'i' -> "i"
+                'j' -> "jota"
+                'k' -> "ka"
+                'l' -> "ele"
+                'm' -> "eme"
+                'n' -> "ene"
+                'ñ' -> "eñe"
+                'o' -> "o"
+                'p' -> "pe"
+                'q' -> "cu"
+                'r' -> "erre"
+                's' -> "ese"
+                't' -> "te"
+                'u' -> "u"
+                'v' -> "uve"
+                'w' -> "uve doble"
+                'x' -> "equis"
+                'y' -> "ye"
+                'z' -> "zeta"
+                else -> character.toString()
+            }
+        }
     }
 
     private fun spellingAudioWord(rawWord: String): SpellingWord? {

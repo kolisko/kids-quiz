@@ -8,6 +8,7 @@ import kotlin.concurrent.thread
 enum class ArtifactJobPool {
     image,
     audio,
+    translation,
 }
 
 enum class ArtifactJobStatus {
@@ -36,8 +37,10 @@ object ArtifactGenerationQueue {
     private val jobs = ConcurrentHashMap<String, MutableJobState>()
     private val imageQueue = LinkedBlockingQueue<Job>()
     private val audioQueue = LinkedBlockingQueue<Job>()
+    private val translationQueue = LinkedBlockingQueue<Job>()
     private val imageStarted = AtomicBoolean(false)
     private val audioStarted = AtomicBoolean(false)
+    private val translationStarted = AtomicBoolean(false)
 
     fun snapshot(key: String): ArtifactJobSnapshot? {
         return jobs[key]?.let { ArtifactJobSnapshot(status = it.status, error = it.error) }
@@ -64,12 +67,14 @@ object ArtifactGenerationQueue {
         val started = when (pool) {
             ArtifactJobPool.image -> imageStarted
             ArtifactJobPool.audio -> audioStarted
+            ArtifactJobPool.translation -> translationStarted
         }
         if (!started.compareAndSet(false, true)) return
 
         val workerCount = when (pool) {
             ArtifactJobPool.image -> workerCount("FLIPCARD_IMAGE_WORKERS", 1)
             ArtifactJobPool.audio -> workerCount("SPELLING_AUDIO_WORKERS", 2)
+            ArtifactJobPool.translation -> workerCount("FLIPCARD_TRANSLATION_WORKERS", 1)
         }
         repeat(workerCount) { index ->
             thread(
@@ -101,6 +106,7 @@ object ArtifactGenerationQueue {
         return when (pool) {
             ArtifactJobPool.image -> imageQueue
             ArtifactJobPool.audio -> audioQueue
+            ArtifactJobPool.translation -> translationQueue
         }
     }
 
