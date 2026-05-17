@@ -60,6 +60,47 @@ lucide-icon {
   user-select: none;
 }
 
+.tesla-audio-badge-active {
+  color: #0f766e;
+  border-color: rgba(15, 118, 110, 0.34);
+  background: rgba(204, 251, 241, 0.9);
+}
+
+.tesla-audio-badge-mp3 {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.34);
+  background: rgba(219, 234, 254, 0.92);
+}
+
+.tesla-audio-badge-error {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.34);
+  background: rgba(254, 242, 242, 0.92);
+}
+
+.tesla-audio-state-dot {
+  position: absolute;
+  right: 0.15rem;
+  bottom: 0.15rem;
+  width: 0.52rem;
+  height: 0.52rem;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.tesla-audio-badge-active .tesla-audio-state-dot {
+  background: #10b981;
+}
+
+.tesla-audio-badge-mp3 .tesla-audio-state-dot {
+  background: #2563eb;
+}
+
+.tesla-audio-badge-error .tesla-audio-state-dot {
+  background: #dc2626;
+}
+
 .top-bar {
   position: fixed;
   z-index: 10;

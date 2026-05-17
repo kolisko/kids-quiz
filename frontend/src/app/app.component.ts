@@ -16,6 +16,7 @@ type ArtifactStatus = 'ready' | 'missing' | 'queued' | 'generating' | 'error';
 type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
+type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
@@ -306,6 +307,7 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardImageUrls: Record<string, string> = {};
   flipcardAdvancing = false;
   teslaMp3AudioEnabled = readLocalBoolean(TESLA_MP3_AUDIO_STORAGE_KEY, false);
+  teslaMp3PlayerState: TeslaMp3PlayerState = 'off';
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
     product_to_factors: new Map<number, number>(),
@@ -348,6 +350,22 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get teslaMp3AudioModeActive(): boolean {
     return this.teslaMp3AudioEnabled && this.settings.audioSource === 'backend_mp3';
+  }
+
+  get teslaMp3AudioBadgeVisible(): boolean {
+    return this.teslaMp3AudioEnabled || this.teslaMp3PlayerState !== 'off';
+  }
+
+  get teslaMp3AudioBadgeLabel(): string {
+    const stateLabel = ({
+      off: 'vypnuto',
+      idle: 'čeká',
+      priming: 'startuje',
+      loop: 'tichá smyčka běží',
+      mp3: 'přehrává MP3',
+      error: 'chyba přehrávání',
+    } as Record<TeslaMp3PlayerState, string>)[this.teslaMp3PlayerState];
+    return `Tesla MP3 režim: ${stateLabel}`;
   }
 
   get currentQuestionText(): string {
@@ -761,6 +779,8 @@ export class AppComponent implements OnInit, OnDestroy {
     writeLocalBoolean(TESLA_MP3_AUDIO_STORAGE_KEY, enabled);
     if (!enabled || this.settings.audioSource !== 'backend_mp3') {
       this.destroyTeslaMp3Audio();
+    } else if (this.teslaMp3Audio === null) {
+      this.updateTeslaMp3PlayerState('idle');
     }
   }
 
@@ -2374,7 +2394,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private getTeslaMp3Audio(): TeslaMp3AudioController {
     if (this.teslaMp3Audio === null) {
-      this.teslaMp3Audio = new TeslaMp3AudioController();
+      this.teslaMp3Audio = new TeslaMp3AudioController((state) => this.updateTeslaMp3PlayerState(state));
     }
     return this.teslaMp3Audio;
   }
@@ -2382,6 +2402,13 @@ export class AppComponent implements OnInit, OnDestroy {
   private destroyTeslaMp3Audio(): void {
     this.teslaMp3Audio?.destroy();
     this.teslaMp3Audio = null;
+    this.updateTeslaMp3PlayerState(this.teslaMp3AudioModeActive ? 'idle' : 'off');
+  }
+
+  private updateTeslaMp3PlayerState(state: TeslaMp3PlayerState): void {
+    if (this.teslaMp3PlayerState === state) return;
+    this.teslaMp3PlayerState = state;
+    this.render();
   }
 
   private async playBackendAudioUrl(audioUrl: string): Promise<void> {
@@ -2606,8 +2633,9 @@ class TeslaMp3AudioController {
   private primePromise: Promise<void> | null = null;
   private destroyed = false;
 
-  constructor() {
+  constructor(private readonly onStateChange: (state: TeslaMp3PlayerState) => void) {
     this.audio.preload = 'auto';
+    this.setState('idle');
   }
 
   async prime(): Promise<void> {
@@ -2630,6 +2658,7 @@ class TeslaMp3AudioController {
     if (this.destroyed || this.playbackToken !== token) return;
 
     this.audio.pause();
+    this.setState('mp3');
     this.audio.loop = false;
     this.audio.preload = 'auto';
     this.audio.src = audioUrl;
@@ -2663,9 +2692,11 @@ class TeslaMp3AudioController {
     this.audio.pause();
     this.audio.removeAttribute('src');
     this.audio.load();
+    this.setState('off');
   }
 
   private async runPrime(): Promise<void> {
+    this.setState('priming');
     await this.resumeSilentLoop(true);
     await this.delay(TESLA_AUDIO_PRIME_MS);
     if (!this.destroyed) {
@@ -2681,6 +2712,7 @@ class TeslaMp3AudioController {
   private async resumeSilentLoop(throwOnFailure: boolean): Promise<void> {
     if (this.destroyed) return;
     this.audio.pause();
+    this.setState('loop');
     this.audio.loop = true;
     this.audio.preload = 'auto';
     if (this.audio.src !== TESLA_SILENT_LOOP_URL) {
@@ -2695,6 +2727,7 @@ class TeslaMp3AudioController {
     try {
       await this.audio.play();
     } catch (error) {
+      this.setState('error');
       if (throwOnFailure) throw error;
     }
   }
@@ -2741,6 +2774,10 @@ class TeslaMp3AudioController {
 
   private async delay(milliseconds: number): Promise<void> {
     await new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+  }
+
+  private setState(state: TeslaMp3PlayerState): void {
+    this.onStateChange(state);
   }
 }
 

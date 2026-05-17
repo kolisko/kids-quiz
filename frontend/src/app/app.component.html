@@ -1,7 +1,15 @@
 <div class="app">
   <span class="snapshot-badge">build {{ snapshotNumber }}</span>
-  <span class="tesla-audio-badge" *ngIf="teslaMp3AudioModeActive" title="Tesla MP3 režim" aria-label="Tesla MP3 režim">
+  <span
+    class="tesla-audio-badge"
+    *ngIf="teslaMp3AudioBadgeVisible"
+    [class.tesla-audio-badge-active]="teslaMp3PlayerState === 'loop' || teslaMp3PlayerState === 'mp3'"
+    [class.tesla-audio-badge-mp3]="teslaMp3PlayerState === 'mp3'"
+    [class.tesla-audio-badge-error]="teslaMp3PlayerState === 'error'"
+    [title]="teslaMp3AudioBadgeLabel"
+    [attr.aria-label]="teslaMp3AudioBadgeLabel">
     <lucide-icon [img]="teslaAudioIcon" [size]="17"></lucide-icon>
+    <span class="tesla-audio-state-dot" aria-hidden="true"></span>
   </span>
 
   <div class="top-bar" *ngIf="screen === 'play'">
