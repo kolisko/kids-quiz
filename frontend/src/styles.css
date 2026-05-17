@@ -534,7 +534,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 2px solid rgba(31, 41, 55, 0.14);
   border-radius: 0.5rem;
@@ -544,7 +545,8 @@ textarea {
 }
 
 input,
-textarea {
+textarea,
+select {
   min-height: 3.2rem;
   padding: 0.7rem 0.9rem;
 }
@@ -636,6 +638,21 @@ textarea {
 
 .tesla-audio-option {
   justify-content: flex-start;
+}
+
+.tesla-loop-settings {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 2px solid rgba(15, 118, 110, 0.14);
+  border-radius: 0.5rem;
+  background: rgba(240, 253, 250, 0.58);
+}
+
+.tesla-loop-description {
+  margin: 0;
+  color: #475569 !important;
+  font-weight: 800;
 }
 
 .compact-button {

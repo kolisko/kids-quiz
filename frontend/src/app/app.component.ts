@@ -17,14 +17,84 @@ type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error';
+type TeslaMp3LoopMode = 'digital_silence' | 'near_silent_ticks' | 'soft_noise' | 'soft_tone' | 'audible_tone' | 'loud_tone' | 'ambient_music';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
 const AUDIO_PREROLL_MS = 220;
 const AUDIO_PREROLL_URL = createSilentWavDataUrl(AUDIO_PREROLL_MS);
 const TESLA_AUDIO_PRIME_MS = 1000;
-const TESLA_KEEPALIVE_LOOP_URL = createNearSilentWavDataUrl(TESLA_AUDIO_PRIME_MS);
 const TESLA_MP3_AUDIO_STORAGE_KEY = 'kidsQuizTeslaMp3AudioEnabled';
+const TESLA_MP3_LOOP_MODE_STORAGE_KEY = 'kidsQuizTeslaMp3LoopMode';
+const DEFAULT_TESLA_MP3_LOOP_MODE: TeslaMp3LoopMode = 'near_silent_ticks';
+
+interface TeslaMp3LoopOption {
+  mode: TeslaMp3LoopMode;
+  label: string;
+  description: string;
+  url: string;
+  volume: number;
+  backgroundMusic: boolean;
+}
+
+const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
+  {
+    mode: 'digital_silence',
+    label: 'Digitální ticho',
+    description: 'Nulový WAV; kontrolní varianta, Chrome ji může ignorovat.',
+    url: createSilentWavDataUrl(TESLA_AUDIO_PRIME_MS),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'near_silent_ticks',
+    label: 'Téměř ticho +1/-1',
+    description: 'Extrémně slabý nenulový signál.',
+    url: createNearSilentWavDataUrl(TESLA_AUDIO_PRIME_MS),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'soft_noise',
+    label: 'Velmi slabý šum',
+    description: 'Náhodnější skoro neslyšitelný signál.',
+    url: createNoiseWavDataUrl(TESLA_AUDIO_PRIME_MS, 12),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'soft_tone',
+    label: 'Slabý tón',
+    description: 'Sotva slyšitelný 440 Hz tón.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 55),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'audible_tone',
+    label: 'Slyšitelný tón',
+    description: 'Jasně slyšitelný testovací 440 Hz tón.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 1400),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'loud_tone',
+    label: 'Hlasitý tón',
+    description: 'Diagnostická hlasitá varianta.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 7000),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'ambient_music',
+    label: 'Hudba na pozadí',
+    description: 'Jemná generovaná smyčka; při MP3 se stáhne a potom vrátí.',
+    url: createAmbientMusicWavDataUrl(4000),
+    volume: 0.28,
+    backgroundMusic: true,
+  },
+];
 
 interface LanguageOption {
   code: LearningLanguage;
@@ -223,6 +293,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly ttsUnavailableIcon = MessageCircleOff;
   readonly playIcon = Play;
   readonly teslaAudioIcon = CarFront;
+  readonly teslaMp3LoopOptions = TESLA_MP3_LOOP_OPTIONS;
   readonly practiceModes: PracticeModeOption[] = [
     { mode: 'product_to_factors', label: 'Najdi násobení' },
     { mode: 'factors_to_product', label: 'Spočítej výsledek' },
@@ -307,6 +378,8 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardImageUrls: Record<string, string> = {};
   flipcardAdvancing = false;
   teslaMp3AudioEnabled = readLocalBoolean(TESLA_MP3_AUDIO_STORAGE_KEY, false);
+  teslaMp3LoopMode: TeslaMp3LoopMode = readLocalLoopMode();
+  teslaMp3LoopTestActive = false;
   teslaMp3PlayerState: TeslaMp3PlayerState = 'off';
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
@@ -366,6 +439,10 @@ export class AppComponent implements OnInit, OnDestroy {
       error: 'chyba přehrávání',
     } as Record<TeslaMp3PlayerState, string>)[this.teslaMp3PlayerState];
     return `Tesla MP3 režim: ${stateLabel}`;
+  }
+
+  get currentTeslaMp3LoopOption(): TeslaMp3LoopOption {
+    return teslaMp3LoopOption(this.teslaMp3LoopMode);
   }
 
   get currentQuestionText(): string {
@@ -781,6 +858,26 @@ export class AppComponent implements OnInit, OnDestroy {
       this.destroyTeslaMp3Audio();
     } else if (this.teslaMp3Audio === null) {
       this.updateTeslaMp3PlayerState('idle');
+    }
+  }
+
+  onTeslaMp3LoopModeChange(mode: TeslaMp3LoopMode): void {
+    this.teslaMp3LoopMode = teslaMp3LoopOption(mode).mode;
+    writeLocalString(TESLA_MP3_LOOP_MODE_STORAGE_KEY, this.teslaMp3LoopMode);
+    this.teslaMp3Audio?.setLoopMode(this.teslaMp3LoopMode);
+  }
+
+  async toggleTeslaMp3LoopTest(): Promise<void> {
+    if (!this.teslaMp3AudioEnabled) return;
+    if (this.teslaMp3LoopTestActive) {
+      this.destroyTeslaMp3Audio();
+      return;
+    }
+    this.teslaMp3LoopTestActive = true;
+    try {
+      await this.getTeslaMp3Audio().startLoop();
+    } catch {
+      this.teslaMp3LoopTestActive = false;
     }
   }
 
@@ -2394,7 +2491,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private getTeslaMp3Audio(): TeslaMp3AudioController {
     if (this.teslaMp3Audio === null) {
-      this.teslaMp3Audio = new TeslaMp3AudioController((state) => this.updateTeslaMp3PlayerState(state));
+      this.teslaMp3Audio = new TeslaMp3AudioController(
+        (state) => this.updateTeslaMp3PlayerState(state),
+        this.teslaMp3LoopMode,
+      );
     }
     return this.teslaMp3Audio;
   }
@@ -2402,6 +2502,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private destroyTeslaMp3Audio(): void {
     this.teslaMp3Audio?.destroy();
     this.teslaMp3Audio = null;
+    this.teslaMp3LoopTestActive = false;
     this.updateTeslaMp3PlayerState(this.teslaMp3AudioModeActive ? 'idle' : 'off');
   }
 
@@ -2628,14 +2729,33 @@ export class AppComponent implements OnInit, OnDestroy {
 
 class TeslaMp3AudioController {
   private readonly audio = new Audio();
+  private foregroundAudio: HTMLAudioElement | null = null;
   private playbackToken = 0;
   private primed = false;
   private primePromise: Promise<void> | null = null;
   private destroyed = false;
 
-  constructor(private readonly onStateChange: (state: TeslaMp3PlayerState) => void) {
+  constructor(
+    private readonly onStateChange: (state: TeslaMp3PlayerState) => void,
+    private loopMode: TeslaMp3LoopMode,
+  ) {
     this.audio.preload = 'auto';
     this.setState('idle');
+  }
+
+  setLoopMode(loopMode: TeslaMp3LoopMode): void {
+    this.loopMode = teslaMp3LoopOption(loopMode).mode;
+    if (this.destroyed || !this.primed) return;
+    void this.resumeSilentLoop(false);
+  }
+
+  async startLoop(): Promise<void> {
+    if (this.destroyed) return;
+    if (!this.primed) {
+      await this.prime();
+      return;
+    }
+    await this.resumeSilentLoop(false);
   }
 
   async prime(): Promise<void> {
@@ -2656,6 +2776,11 @@ class TeslaMp3AudioController {
       // If the silent loop is rejected, still try the requested MP3 from the same gesture.
     }
     if (this.destroyed || this.playbackToken !== token) return;
+
+    if (this.currentLoopOption().backgroundMusic) {
+      await this.playWithBackgroundFade(audioUrl, token);
+      return;
+    }
 
     this.audio.pause();
     this.setState('mp3');
@@ -2681,6 +2806,7 @@ class TeslaMp3AudioController {
 
   stopCurrentAndResumeLoop(): void {
     this.nextPlaybackToken();
+    this.stopForegroundAudio();
     if (this.destroyed || !this.primed) return;
     this.audio.pause();
     void this.resumeSilentLoop(false);
@@ -2689,6 +2815,7 @@ class TeslaMp3AudioController {
   destroy(): void {
     this.destroyed = true;
     this.nextPlaybackToken();
+    this.stopForegroundAudio();
     this.audio.pause();
     this.audio.removeAttribute('src');
     this.audio.load();
@@ -2711,12 +2838,14 @@ class TeslaMp3AudioController {
 
   private async resumeSilentLoop(throwOnFailure: boolean): Promise<void> {
     if (this.destroyed) return;
+    const loop = this.currentLoopOption();
     this.audio.pause();
     this.setState('loop');
     this.audio.loop = true;
     this.audio.preload = 'auto';
-    if (this.audio.src !== TESLA_KEEPALIVE_LOOP_URL) {
-      this.audio.src = TESLA_KEEPALIVE_LOOP_URL;
+    this.audio.volume = loop.volume;
+    if (this.audio.src !== loop.url) {
+      this.audio.src = loop.url;
       this.audio.load();
     }
     try {
@@ -2733,43 +2862,94 @@ class TeslaMp3AudioController {
   }
 
   private async waitForAudioReady(): Promise<void> {
-    if (this.audio.readyState >= 2) return;
+    await this.waitForAudioElementReady(this.audio);
+  }
+
+  private async waitForAudioElementReady(audio: HTMLAudioElement): Promise<void> {
+    if (audio.readyState >= 2) return;
     await new Promise<void>((resolve) => {
       const timeout = window.setTimeout(() => done(), 4000);
       const done = () => {
         window.clearTimeout(timeout);
-        this.audio.removeEventListener('loadeddata', done);
-        this.audio.removeEventListener('canplay', done);
-        this.audio.removeEventListener('error', done);
-        this.audio.removeEventListener('abort', done);
-        this.audio.removeEventListener('emptied', done);
+        audio.removeEventListener('loadeddata', done);
+        audio.removeEventListener('canplay', done);
+        audio.removeEventListener('error', done);
+        audio.removeEventListener('abort', done);
+        audio.removeEventListener('emptied', done);
         resolve();
       };
-      this.audio.addEventListener('loadeddata', done, { once: true });
-      this.audio.addEventListener('canplay', done, { once: true });
-      this.audio.addEventListener('error', done, { once: true });
-      this.audio.addEventListener('abort', done, { once: true });
-      this.audio.addEventListener('emptied', done, { once: true });
+      audio.addEventListener('loadeddata', done, { once: true });
+      audio.addEventListener('canplay', done, { once: true });
+      audio.addEventListener('error', done, { once: true });
+      audio.addEventListener('abort', done, { once: true });
+      audio.addEventListener('emptied', done, { once: true });
     });
   }
 
   private async playUntilDone(timeoutMs: number): Promise<void> {
+    await this.playAudioUntilDone(this.audio, timeoutMs);
+  }
+
+  private async playAudioUntilDone(audio: HTMLAudioElement, timeoutMs: number): Promise<void> {
     await new Promise<void>((resolve) => {
       const timeout = window.setTimeout(() => done(), timeoutMs);
       const done = () => {
         window.clearTimeout(timeout);
-        this.audio.removeEventListener('ended', done);
-        this.audio.removeEventListener('error', done);
-        this.audio.removeEventListener('abort', done);
-        this.audio.removeEventListener('emptied', done);
+        audio.removeEventListener('ended', done);
+        audio.removeEventListener('error', done);
+        audio.removeEventListener('abort', done);
+        audio.removeEventListener('emptied', done);
         resolve();
       };
-      this.audio.addEventListener('ended', done, { once: true });
-      this.audio.addEventListener('error', done, { once: true });
-      this.audio.addEventListener('abort', done, { once: true });
-      this.audio.addEventListener('emptied', done, { once: true });
-      void this.audio.play().catch(() => done());
+      audio.addEventListener('ended', done, { once: true });
+      audio.addEventListener('error', done, { once: true });
+      audio.addEventListener('abort', done, { once: true });
+      audio.addEventListener('emptied', done, { once: true });
+      void audio.play().catch(() => done());
     });
+  }
+
+  private async playWithBackgroundFade(audioUrl: string, token: number): Promise<void> {
+    const mp3Audio = new Audio(audioUrl);
+    this.stopForegroundAudio();
+    this.foregroundAudio = mp3Audio;
+    mp3Audio.preload = 'auto';
+    mp3Audio.load();
+    await this.waitForAudioElementReady(mp3Audio);
+    if (this.destroyed || this.playbackToken !== token || this.foregroundAudio !== mp3Audio) return;
+    await this.fadeLoopVolume(0.035, 240);
+    this.setState('mp3');
+    await this.playAudioUntilDone(mp3Audio, 10000);
+    if (this.foregroundAudio === mp3Audio) {
+      this.foregroundAudio = null;
+    }
+    mp3Audio.removeAttribute('src');
+    mp3Audio.load();
+    if (!this.destroyed && this.playbackToken === token) {
+      await this.fadeLoopVolume(this.currentLoopOption().volume, 420);
+      this.setState('loop');
+    }
+  }
+
+  private stopForegroundAudio(): void {
+    if (!this.foregroundAudio) return;
+    const audio = this.foregroundAudio;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    this.foregroundAudio = null;
+  }
+
+  private async fadeLoopVolume(target: number, durationMs: number): Promise<void> {
+    const start = this.audio.volume;
+    const startedAt = performance.now();
+    while (!this.destroyed) {
+      const elapsed = performance.now() - startedAt;
+      const progress = Math.min(1, elapsed / durationMs);
+      this.audio.volume = start + (target - start) * progress;
+      if (progress >= 1) return;
+      await this.delay(30);
+    }
   }
 
   private async delay(milliseconds: number): Promise<void> {
@@ -2778,6 +2958,10 @@ class TeslaMp3AudioController {
 
   private setState(state: TeslaMp3PlayerState): void {
     this.onStateChange(state);
+  }
+
+  private currentLoopOption(): TeslaMp3LoopOption {
+    return teslaMp3LoopOption(this.loopMode);
   }
 }
 
@@ -2799,8 +2983,39 @@ function createNearSilentWavDataUrl(durationMs: number): string {
   return createMonoPcmWavDataUrl(durationMs, (index) => (index % 2 === 0 ? 1 : -1));
 }
 
-function createMonoPcmWavDataUrl(durationMs: number, sampleValue: (index: number) => number): string {
-  const sampleRate = 8000;
+function createNoiseWavDataUrl(durationMs: number, amplitude: number): string {
+  return createMonoPcmWavDataUrl(durationMs, (index) => {
+    const value = Math.sin(index * 12.9898) * 43758.5453;
+    return (value - Math.floor(value) - 0.5) * 2 * amplitude;
+  });
+}
+
+function createToneWavDataUrl(durationMs: number, frequency: number, amplitude: number): string {
+  return createMonoPcmWavDataUrl(durationMs, (index, sampleRate) => {
+    return Math.sin((index / sampleRate) * Math.PI * 2 * frequency) * amplitude;
+  });
+}
+
+function createAmbientMusicWavDataUrl(durationMs: number): string {
+  const notes = [261.63, 329.63, 392.0, 523.25, 392.0, 329.63, 293.66, 392.0];
+  return createMonoPcmWavDataUrl(durationMs, (index, sampleRate) => {
+    const seconds = index / sampleRate;
+    const noteIndex = Math.floor(seconds * 2) % notes.length;
+    const note = notes[noteIndex] ?? notes[0];
+    const phase = seconds * Math.PI * 2;
+    const envelope = 0.55 + 0.45 * Math.sin((seconds % 0.5) * Math.PI * 2);
+    const root = Math.sin(phase * note) * 900;
+    const fifth = Math.sin(phase * note * 1.5) * 360;
+    const shimmer = Math.sin(phase * note * 2) * 160;
+    return (root + fifth + shimmer) * envelope;
+  }, 16000);
+}
+
+function createMonoPcmWavDataUrl(
+  durationMs: number,
+  sampleValue: (index: number, sampleRate: number) => number,
+  sampleRate = 8000,
+): string {
   const channelCount = 1;
   const bytesPerSample = 2;
   const sampleCount = Math.max(1, Math.ceil((sampleRate * durationMs) / 1000));
@@ -2821,7 +3036,7 @@ function createMonoPcmWavDataUrl(durationMs: number, sampleValue: (index: number
   writeAscii(view, 36, 'data');
   view.setUint32(40, dataSize, true);
   for (let index = 0; index < sampleCount; index += 1) {
-    const sample = Math.max(-32768, Math.min(32767, Math.trunc(sampleValue(index))));
+    const sample = Math.max(-32768, Math.min(32767, Math.trunc(sampleValue(index, sampleRate))));
     view.setInt16(44 + index * bytesPerSample, sample, true);
   }
   const bytes = new Uint8Array(buffer);
@@ -2846,12 +3061,38 @@ function readLocalBoolean(key: string, fallback: boolean): boolean {
   }
 }
 
+function readLocalLoopMode(): TeslaMp3LoopMode {
+  return teslaMp3LoopOption(readLocalString(TESLA_MP3_LOOP_MODE_STORAGE_KEY, DEFAULT_TESLA_MP3_LOOP_MODE)).mode;
+}
+
+function readLocalString(key: string, fallback: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function writeLocalBoolean(key: string, value: boolean): void {
   try {
     window.localStorage.setItem(key, value ? 'true' : 'false');
   } catch {
     // Some embedded browsers may block storage; keep the in-memory setting active.
   }
+}
+
+function writeLocalString(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Some embedded browsers may block storage; keep the in-memory setting active.
+  }
+}
+
+function teslaMp3LoopOption(mode: string): TeslaMp3LoopOption {
+  return TESLA_MP3_LOOP_OPTIONS.find((option) => option.mode === mode)
+    ?? TESLA_MP3_LOOP_OPTIONS.find((option) => option.mode === DEFAULT_TESLA_MP3_LOOP_MODE)
+    ?? TESLA_MP3_LOOP_OPTIONS[0];
 }
 
 function spellingLetterGroups(word: string): string[][] {

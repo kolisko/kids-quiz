@@ -193,6 +193,23 @@
           (ngModelChange)="onTeslaMp3AudioEnabledChange($event)">
         Tesla režim pro MP3 audio v tomto prohlížeči
       </label>
+      <div class="tesla-loop-settings" *ngIf="teslaMp3AudioEnabled">
+        <label>
+          MP3 keepalive smyčka
+          <select
+            name="teslaMp3LoopMode"
+            [(ngModel)]="teslaMp3LoopMode"
+            (ngModelChange)="onTeslaMp3LoopModeChange($event)">
+            <option *ngFor="let option of teslaMp3LoopOptions" [value]="option.mode">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+        <p class="settings-note tesla-loop-description">{{ currentTeslaMp3LoopOption.description }}</p>
+        <button class="secondary-button compact-button" type="button" (click)="toggleTeslaMp3LoopTest()">
+          {{ teslaMp3LoopTestActive ? 'Zastavit test smyčky' : 'Test smyčky' }}
+        </button>
+      </div>
     </section>
 
     <section class="settings-section">
