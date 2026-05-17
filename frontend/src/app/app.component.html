@@ -1,5 +1,8 @@
 <div class="app">
   <span class="snapshot-badge">build {{ snapshotNumber }}</span>
+  <span class="tesla-audio-badge" *ngIf="teslaMp3AudioModeActive" title="Tesla MP3 režim" aria-label="Tesla MP3 režim">
+    <lucide-icon [img]="teslaAudioIcon" [size]="17"></lucide-icon>
+  </span>
 
   <div class="top-bar" *ngIf="screen === 'play'">
     <div class="score-pill">
@@ -163,11 +166,11 @@
       <h2>Audio</h2>
       <div class="audio-source-options">
         <label class="audio-source-option">
-          <input type="radio" name="audioSource" value="browser_tts" [(ngModel)]="settings.audioSource">
+          <input type="radio" name="audioSource" value="browser_tts" [(ngModel)]="settings.audioSource" (ngModelChange)="onAudioSourceChange($event)">
           Browser TTS
         </label>
         <label class="audio-source-option">
-          <input type="radio" name="audioSource" value="backend_mp3" [(ngModel)]="settings.audioSource">
+          <input type="radio" name="audioSource" value="backend_mp3" [(ngModel)]="settings.audioSource" (ngModelChange)="onAudioSourceChange($event)">
           Serverové MP3
         </label>
       </div>

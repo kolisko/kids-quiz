@@ -42,6 +42,24 @@ lucide-icon {
   user-select: none;
 }
 
+.tesla-audio-badge {
+  position: fixed;
+  z-index: 20;
+  right: 0.75rem;
+  bottom: 0.55rem;
+  display: inline-grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 999px;
+  color: rgba(15, 118, 110, 0.68);
+  background: rgba(240, 253, 250, 0.72);
+  box-shadow: 0 8px 18px rgba(31, 41, 55, 0.08);
+  pointer-events: none;
+  user-select: none;
+}
+
 .top-bar {
   position: fixed;
   z-index: 10;

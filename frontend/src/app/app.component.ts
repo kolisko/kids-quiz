@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, ListRestart, LucideAngularModule, MessageCircleOff, Play, Settings } from 'lucide-angular';
+import { ArrowLeft, CarFront, ListRestart, LucideAngularModule, MessageCircleOff, Play, Settings } from 'lucide-angular';
 
 type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'finished';
 type QuizTestType = 'multiplication' | 'english';
@@ -21,6 +21,8 @@ type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
 const AUDIO_PREROLL_MS = 220;
 const AUDIO_PREROLL_URL = createSilentWavDataUrl(AUDIO_PREROLL_MS);
+const TESLA_AUDIO_PRIME_MS = 1000;
+const TESLA_SILENT_LOOP_URL = createSilentWavDataUrl(TESLA_AUDIO_PRIME_MS);
 
 interface LanguageOption {
   code: LearningLanguage;
@@ -218,6 +220,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly newTestIcon = ListRestart;
   readonly ttsUnavailableIcon = MessageCircleOff;
   readonly playIcon = Play;
+  readonly teslaAudioIcon = CarFront;
   readonly practiceModes: PracticeModeOption[] = [
     { mode: 'product_to_factors', label: 'Najdi násobení' },
     { mode: 'factors_to_product', label: 'Spočítej výsledek' },
@@ -311,6 +314,9 @@ export class AppComponent implements OnInit, OnDestroy {
   private ttsVoicesTimerId: number | null = null;
   private ttsVoicesChangedHandler: (() => void) | null = null;
   private backendAudio: HTMLAudioElement | null = null;
+  private readonly teslaBrowser = isTeslaCarBrowser();
+  private teslaMp3Audio: TeslaMp3AudioController | null = null;
+  private teslaMp3GestureHandler: (() => void) | null = null;
   private backendPlaybackToken = 0;
   private ttsPlaybackToken = 0;
   private assetLibraryPollToken: AssetLibraryPollToken | null = null;
@@ -337,6 +343,10 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.activeGame === 'spelling') return this.currentSpellingWord !== null;
     if (this.activeGame === 'flipcards') return this.currentFlipcardWord !== null;
     return this.currentQuestion !== null;
+  }
+
+  get teslaMp3AudioModeActive(): boolean {
+    return this.teslaBrowser && this.settings.audioSource === 'backend_mp3';
   }
 
   get currentQuestionText(): string {
@@ -525,6 +535,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async ngOnInit(): Promise<void> {
+    this.installTeslaMp3GestureListeners();
     void this.loadSnapshotNumber();
     await this.loadGameData();
   }
@@ -537,6 +548,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearFlashTimer();
     this.clearTtsVoiceCheck();
     this.stopBackendAudio();
+    this.destroyTeslaMp3Audio();
+    this.removeTeslaMp3GestureListeners();
   }
 
   async submitLogin(): Promise<void> {
@@ -734,6 +747,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   toggleTtsDetails(): void {
     this.ttsDetailsVisible = !this.ttsDetailsVisible;
+  }
+
+  onAudioSourceChange(audioSource: AudioSource): void {
+    if (!this.teslaBrowser || audioSource !== 'backend_mp3') {
+      this.destroyTeslaMp3Audio();
+    }
   }
 
   markWrong(): void {
@@ -1291,6 +1310,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private applySettings(settings: GameSettings): void {
+    const wasTeslaMp3AudioModeActive = this.teslaMp3AudioModeActive;
     this.settings = {
       secondsLimit: Math.max(1, Math.floor(Number(settings.secondsLimit) || 30)),
       targetScore: Math.max(1, Math.floor(Number(settings.targetScore) || 10)),
@@ -1298,6 +1318,9 @@ export class AppComponent implements OnInit, OnDestroy {
       flipcardSource: settings.flipcardSource === 'ready_only' ? 'ready_only' : 'all_words',
     };
     this.secondsLeft = this.settings.secondsLimit;
+    if (wasTeslaMp3AudioModeActive && !this.teslaMp3AudioModeActive) {
+      this.destroyTeslaMp3Audio();
+    }
   }
 
   private startSpellingGame(): void {
@@ -2311,7 +2334,53 @@ export class AppComponent implements OnInit, OnDestroy {
     await this.speakText(word.text, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
   }
 
+  private installTeslaMp3GestureListeners(): void {
+    if (!this.teslaBrowser || this.teslaMp3GestureHandler !== null) return;
+    const handler = () => {
+      void this.primeTeslaMp3AudioFromGesture();
+    };
+    this.teslaMp3GestureHandler = handler;
+    window.addEventListener('pointerdown', handler, { capture: true, passive: true });
+    window.addEventListener('click', handler, { capture: true, passive: true });
+    window.addEventListener('keydown', handler, { capture: true, passive: true });
+  }
+
+  private removeTeslaMp3GestureListeners(): void {
+    const handler = this.teslaMp3GestureHandler;
+    if (handler === null) return;
+    window.removeEventListener('pointerdown', handler, true);
+    window.removeEventListener('click', handler, true);
+    window.removeEventListener('keydown', handler, true);
+    this.teslaMp3GestureHandler = null;
+  }
+
+  private async primeTeslaMp3AudioFromGesture(): Promise<void> {
+    if (!this.teslaMp3AudioModeActive) return;
+    try {
+      await this.getTeslaMp3Audio().prime();
+    } catch {
+      // The next user gesture will try again if Tesla's Chromium blocks this one.
+    }
+  }
+
+  private getTeslaMp3Audio(): TeslaMp3AudioController {
+    if (this.teslaMp3Audio === null) {
+      this.teslaMp3Audio = new TeslaMp3AudioController();
+    }
+    return this.teslaMp3Audio;
+  }
+
+  private destroyTeslaMp3Audio(): void {
+    this.teslaMp3Audio?.destroy();
+    this.teslaMp3Audio = null;
+  }
+
   private async playBackendAudioUrl(audioUrl: string): Promise<void> {
+    if (this.teslaMp3AudioModeActive) {
+      this.backendPlaybackToken += 1;
+      await this.getTeslaMp3Audio().play(audioUrl);
+      return;
+    }
     this.stopBackendAudio();
     const playbackToken = this.backendPlaybackToken + 1;
     this.backendPlaybackToken = playbackToken;
@@ -2418,6 +2487,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private stopBackendAudio(): void {
     this.backendPlaybackToken += 1;
+    if (this.teslaMp3AudioModeActive) {
+      this.teslaMp3Audio?.stopCurrentAndResumeLoop();
+      return;
+    }
     if (!this.backendAudio) return;
     const audio = this.backendAudio;
     audio.pause();
@@ -2517,6 +2590,151 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 }
 
+class TeslaMp3AudioController {
+  private readonly audio = new Audio();
+  private playbackToken = 0;
+  private primed = false;
+  private primePromise: Promise<void> | null = null;
+  private destroyed = false;
+
+  constructor() {
+    this.audio.preload = 'auto';
+  }
+
+  async prime(): Promise<void> {
+    if (this.destroyed) return;
+    if (this.primed) return;
+    this.primePromise ??= this.runPrime().finally(() => {
+      this.primePromise = null;
+    });
+    await this.primePromise;
+  }
+
+  async play(audioUrl: string): Promise<void> {
+    if (this.destroyed) return;
+    const token = this.nextPlaybackToken();
+    try {
+      await this.prime();
+    } catch {
+      // If the silent loop is rejected, still try the requested MP3 from the same gesture.
+    }
+    if (this.destroyed || this.playbackToken !== token) return;
+
+    this.audio.pause();
+    this.audio.loop = false;
+    this.audio.preload = 'auto';
+    this.audio.src = audioUrl;
+    this.audio.load();
+    await this.waitForAudioReady();
+    if (this.destroyed || this.playbackToken !== token) return;
+
+    try {
+      this.audio.currentTime = 0;
+    } catch {
+      // Some embedded browsers reject seeking before metadata is fully available.
+    }
+    await this.delay(60);
+    await this.playUntilDone(10000);
+
+    if (!this.destroyed && this.playbackToken === token) {
+      await this.resumeSilentLoop(false);
+    }
+  }
+
+  stopCurrentAndResumeLoop(): void {
+    this.nextPlaybackToken();
+    if (this.destroyed || !this.primed) return;
+    this.audio.pause();
+    void this.resumeSilentLoop(false);
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.nextPlaybackToken();
+    this.audio.pause();
+    this.audio.removeAttribute('src');
+    this.audio.load();
+  }
+
+  private async runPrime(): Promise<void> {
+    await this.resumeSilentLoop(true);
+    await this.delay(TESLA_AUDIO_PRIME_MS);
+    if (!this.destroyed) {
+      this.primed = true;
+    }
+  }
+
+  private nextPlaybackToken(): number {
+    this.playbackToken += 1;
+    return this.playbackToken;
+  }
+
+  private async resumeSilentLoop(throwOnFailure: boolean): Promise<void> {
+    if (this.destroyed) return;
+    this.audio.pause();
+    this.audio.loop = true;
+    this.audio.preload = 'auto';
+    if (this.audio.src !== TESLA_SILENT_LOOP_URL) {
+      this.audio.src = TESLA_SILENT_LOOP_URL;
+      this.audio.load();
+    }
+    try {
+      this.audio.currentTime = 0;
+    } catch {
+      // Keep the loop best-effort if Tesla's browser refuses an early seek.
+    }
+    try {
+      await this.audio.play();
+    } catch (error) {
+      if (throwOnFailure) throw error;
+    }
+  }
+
+  private async waitForAudioReady(): Promise<void> {
+    if (this.audio.readyState >= 2) return;
+    await new Promise<void>((resolve) => {
+      const timeout = window.setTimeout(() => done(), 4000);
+      const done = () => {
+        window.clearTimeout(timeout);
+        this.audio.removeEventListener('loadeddata', done);
+        this.audio.removeEventListener('canplay', done);
+        this.audio.removeEventListener('error', done);
+        this.audio.removeEventListener('abort', done);
+        this.audio.removeEventListener('emptied', done);
+        resolve();
+      };
+      this.audio.addEventListener('loadeddata', done, { once: true });
+      this.audio.addEventListener('canplay', done, { once: true });
+      this.audio.addEventListener('error', done, { once: true });
+      this.audio.addEventListener('abort', done, { once: true });
+      this.audio.addEventListener('emptied', done, { once: true });
+    });
+  }
+
+  private async playUntilDone(timeoutMs: number): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const timeout = window.setTimeout(() => done(), timeoutMs);
+      const done = () => {
+        window.clearTimeout(timeout);
+        this.audio.removeEventListener('ended', done);
+        this.audio.removeEventListener('error', done);
+        this.audio.removeEventListener('abort', done);
+        this.audio.removeEventListener('emptied', done);
+        resolve();
+      };
+      this.audio.addEventListener('ended', done, { once: true });
+      this.audio.addEventListener('error', done, { once: true });
+      this.audio.addEventListener('abort', done, { once: true });
+      this.audio.addEventListener('emptied', done, { once: true });
+      void this.audio.play().catch(() => done());
+    });
+  }
+
+  private async delay(milliseconds: number): Promise<void> {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+  }
+}
+
 function answerCountLabel(count: number): string {
   if (count === 1) return '1 správná odpověď';
   if (count > 1 && count < 5) return `${count} správné odpovědi`;
@@ -2560,6 +2778,10 @@ function writeAscii(view: DataView, offset: number, value: string): void {
   for (let index = 0; index < value.length; index += 1) {
     view.setUint8(offset + index, value.charCodeAt(index));
   }
+}
+
+function isTeslaCarBrowser(): boolean {
+  return typeof navigator !== 'undefined' && /\bTesla\//.test(navigator.userAgent);
 }
 
 function spellingLetterGroups(word: string): string[][] {
