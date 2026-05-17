@@ -17,6 +17,7 @@ type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 type PollToken = { cancelled: boolean };
+type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
 interface LanguageOption {
   code: LearningLanguage;
@@ -280,6 +281,7 @@ export class AppComponent implements OnInit, OnDestroy {
   audioPrepError: string | null = null;
   audioPrepLoading = false;
   assetLibraryTab: AssetLibraryTab = 'images';
+  assetLibraryLanguage: LearningLanguage = 'en';
   flipcardAssets: FlipcardAsset[] = [];
   assetLibraryLoading = false;
   assetLibraryError: string | null = null;
@@ -306,7 +308,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private ttsVoicesTimerId: number | null = null;
   private ttsVoicesChangedHandler: (() => void) | null = null;
   private backendAudio: HTMLAudioElement | null = null;
-  private assetLibraryPollToken: PollToken | null = null;
+  private assetLibraryPollToken: AssetLibraryPollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
   private translationBackfillPollTokens: Partial<Record<LearningLanguage, PollToken>> = {};
   private readonly flipcardImagePreloads = new Map<string, HTMLImageElement>();
@@ -388,6 +390,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get settingsLanguageLabel(): string {
     return this.languageLabel(this.settingsLanguage);
+  }
+
+  get assetLibraryLanguageLabel(): string {
+    return this.languageLabel(this.assetLibraryLanguage);
   }
 
   get ttsTechnicalDetails(): string {
@@ -784,6 +790,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearTimer();
     this.ttsDetailsVisible = false;
     this.cancelAssetLibraryPolling();
+    const language = this.settingsLanguage;
+    this.assetLibraryLanguage = language;
     this.assetLibraryError = null;
     this.assetImageGenerating = {};
     this.assetAudioGenerating = {};
@@ -793,13 +801,17 @@ export class AppComponent implements OnInit, OnDestroy {
     this.setScreen('assetLibrary');
     this.render();
     try {
-      await this.loadFlipcardAssets();
-      this.startAssetLibraryPolling();
+      await this.loadFlipcardAssets(language);
+      this.startAssetLibraryPolling(language);
     } catch {
-      this.assetLibraryError = 'Knihovnu se nepodařilo načíst.';
+      if (this.assetLibraryLanguage === language) {
+        this.assetLibraryError = 'Knihovnu se nepodařilo načíst.';
+      }
     } finally {
-      this.assetLibraryLoading = false;
-      this.render();
+      if (this.assetLibraryLanguage === language) {
+        this.assetLibraryLoading = false;
+        this.render();
+      }
     }
   }
 
@@ -898,9 +910,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
     try {
       const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(asset.conceptKey, force), {});
-      await this.applyAssetImageResponse(response);
+      if (this.screen !== 'assetLibrary' || this.assetLibraryLanguage !== asset.language) return;
+      await this.applyAssetImageResponse(response, asset.conceptKey);
       if (response.status !== 'ready') {
-        this.startAssetLibraryPolling();
+        this.startAssetLibraryPolling(asset.language);
       }
     } catch (error) {
       this.assetImageErrors = {
@@ -922,10 +935,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
 
     try {
-      const response = await this.apiPost<SpellingAudioWordResponse>(this.flipcardAudioPath(asset.word), {});
+      const response = await this.apiPost<SpellingAudioWordResponse>(this.flipcardAudioPath(asset.word, asset.language), {});
+      if (this.screen !== 'assetLibrary' || this.assetLibraryLanguage !== asset.language) return;
       this.applyAssetAudioResponse(response);
       if (response.status !== 'ready') {
-        this.startAssetLibraryPolling();
+        this.startAssetLibraryPolling(asset.language);
       }
     } catch (error) {
       this.assetAudioErrors = {
@@ -941,15 +955,18 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async generateAllMissingAssetImages(): Promise<void> {
     if (this.assetImageBulkEnqueueLoading) return;
+    const language = this.assetLibraryLanguage;
     this.assetImageBulkEnqueueLoading = true;
     this.assetLibraryError = null;
     this.render();
     try {
-      await this.apiPost<FlipcardAssetBulkEnqueueResponse>(`flipcards/images/missing?language=${this.settingsLanguage}`, {});
-      await this.loadFlipcardAssets();
-      this.startAssetLibraryPolling();
+      await this.apiPost<FlipcardAssetBulkEnqueueResponse>(`flipcards/images/missing?language=${language}`, {});
+      await this.loadFlipcardAssets(language);
+      this.startAssetLibraryPolling(language);
     } catch (error) {
-      this.assetLibraryError = error instanceof Error ? error.message : 'Obrázky se nepodařilo přidat do fronty.';
+      if (this.assetLibraryLanguage === language) {
+        this.assetLibraryError = error instanceof Error ? error.message : 'Obrázky se nepodařilo přidat do fronty.';
+      }
     } finally {
       this.assetImageBulkEnqueueLoading = false;
       this.render();
@@ -958,35 +975,43 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async generateAllMissingAssetAudio(): Promise<void> {
     if (this.assetAudioBulkEnqueueLoading) return;
+    const language = this.assetLibraryLanguage;
     this.assetAudioBulkEnqueueLoading = true;
     this.assetLibraryError = null;
     this.render();
     try {
-      await this.apiPost<FlipcardAssetBulkEnqueueResponse>(`flipcards/audio/missing?language=${this.settingsLanguage}`, {});
-      await this.loadFlipcardAssets();
-      this.startAssetLibraryPolling();
+      await this.apiPost<FlipcardAssetBulkEnqueueResponse>(`flipcards/audio/missing?language=${language}`, {});
+      await this.loadFlipcardAssets(language);
+      this.startAssetLibraryPolling(language);
     } catch (error) {
-      this.assetLibraryError = error instanceof Error ? error.message : 'Audio se nepodařilo přidat do fronty.';
+      if (this.assetLibraryLanguage === language) {
+        this.assetLibraryError = error instanceof Error ? error.message : 'Audio se nepodařilo přidat do fronty.';
+      }
     } finally {
       this.assetAudioBulkEnqueueLoading = false;
       this.render();
     }
   }
 
-  private async applyAssetImageResponse(response: FlipcardImageResponse): Promise<void> {
+  private async applyAssetImageResponse(response: FlipcardImageResponse, conceptKey: string = response.normalized): Promise<void> {
+    let nextImageUrl = response.imageUrl;
+    const previousImageUrl = this.flipcardAssets.find((item) => item.conceptKey === conceptKey)?.imageUrl ?? null;
     if (response.status === 'ready' && response.imageUrl) {
-      await this.preloadImage(response.imageUrl);
+      nextImageUrl = this.sameImageAssetUrl(response.imageUrl, previousImageUrl)
+        ? this.withCacheBust(response.imageUrl)
+        : response.imageUrl;
+      await this.preloadImage(nextImageUrl);
       this.flipcardImageUrls = {
         ...this.flipcardImageUrls,
-        [response.normalized]: response.imageUrl,
+        [response.normalized]: nextImageUrl,
       };
     }
     this.flipcardAssets = this.flipcardAssets.map((item) => (
-      item.conceptKey === response.normalized
+      item.conceptKey === conceptKey
         ? {
           ...item,
           imageStatus: response.status,
-          imageUrl: response.imageUrl ?? item.imageUrl,
+          imageUrl: nextImageUrl ?? item.imageUrl,
           imageError: response.error ?? null,
         }
         : item
@@ -1008,17 +1033,24 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
   }
 
-  private startAssetLibraryPolling(): void {
-    if (this.screen !== 'assetLibrary') return;
+  private startAssetLibraryPolling(language: LearningLanguage = this.assetLibraryLanguage): void {
+    if (this.screen !== 'assetLibrary' || this.assetLibraryLanguage !== language) return;
     const hasActiveJobs = this.flipcardAssets.some((asset) => (
-      asset.imageStatus === 'queued'
-      || asset.imageStatus === 'generating'
-      || asset.audioStatus === 'queued'
-      || asset.audioStatus === 'generating'
+      asset.language === language
+      && (
+        asset.imageStatus === 'queued'
+        || asset.imageStatus === 'generating'
+        || asset.audioStatus === 'queued'
+        || asset.audioStatus === 'generating'
+      )
     ));
-    if (!hasActiveJobs || this.assetLibraryPollToken) return;
+    if (!hasActiveJobs) return;
+    if (this.assetLibraryPollToken) {
+      if (this.assetLibraryPollToken.language === language) return;
+      this.cancelAssetLibraryPolling();
+    }
 
-    const token: PollToken = { cancelled: false };
+    const token: AssetLibraryPollToken = { cancelled: false, language };
     this.assetLibraryPollToken = token;
     void this.pollAssetLibrary(token);
   }
@@ -1044,22 +1076,25 @@ export class AppComponent implements OnInit, OnDestroy {
     this.translationBackfillPollTokens = {};
   }
 
-  private async pollAssetLibrary(token: PollToken): Promise<void> {
-    while (!token.cancelled && this.screen === 'assetLibrary') {
+  private async pollAssetLibrary(token: AssetLibraryPollToken): Promise<void> {
+    while (!token.cancelled && this.screen === 'assetLibrary' && this.assetLibraryLanguage === token.language) {
       await this.delay(2000);
-      if (token.cancelled || this.screen !== 'assetLibrary') break;
+      if (token.cancelled || this.screen !== 'assetLibrary' || this.assetLibraryLanguage !== token.language) break;
       const activeAssets = this.flipcardAssets.filter((asset) => (
-        asset.imageStatus === 'queued'
-        || asset.imageStatus === 'generating'
-        || asset.audioStatus === 'queued'
-        || asset.audioStatus === 'generating'
+        asset.language === token.language
+        && (
+          asset.imageStatus === 'queued'
+          || asset.imageStatus === 'generating'
+          || asset.audioStatus === 'queued'
+          || asset.audioStatus === 'generating'
+        )
       ));
       if (activeAssets.length === 0) break;
 
       try {
         await Promise.all(activeAssets.map((asset) => this.refreshAssetLibraryItem(asset, token)));
       } catch {
-        if (!token.cancelled && this.screen === 'assetLibrary') {
+        if (!token.cancelled && this.screen === 'assetLibrary' && this.assetLibraryLanguage === token.language) {
           this.assetLibraryError = 'Stav knihovny se nepodařilo obnovit.';
           this.render();
         }
@@ -1070,16 +1105,17 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  private async refreshAssetLibraryItem(asset: FlipcardAsset, token: PollToken): Promise<void> {
+  private async refreshAssetLibraryItem(asset: FlipcardAsset, token: AssetLibraryPollToken): Promise<void> {
+    if (asset.language !== token.language) return;
     const needsImage = asset.imageStatus === 'queued' || asset.imageStatus === 'generating';
     const needsAudio = asset.audioStatus === 'queued' || asset.audioStatus === 'generating';
     await Promise.all([
       needsImage ? this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(asset.conceptKey)) : Promise.resolve(null),
-      needsAudio ? this.apiGet<SpellingAudioWordResponse>(this.flipcardAudioPath(asset.word)) : Promise.resolve(null),
+      needsAudio ? this.apiGet<SpellingAudioWordResponse>(this.flipcardAudioPath(asset.word, token.language)) : Promise.resolve(null),
     ]).then(async ([imageResponse, audioResponse]) => {
-      if (token.cancelled || this.screen !== 'assetLibrary') return;
+      if (token.cancelled || this.screen !== 'assetLibrary' || this.assetLibraryLanguage !== token.language) return;
       if (imageResponse) {
-        await this.applyAssetImageResponse(imageResponse);
+        await this.applyAssetImageResponse(imageResponse, asset.conceptKey);
         if (imageResponse.status === 'ready' || imageResponse.status === 'error') {
           const { [imageResponse.normalized]: _removed, ...nextGenerating } = this.assetImageGenerating;
           this.assetImageGenerating = nextGenerating;
@@ -1607,8 +1643,8 @@ export class AppComponent implements OnInit, OnDestroy {
     return `spelling/audio/words/${encodeURIComponent(word)}?language=${this.selectedLanguage}&kind=${kind}`;
   }
 
-  private flipcardAudioPath(word: string): string {
-    return `flipcards/audio/${this.selectedLanguage}/${encodeURIComponent(word)}`;
+  private flipcardAudioPath(word: string, language: LearningLanguage = this.selectedLanguage): string {
+    return `flipcards/audio/${language}/${encodeURIComponent(word)}`;
   }
 
   private audioStatusPath(word: string, kind: 'word' | 'spelling'): string {
@@ -1620,6 +1656,25 @@ export class AppComponent implements OnInit, OnDestroy {
   private flipcardImagePath(word: string, force = false): string {
     const suffix = force ? '?force=true' : '';
     return `flipcards/images/${encodeURIComponent(word)}${suffix}`;
+  }
+
+  private withCacheBust(url: string): string {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}refresh=${Date.now()}`;
+  }
+
+  private sameImageAssetUrl(url: string, otherUrl: string | null): boolean {
+    if (!otherUrl) return false;
+    return this.withoutRefreshParam(url) === this.withoutRefreshParam(otherUrl);
+  }
+
+  private withoutRefreshParam(url: string): string {
+    const [path, query] = url.split('?');
+    if (!query) return url;
+    const params = query
+      .split('&')
+      .filter((part) => !part.startsWith('refresh='));
+    return params.length > 0 ? `${path}?${params.join('&')}` : path;
   }
 
   private languageLabel(language: LearningLanguage): string {
@@ -2097,8 +2152,8 @@ export class AppComponent implements OnInit, OnDestroy {
         this.applyTranslationBackfillStatus(status);
         if (status.status === 'ready') {
           await this.loadFlipcardWords(language);
-          if (this.screen === 'assetLibrary' && this.settingsLanguage === language) {
-            await this.loadFlipcardAssets();
+          if (this.screen === 'assetLibrary' && this.assetLibraryLanguage === language) {
+            await this.loadFlipcardAssets(language);
           }
           this.render();
           break;
@@ -2143,8 +2198,9 @@ export class AppComponent implements OnInit, OnDestroy {
     };
   }
 
-  private async loadFlipcardAssets(): Promise<void> {
-    const response = await this.apiGet<FlipcardAssetsResponse>(`flipcards/assets?language=${this.settingsLanguage}`);
+  private async loadFlipcardAssets(language: LearningLanguage = this.assetLibraryLanguage): Promise<void> {
+    const response = await this.apiGet<FlipcardAssetsResponse>(`flipcards/assets?language=${language}`);
+    if (this.screen === 'assetLibrary' && this.assetLibraryLanguage !== language) return;
     this.flipcardAssets = response.items ?? [];
   }
 
