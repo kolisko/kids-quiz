@@ -138,23 +138,7 @@ object FlipcardTranslationService {
     ): JsonObject {
         return buildJsonObject {
             put("model", translationModel())
-            put(
-                "input",
-                buildJsonArray {
-                    add(
-                        buildJsonObject {
-                            put("role", "system")
-                            put("content", systemPrompt(language))
-                        },
-                    )
-                    add(
-                        buildJsonObject {
-                            put("role", "user")
-                            put("content", userPrompt(concepts))
-                        },
-                    )
-                },
-            )
+            put("input", "${systemPrompt(language)}\n\n${userPrompt(concepts)}")
             put(
                 "text",
                 buildJsonObject {
