@@ -87,8 +87,9 @@ object Database {
         Class.forName("org.sqlite.JDBC")
         return DriverManager.getConnection("jdbc:sqlite:${dbFile.toAbsolutePath()}").also { connection ->
             connection.createStatement().use { statement ->
+                statement.execute("PRAGMA journal_mode = WAL")
                 statement.execute("PRAGMA foreign_keys = ON")
-                statement.execute("PRAGMA busy_timeout = 5000")
+                statement.execute("PRAGMA busy_timeout = 30000")
             }
         }
     }

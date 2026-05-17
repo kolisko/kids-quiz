@@ -140,79 +140,79 @@ object FlipcardStore {
         }
     }
 
-    fun enqueueMissingImages(language: LearningLanguage): FlipcardAssetBulkEnqueueResponse = synchronized(lock) {
-        Database.useConnection { connection ->
-            var queued = 0
-            var alreadyReady = 0
-            var alreadyActive = 0
-            val words = connection.readFlipcardWords(language)
-            words.forEach { word ->
-                val status = FlipcardImageService.status(word.conceptKey)?.status ?: FlipcardImageStatus.missing
-                when (status) {
-                    FlipcardImageStatus.ready -> alreadyReady += 1
-                    FlipcardImageStatus.queued,
-                    FlipcardImageStatus.generating -> alreadyActive += 1
-                    FlipcardImageStatus.missing,
-                    FlipcardImageStatus.error -> {
-                        val response = FlipcardImageService.enqueueGeneration(word.conceptKey)
-                        when (response?.status) {
-                            FlipcardImageStatus.ready -> alreadyReady += 1
-                            FlipcardImageStatus.queued,
-                            FlipcardImageStatus.generating -> queued += 1
-                            FlipcardImageStatus.error,
-                            FlipcardImageStatus.missing,
-                            null -> queued += 1
-                        }
+    fun enqueueMissingImages(language: LearningLanguage): FlipcardAssetBulkEnqueueResponse {
+        val words = synchronized(lock) {
+            Database.useConnection { connection -> connection.readFlipcardWords(language) }
+        }
+        var queued = 0
+        var alreadyReady = 0
+        var alreadyActive = 0
+        words.forEach { word ->
+            val status = FlipcardImageService.status(word.conceptKey)?.status ?: FlipcardImageStatus.missing
+            when (status) {
+                FlipcardImageStatus.ready -> alreadyReady += 1
+                FlipcardImageStatus.queued,
+                FlipcardImageStatus.generating -> alreadyActive += 1
+                FlipcardImageStatus.missing,
+                FlipcardImageStatus.error -> {
+                    val response = FlipcardImageService.enqueueGeneration(word.conceptKey)
+                    when (response?.status) {
+                        FlipcardImageStatus.ready -> alreadyReady += 1
+                        FlipcardImageStatus.queued,
+                        FlipcardImageStatus.generating -> queued += 1
+                        FlipcardImageStatus.error,
+                        FlipcardImageStatus.missing,
+                        null -> queued += 1
                     }
                 }
             }
-            FlipcardAssetBulkEnqueueResponse(
-                total = words.size,
-                queued = queued,
-                alreadyReady = alreadyReady,
-                alreadyActive = alreadyActive,
-            )
         }
+        return FlipcardAssetBulkEnqueueResponse(
+            total = words.size,
+            queued = queued,
+            alreadyReady = alreadyReady,
+            alreadyActive = alreadyActive,
+        )
     }
 
-    fun enqueueMissingAudio(language: LearningLanguage): FlipcardAssetBulkEnqueueResponse = synchronized(lock) {
-        Database.useConnection { connection ->
-            var queued = 0
-            var alreadyReady = 0
-            var alreadyActive = 0
-            val words = connection.readFlipcardWords(language)
-            words.forEach { word ->
-                val status = SpellingAudioService.status(word.text, SpellingAudioKind.word, language)?.status ?: SpellingAudioStatus.missing
-                when (status) {
-                    SpellingAudioStatus.ready -> alreadyReady += 1
-                    SpellingAudioStatus.queued,
-                    SpellingAudioStatus.generating -> alreadyActive += 1
-                    SpellingAudioStatus.missing,
-                    SpellingAudioStatus.error -> {
-                        val response = SpellingAudioService.enqueueGeneration(
-                            rawWord = word.text,
-                            kind = SpellingAudioKind.word,
-                            language = language,
-                            jobKind = ArtifactJobKind.flipcard_audio_word,
-                        )
-                        when (response?.status) {
-                            SpellingAudioStatus.ready -> alreadyReady += 1
-                            SpellingAudioStatus.queued,
-                            SpellingAudioStatus.generating -> queued += 1
-                            SpellingAudioStatus.error,
-                            SpellingAudioStatus.missing,
-                            null -> queued += 1
-                        }
+    fun enqueueMissingAudio(language: LearningLanguage): FlipcardAssetBulkEnqueueResponse {
+        val words = synchronized(lock) {
+            Database.useConnection { connection -> connection.readFlipcardWords(language) }
+        }
+        var queued = 0
+        var alreadyReady = 0
+        var alreadyActive = 0
+        words.forEach { word ->
+            val status = SpellingAudioService.status(word.text, SpellingAudioKind.word, language)?.status ?: SpellingAudioStatus.missing
+            when (status) {
+                SpellingAudioStatus.ready -> alreadyReady += 1
+                SpellingAudioStatus.queued,
+                SpellingAudioStatus.generating -> alreadyActive += 1
+                SpellingAudioStatus.missing,
+                SpellingAudioStatus.error -> {
+                    val response = SpellingAudioService.enqueueGeneration(
+                        rawWord = word.text,
+                        kind = SpellingAudioKind.word,
+                        language = language,
+                        jobKind = ArtifactJobKind.flipcard_audio_word,
+                    )
+                    when (response?.status) {
+                        SpellingAudioStatus.ready -> alreadyReady += 1
+                        SpellingAudioStatus.queued,
+                        SpellingAudioStatus.generating -> queued += 1
+                        SpellingAudioStatus.error,
+                        SpellingAudioStatus.missing,
+                        null -> queued += 1
                     }
                 }
             }
-            FlipcardAssetBulkEnqueueResponse(
-                total = words.size,
-                queued = queued,
-                alreadyReady = alreadyReady,
-                alreadyActive = alreadyActive,
-            )
         }
+        return FlipcardAssetBulkEnqueueResponse(
+            total = words.size,
+            queued = queued,
+            alreadyReady = alreadyReady,
+            alreadyActive = alreadyActive,
+        )
     }
 
     fun translationBackfillStatus(language: LearningLanguage): FlipcardTranslationBackfillStatusResponse {
