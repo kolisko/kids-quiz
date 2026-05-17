@@ -23,7 +23,7 @@ type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 const AUDIO_PREROLL_MS = 220;
 const AUDIO_PREROLL_URL = createSilentWavDataUrl(AUDIO_PREROLL_MS);
 const TESLA_AUDIO_PRIME_MS = 1000;
-const TESLA_SILENT_LOOP_URL = createSilentWavDataUrl(TESLA_AUDIO_PRIME_MS);
+const TESLA_KEEPALIVE_LOOP_URL = createNearSilentWavDataUrl(TESLA_AUDIO_PRIME_MS);
 const TESLA_MP3_AUDIO_STORAGE_KEY = 'kidsQuizTeslaMp3AudioEnabled';
 
 interface LanguageOption {
@@ -2715,8 +2715,8 @@ class TeslaMp3AudioController {
     this.setState('loop');
     this.audio.loop = true;
     this.audio.preload = 'auto';
-    if (this.audio.src !== TESLA_SILENT_LOOP_URL) {
-      this.audio.src = TESLA_SILENT_LOOP_URL;
+    if (this.audio.src !== TESLA_KEEPALIVE_LOOP_URL) {
+      this.audio.src = TESLA_KEEPALIVE_LOOP_URL;
       this.audio.load();
     }
     try {
@@ -2792,6 +2792,14 @@ function parseSpellingWords(rawWords: string): string[] {
 }
 
 function createSilentWavDataUrl(durationMs: number): string {
+  return createMonoPcmWavDataUrl(durationMs, () => 0);
+}
+
+function createNearSilentWavDataUrl(durationMs: number): string {
+  return createMonoPcmWavDataUrl(durationMs, (index) => (index % 2 === 0 ? 1 : -1));
+}
+
+function createMonoPcmWavDataUrl(durationMs: number, sampleValue: (index: number) => number): string {
   const sampleRate = 8000;
   const channelCount = 1;
   const bytesPerSample = 2;
@@ -2812,6 +2820,10 @@ function createSilentWavDataUrl(durationMs: number): string {
   view.setUint16(34, bytesPerSample * 8, true);
   writeAscii(view, 36, 'data');
   view.setUint32(40, dataSize, true);
+  for (let index = 0; index < sampleCount; index += 1) {
+    const sample = Math.max(-32768, Math.min(32767, Math.trunc(sampleValue(index))));
+    view.setInt16(44 + index * bytesPerSample, sample, true);
+  }
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (const byte of bytes) {
