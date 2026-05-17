@@ -26,7 +26,6 @@ private val translationJson = Json {
 }
 
 private const val defaultOpenAiTranslationModel = "gpt-4.1-mini"
-private const val defaultOpenAiTranslationBatchSize = 50
 
 class FlipcardTranslationException(message: String) : RuntimeException(message)
 
@@ -96,9 +95,7 @@ object FlipcardTranslationService {
     private fun backfill(language: LearningLanguage) {
         val concepts = Database.useConnection { it.readFlipcardConceptsForTranslation() }
         if (concepts.isEmpty()) return
-        val translations = concepts.chunked(translationBatchSize()).flatMap { batch ->
-            translateBatch(language, batch)
-        }
+        val translations = translate(language, concepts)
         val byConceptKey = translations.associateBy { it.conceptKey }
         val generated = concepts.map { concept ->
             val displayWord = byConceptKey[concept.conceptKey]?.displayWord?.trim()
@@ -110,7 +107,7 @@ object FlipcardTranslationService {
         Database.useConnection { it.replaceGeneratedFlipcardTranslations(language, generated) }
     }
 
-    private fun translateBatch(
+    private fun translate(
         language: LearningLanguage,
         concepts: List<FlipcardConceptTranslationSource>,
     ): List<TranslationItem> {
@@ -239,11 +236,6 @@ object FlipcardTranslationService {
 
     private fun translationModel(): String = System.getenv("OPENAI_TRANSLATION_MODEL")?.takeIf { it.isNotBlank() }
         ?: defaultOpenAiTranslationModel
-
-    private fun translationBatchSize(): Int {
-        return System.getenv("OPENAI_TRANSLATION_BATCH_SIZE")?.toIntOrNull()?.coerceIn(1, 100)
-            ?: defaultOpenAiTranslationBatchSize
-    }
 
     private fun jobKey(language: LearningLanguage): String = "flipcard_translation:${language.name}"
 
