@@ -1146,45 +1146,26 @@ fun Connection.upsertArtifactJob(
     kind: ArtifactJobKind,
     payloadJson: String,
 ): ArtifactJobSnapshot {
-    transaction {
-        val existing = readArtifactJob(jobKey)
-        if (existing == null) {
-            prepareStatement(
-                """
-                INSERT INTO artifact_jobs(job_key, pool, kind, status, payload_json, error, attempt_count, created_at, updated_at, completed_at)
-                VALUES(?, ?, ?, 'queued', ?, NULL, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setString(1, jobKey)
-                statement.setString(2, pool.name)
-                statement.setString(3, kind.name)
-                statement.setString(4, payloadJson)
-                statement.executeUpdate()
-            }
-            return@transaction
-        }
-        if (existing.status == ArtifactJobStatus.queued || existing.status == ArtifactJobStatus.generating) {
-            return@transaction
-        }
-        prepareStatement(
-            """
-            UPDATE artifact_jobs
-            SET pool = ?,
-                kind = ?,
-                status = 'queued',
-                payload_json = ?,
-                error = NULL,
-                completed_at = NULL,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE job_key = ?
-            """.trimIndent(),
-        ).use { statement ->
-            statement.setString(1, pool.name)
-            statement.setString(2, kind.name)
-            statement.setString(3, payloadJson)
-            statement.setString(4, jobKey)
-            statement.executeUpdate()
-        }
+    prepareStatement(
+        """
+        INSERT INTO artifact_jobs(job_key, pool, kind, status, payload_json, error, attempt_count, created_at, updated_at, completed_at)
+        VALUES(?, ?, ?, 'queued', ?, NULL, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+        ON CONFLICT(job_key) DO UPDATE SET
+            pool = excluded.pool,
+            kind = excluded.kind,
+            status = 'queued',
+            payload_json = excluded.payload_json,
+            error = NULL,
+            completed_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE artifact_jobs.status NOT IN ('queued', 'generating')
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, jobKey)
+        statement.setString(2, pool.name)
+        statement.setString(3, kind.name)
+        statement.setString(4, payloadJson)
+        statement.executeUpdate()
     }
     return readArtifactJob(jobKey) ?: ArtifactJobSnapshot(status = ArtifactJobStatus.queued)
 }

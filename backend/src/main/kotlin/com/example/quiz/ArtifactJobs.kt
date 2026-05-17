@@ -148,7 +148,12 @@ object ArtifactGenerationQueue {
 
     private fun workerLoop(pool: ArtifactJobPool) {
         while (true) {
-            val job = claimNext(pool)
+            val job = try {
+                claimNext(pool)
+            } catch (_: Throwable) {
+                Thread.sleep(1000)
+                continue
+            }
             if (job == null) {
                 Thread.sleep(1000)
                 continue
