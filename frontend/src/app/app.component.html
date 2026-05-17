@@ -349,15 +349,43 @@
         >
           {{ assetImageIsGenerating(asset) ? 'Stahuji...' : 'Stáhnout obrázek' }}
         </button>
-        <button
-          *ngIf="asset.imageUrl"
-          class="asset-regenerate-button"
-          type="button"
-          (click)="regenerateAssetImage(asset)"
-          [disabled]="assetImageIsGenerating(asset)"
-        >
-          Přegenerovat
-        </button>
+        <div class="asset-card-actions" *ngIf="asset.imageUrl">
+          <button
+            class="icon-button asset-action-button"
+            type="button"
+            (click)="regenerateAssetImage(asset)"
+            [disabled]="assetImageIsGenerating(asset)"
+            title="Přegenerovat obrázek"
+            aria-label="Přegenerovat obrázek">
+            <lucide-icon [img]="refreshIcon" [size]="20"></lucide-icon>
+          </button>
+          <div class="asset-info-action">
+            <button
+              class="icon-button asset-action-button"
+              type="button"
+              (click)="toggleAssetTranslationInfo(asset)"
+              [class.asset-action-button-active]="assetTranslationInfoVisible(asset)"
+              title="Jazykové mutace"
+              aria-label="Jazykové mutace">
+              <lucide-icon [img]="infoIcon" [size]="20"></lucide-icon>
+            </button>
+            <div class="asset-info-tooltip" *ngIf="assetTranslationInfoVisible(asset)">
+              <div class="asset-info-row" *ngFor="let variant of assetLanguageVariants(asset)">
+                <span>{{ variant.label }}</span>
+                <strong>{{ variant.word }}</strong>
+              </div>
+            </div>
+          </div>
+          <button
+            class="icon-button asset-action-button"
+            type="button"
+            (click)="playAssetAudio(asset)"
+            [disabled]="!asset.audioUrl"
+            title="Přehrát audio"
+            aria-label="Přehrát audio">
+            <lucide-icon [img]="playIcon" [size]="20"></lucide-icon>
+          </button>
+        </div>
         <span class="asset-error" *ngIf="assetImageError(asset)">{{ assetImageError(asset) }}</span>
       </article>
     </div>

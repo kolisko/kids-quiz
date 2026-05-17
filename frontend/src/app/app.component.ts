@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, CarFront, ListRestart, LucideAngularModule, MessageCircleOff, Play, Settings } from 'lucide-angular';
+import { ArrowLeft, CarFront, Info, ListRestart, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings } from 'lucide-angular';
 
 type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'finished';
 type QuizTestType = 'multiplication' | 'english';
@@ -286,6 +286,12 @@ interface FlipcardAsset {
   audioError?: string | null;
 }
 
+interface AssetLanguageVariant {
+  language: LearningLanguage;
+  label: string;
+  word: string;
+}
+
 interface FlipcardAssetsResponse {
   items: FlipcardAsset[];
 }
@@ -347,6 +353,8 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly newTestIcon = ListRestart;
   readonly ttsUnavailableIcon = MessageCircleOff;
   readonly playIcon = Play;
+  readonly refreshIcon = RefreshCw;
+  readonly infoIcon = Info;
   readonly teslaAudioIcon = CarFront;
   readonly teslaMp3LoopOptions = TESLA_MP3_LOOP_OPTIONS;
   readonly practiceModes: PracticeModeOption[] = [
@@ -383,6 +391,7 @@ export class AppComponent implements OnInit, OnDestroy {
   };
   spellingSetInputsByLanguage: Record<LearningLanguage, string[]> = { en: [''], de: [''], es: [''] };
   flipcardWordInputByLanguage: Record<LearningLanguage, string> = { en: '', de: '', es: '' };
+  flipcardWordsByLanguage: Record<LearningLanguage, FlipcardWord[]> = { en: [], de: [], es: [] };
   latestSpellingSetIndexByLanguage: Record<LearningLanguage, number> = { en: 0, de: 0, es: 0 };
   spellingStats: Record<string, QuestionStats> = {};
   flipcardStats: Record<string, QuestionStats> = {};
@@ -425,6 +434,7 @@ export class AppComponent implements OnInit, OnDestroy {
   assetAudioBulkEnqueueLoading = false;
   assetImageErrors: Record<string, string> = {};
   assetAudioErrors: Record<string, string> = {};
+  assetTranslationInfoKey: string | null = null;
   translationBackfillStatusByLanguage: Record<LearningLanguage, FlipcardTranslationBackfillStatusResponse | null> = { en: null, de: null, es: null };
   translationBackfillLoading = false;
   translationBackfillError: string | null = null;
@@ -1002,6 +1012,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.assetAudioGenerating = {};
     this.assetImageErrors = {};
     this.assetAudioErrors = {};
+    this.assetTranslationInfoKey = null;
     this.assetLibraryLoading = true;
     this.setScreen('assetLibrary');
     this.render();
@@ -1022,6 +1033,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   setAssetLibraryTab(tab: AssetLibraryTab): void {
     this.assetLibraryTab = tab;
+    this.assetTranslationInfoKey = null;
   }
 
   selectSettingsLanguage(language: LearningLanguage): void {
@@ -1057,6 +1069,28 @@ export class AppComponent implements OnInit, OnDestroy {
   playAssetAudio(asset: FlipcardAsset): void {
     if (!asset.audioUrl) return;
     void this.playBackendAudioUrl(asset.audioUrl);
+  }
+
+  toggleAssetTranslationInfo(asset: FlipcardAsset): void {
+    const key = this.assetTranslationInfoKeyFor(asset);
+    this.assetTranslationInfoKey = this.assetTranslationInfoKey === key ? null : key;
+  }
+
+  assetTranslationInfoVisible(asset: FlipcardAsset): boolean {
+    return this.assetTranslationInfoKey === this.assetTranslationInfoKeyFor(asset);
+  }
+
+  assetLanguageVariants(asset: FlipcardAsset): AssetLanguageVariant[] {
+    return this.languageOptions.map((language) => {
+      const word = this.flipcardWordsByLanguage[language.code]
+        .find((candidate) => candidate.conceptKey === asset.conceptKey)?.text
+        ?? (language.code === asset.language ? asset.word : '-');
+      return {
+        language: language.code,
+        label: language.label,
+        word,
+      };
+    });
   }
 
   assetAudioIsGenerating(asset: FlipcardAsset): boolean {
@@ -1865,6 +1899,10 @@ export class AppComponent implements OnInit, OnDestroy {
     return `flipcards/images/${encodeURIComponent(word)}${suffix}`;
   }
 
+  private assetTranslationInfoKeyFor(asset: FlipcardAsset): string {
+    return `${asset.language}:${asset.conceptKey}`;
+  }
+
   private withCacheBust(url: string): string {
     const separator = url.includes('?') ? '&' : '?';
     return `${url}${separator}refresh=${Date.now()}`;
@@ -2402,6 +2440,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardWordInputByLanguage = {
       ...this.flipcardWordInputByLanguage,
       [language]: response.words,
+    };
+    this.flipcardWordsByLanguage = {
+      ...this.flipcardWordsByLanguage,
+      [language]: response.items ?? [],
     };
   }
 

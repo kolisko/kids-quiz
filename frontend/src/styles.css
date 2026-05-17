@@ -835,21 +835,64 @@ textarea:disabled {
   opacity: 0.76;
 }
 
-.asset-regenerate-button {
-  min-height: 2.2rem;
-  border: 2px solid rgba(15, 118, 110, 0.22);
-  border-radius: 0.4rem;
-  background: rgba(204, 251, 241, 0.68);
-  color: #0f766e;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 950;
+.asset-card-actions {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
 }
 
-.asset-regenerate-button:disabled {
-  cursor: wait;
-  opacity: 0.62;
+.asset-action-button {
+  width: 2.45rem;
+  height: 2.45rem;
+  color: #0f766e;
+  border-color: rgba(15, 118, 110, 0.22);
+  background: rgba(240, 253, 250, 0.92);
+  box-shadow: none;
+}
+
+.asset-action-button-active {
+  color: #1d4ed8;
+  border-color: rgba(29, 78, 216, 0.24);
+  background: rgba(239, 246, 255, 0.96);
+}
+
+.asset-info-action {
+  position: relative;
+}
+
+.asset-info-tooltip {
+  position: absolute;
+  right: 50%;
+  bottom: calc(100% + 0.5rem);
+  z-index: 7;
+  width: min(15rem, 72vw);
+  padding: 0.7rem 0.8rem;
+  border: 2px solid rgba(31, 41, 55, 0.12);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 42px rgba(31, 41, 55, 0.18);
+  transform: translateX(50%);
+}
+
+.asset-info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.85rem;
+  color: #374151;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.asset-info-row + .asset-info-row {
+  margin-top: 0.45rem;
+}
+
+.asset-info-row strong {
+  color: #111827;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .asset-list {
