@@ -746,12 +746,12 @@ object DatabaseMigrator {
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY(concept_id) REFERENCES flipcard_concepts(id) ON DELETE CASCADE,
-                    UNIQUE(concept_id, language),
-                    UNIQUE(language, normalized_word)
+                    UNIQUE(concept_id, language)
                 )
                 """.trimIndent(),
             )
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_flipcard_translations_language_sort_order ON flipcard_translations(language, sort_order, id)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_flipcard_translations_language_normalized ON flipcard_translations(language, normalized_word)")
 
             statement.executeUpdate("DROP TABLE IF EXISTS flipcard_word_stats_new")
             statement.executeUpdate(
