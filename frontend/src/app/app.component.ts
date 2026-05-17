@@ -208,6 +208,16 @@ interface TtsDiagnostics {
   userAgent: string;
 }
 
+interface NavigatorWithOptionalDiagnostics extends Navigator {
+  userAgentData?: {
+    brands?: Array<{ brand: string; version: string }>;
+    mobile?: boolean;
+    platform?: string;
+  };
+  deviceMemory?: number;
+  standalone?: boolean;
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -347,6 +357,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get teslaMp3AudioModeActive(): boolean {
     return this.teslaBrowser && this.settings.audioSource === 'backend_mp3';
+  }
+
+  get browserEnvironmentDetails(): string {
+    return createBrowserEnvironmentDetails(this.teslaBrowser, this.settings.audioSource, this.teslaMp3AudioModeActive);
   }
 
   get currentQuestionText(): string {
@@ -2782,6 +2796,91 @@ function writeAscii(view: DataView, offset: number, value: string): void {
 
 function isTeslaCarBrowser(): boolean {
   return typeof navigator !== 'undefined' && /\bTesla\//.test(navigator.userAgent);
+}
+
+function createBrowserEnvironmentDetails(teslaDetected: boolean, audioSource: AudioSource, teslaMp3ModeActive: boolean): string {
+  const nav = navigator as NavigatorWithOptionalDiagnostics;
+  const userAgentData = nav.userAgentData;
+  const screenDetails = typeof screen === 'undefined' ? null : screen;
+  const viewportWidth = typeof window === 'undefined' ? null : window.innerWidth;
+  const viewportHeight = typeof window === 'undefined' ? null : window.innerHeight;
+  const visualViewport = typeof window === 'undefined' ? null : window.visualViewport;
+  const speech = typeof window === 'undefined' ? undefined : window.speechSynthesis;
+  const audioContextAvailable = typeof window !== 'undefined' && (
+    typeof window.AudioContext !== 'undefined'
+    || typeof (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext !== 'undefined'
+  );
+  const storage = storageAvailability();
+  const rows = [
+    ['Tesla regex /\\bTesla\\//', yesNo(teslaDetected)],
+    ['Tesla MP3 režim aktivní', yesNo(teslaMp3ModeActive)],
+    ['Nastavený audio source', audioSource],
+    ['User agent', nav.userAgent],
+    ['User agent lowercase obsahuje tesla', yesNo(nav.userAgent.toLocaleLowerCase('en-US').includes('tesla'))],
+    ['Platform', nav.platform || 'neuvedeno'],
+    ['Vendor', nav.vendor || 'neuvedeno'],
+    ['App name', nav.appName || 'neuvedeno'],
+    ['App version', nav.appVersion || 'neuvedeno'],
+    ['Product', nav.product || 'neuvedeno'],
+    ['Languages', nav.languages?.join(', ') || nav.language || 'neuvedeno'],
+    ['Cookies enabled', yesNo(nav.cookieEnabled)],
+    ['Online', yesNo(nav.onLine)],
+    ['Max touch points', String(nav.maxTouchPoints ?? 'neuvedeno')],
+    ['Hardware concurrency', String(nav.hardwareConcurrency ?? 'neuvedeno')],
+    ['Device memory', nav.deviceMemory === undefined ? 'neuvedeno' : `${nav.deviceMemory} GB`],
+    ['PDF viewer enabled', yesNo(nav.pdfViewerEnabled)],
+    ['Standalone', yesNo(Boolean(nav.standalone))],
+    ['UAData platform', userAgentData?.platform ?? 'nedostupné'],
+    ['UAData mobile', userAgentData?.mobile === undefined ? 'nedostupné' : yesNo(userAgentData.mobile)],
+    ['UAData brands', userAgentData?.brands?.map((brand) => `${brand.brand} ${brand.version}`).join(', ') ?? 'nedostupné'],
+    ['Screen', screenDetails ? `${screenDetails.width} x ${screenDetails.height}` : 'nedostupné'],
+    ['Available screen', screenDetails ? `${screenDetails.availWidth} x ${screenDetails.availHeight}` : 'nedostupné'],
+    ['Color depth', screenDetails ? String(screenDetails.colorDepth) : 'nedostupné'],
+    ['Pixel depth', screenDetails ? String(screenDetails.pixelDepth) : 'nedostupné'],
+    ['Viewport', viewportWidth === null || viewportHeight === null ? 'nedostupné' : `${viewportWidth} x ${viewportHeight}`],
+    ['Visual viewport', visualViewport ? `${Math.round(visualViewport.width)} x ${Math.round(visualViewport.height)}, scale ${visualViewport.scale}` : 'nedostupné'],
+    ['Device pixel ratio', typeof window === 'undefined' ? 'nedostupné' : String(window.devicePixelRatio)],
+    ['Orientation', screenDetails?.orientation ? `${screenDetails.orientation.type}, ${screenDetails.orientation.angle}°` : 'nedostupné'],
+    ['Timezone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'neuvedeno'],
+    ['Locale', Intl.DateTimeFormat().resolvedOptions().locale || 'neuvedeno'],
+    ['Aktuální čas', new Date().toISOString()],
+    ['Location origin', typeof location === 'undefined' ? 'nedostupné' : location.origin],
+    ['Protocol', typeof location === 'undefined' ? 'nedostupné' : location.protocol],
+    ['Visibility', typeof document === 'undefined' ? 'nedostupné' : document.visibilityState],
+    ['Document focused', typeof document === 'undefined' ? 'nedostupné' : yesNo(document.hasFocus())],
+    ['Media Session API', yesNo(typeof navigator.mediaSession !== 'undefined')],
+    ['HTMLAudioElement', yesNo(typeof Audio !== 'undefined')],
+    ['AudioContext', yesNo(audioContextAvailable)],
+    ['Speech synthesis', yesNo(typeof speech !== 'undefined')],
+    ['Speech voices', typeof speech === 'undefined' ? 'nedostupné' : String(speech.getVoices().length)],
+    ['SpeechSynthesisUtterance', yesNo(typeof window !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined')],
+    ['localStorage', yesNo(storage.localStorage)],
+    ['sessionStorage', yesNo(storage.sessionStorage)],
+  ];
+  return rows.map(([label, value]) => `${label}: ${value}`).join('\n');
+}
+
+function yesNo(value: boolean): string {
+  return value ? 'ano' : 'ne';
+}
+
+function storageAvailability(): { localStorage: boolean; sessionStorage: boolean } {
+  return {
+    localStorage: storageAvailable('localStorage'),
+    sessionStorage: storageAvailable('sessionStorage'),
+  };
+}
+
+function storageAvailable(storageName: 'localStorage' | 'sessionStorage'): boolean {
+  try {
+    const storage = window[storageName];
+    const key = '__kids_quiz_diagnostics__';
+    storage.setItem(key, key);
+    storage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function spellingLetterGroups(word: string): string[][] {

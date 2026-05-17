@@ -264,6 +264,11 @@
       </label>
     </section>
 
+    <section class="settings-section browser-diagnostics">
+      <h2>Prohlížeč a zařízení</h2>
+      <pre>{{ browserEnvironmentDetails }}</pre>
+    </section>
+
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>
     <p class="error settings-error" *ngIf="settingsError">{{ settingsError }}</p>
     <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading || translationBackfillActive">
