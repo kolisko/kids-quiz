@@ -67,8 +67,10 @@ fun Application.module() {
     }
 
     DatabaseMigrator.ensureMigrated()
-    FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.de)
-    FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.es)
+    if (FlipcardTranslationService.autoBackfillEnabled()) {
+        FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.de)
+        FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.es)
+    }
 
     val staticDir = runtimeStaticDir().toFile()
     routing {

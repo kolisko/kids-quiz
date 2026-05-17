@@ -1391,21 +1391,29 @@ fun Connection.replaceFlipcardWords(rawWords: String, language: LearningLanguage
     }
 }
 
-fun Connection.readFlipcardTranslationBackfillProgress(language: LearningLanguage): Pair<Int, Int> {
+fun Connection.readFlipcardTranslationBackfillProgress(language: LearningLanguage): FlipcardTranslationBackfillProgress {
     val total = prepareStatement("SELECT COUNT(*) FROM flipcard_concepts").use { statement ->
         statement.executeQuery().use { rows ->
             if (!rows.next()) 0 else rows.getInt(1)
         }
     }
-    val lastCount = prepareStatement(
-        "SELECT concept_count FROM flipcard_translation_backfills WHERE language = ?",
+    val row = prepareStatement(
+        "SELECT concept_count, updated_at FROM flipcard_translation_backfills WHERE language = ?",
     ).use { statement ->
         statement.setString(1, language.name)
         statement.executeQuery().use { rows ->
-            if (!rows.next()) 0 else rows.getInt("concept_count")
+            if (!rows.next()) {
+                0 to null
+            } else {
+                rows.getInt("concept_count") to rows.getString("updated_at")
+            }
         }
     }
-    return lastCount.coerceAtMost(total) to total
+    return FlipcardTranslationBackfillProgress(
+        readyCount = row.first.coerceAtMost(total),
+        totalCount = total,
+        updatedAt = row.second,
+    )
 }
 
 fun Connection.readFlipcardConceptsForTranslation(): List<FlipcardConceptTranslationSource> {
@@ -1507,6 +1515,12 @@ data class FlipcardConceptTranslationSource(
 data class GeneratedFlipcardTranslation(
     val conceptId: Long,
     val displayWord: String,
+)
+
+data class FlipcardTranslationBackfillProgress(
+    val readyCount: Int,
+    val totalCount: Int,
+    val updatedAt: String?,
 )
 
 fun Connection.readFlipcardSession(limit: Int, language: LearningLanguage = LearningLanguage.en): FlipcardSession {

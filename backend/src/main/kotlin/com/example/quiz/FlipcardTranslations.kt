@@ -15,10 +15,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.net.URI
+import java.net.http.HttpTimeoutException
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 
 private val translationJson = Json {
     encodeDefaults = false
@@ -26,6 +28,9 @@ private val translationJson = Json {
 }
 
 private const val defaultOpenAiTranslationModel = "gpt-4.1-mini"
+private const val maxTranslationAttempts = 3
+private const val maxConceptsPerTranslationRequest = 32
+private const val translationRequestTimeoutSeconds = 120L
 
 class FlipcardTranslationException(message: String) : RuntimeException(message)
 
@@ -44,29 +49,37 @@ object FlipcardTranslationService {
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(20))
         .build()
+    private val backfillReadyCounts = ConcurrentHashMap<LearningLanguage, Int>()
 
     fun status(language: LearningLanguage): FlipcardTranslationBackfillStatusResponse {
         if (language == LearningLanguage.en) {
-            val (_, total) = Database.useConnection { it.readFlipcardTranslationBackfillProgress(language) }
+            val progress = Database.useConnection { it.readFlipcardTranslationBackfillProgress(language) }
             return FlipcardTranslationBackfillStatusResponse(
                 language = language,
                 status = SpellingAudioStatus.ready,
-                readyCount = total,
-                totalCount = total,
+                readyCount = progress.totalCount,
+                totalCount = progress.totalCount,
+                updatedAt = progress.updatedAt,
             )
         }
-        val (readyCount, totalCount) = Database.useConnection { it.readFlipcardTranslationBackfillProgress(language) }
+        val storedProgress = Database.useConnection { it.readFlipcardTranslationBackfillProgress(language) }
         val job = ArtifactGenerationQueue.snapshot(jobKey(language))
+        val readyCount = if (job?.status == ArtifactJobStatus.queued || job?.status == ArtifactJobStatus.generating) {
+            maxOf(storedProgress.readyCount, backfillReadyCounts[language] ?: 0).coerceAtMost(storedProgress.totalCount)
+        } else {
+            storedProgress.readyCount
+        }
         return FlipcardTranslationBackfillStatusResponse(
             language = language,
             status = when {
-                readyCount >= totalCount && totalCount > 0 -> SpellingAudioStatus.ready
+                storedProgress.readyCount >= storedProgress.totalCount && storedProgress.totalCount > 0 -> SpellingAudioStatus.ready
                 job != null -> job.status.toSpellingAudioStatus()
                 else -> SpellingAudioStatus.missing
             },
             readyCount = readyCount,
-            totalCount = totalCount,
+            totalCount = storedProgress.totalCount,
             error = job?.error,
+            updatedAt = storedProgress.updatedAt,
         )
     }
 
@@ -92,19 +105,120 @@ object FlipcardTranslationService {
         }
     }
 
+    fun autoBackfillEnabled(): Boolean {
+        val value = System.getenv("FLIPCARD_TRANSLATION_AUTO_BACKFILL")?.trim()?.lowercase()
+        return value == null || value !in setOf("0", "false", "no", "off")
+    }
+
     private fun backfill(language: LearningLanguage) {
         val concepts = Database.useConnection { it.readFlipcardConceptsForTranslation() }
         if (concepts.isEmpty()) return
-        val translations = translate(language, concepts)
-        val byConceptKey = translations.associateBy { it.conceptKey }
-        val generated = concepts.map { concept ->
-            val displayWord = byConceptKey[concept.conceptKey]?.displayWord?.trim()
-            if (displayWord.isNullOrBlank()) {
-                throw FlipcardTranslationException("translation_missing:${concept.conceptKey}")
+        backfillReadyCounts[language] = 0
+        try {
+            val byConceptKey = translateAll(language, concepts)
+            val generated = concepts.map { concept ->
+                val displayWord = byConceptKey[concept.conceptKey]?.displayWord?.trim()
+                if (displayWord.isNullOrBlank()) {
+                    throw FlipcardTranslationException("translation_missing:${concept.conceptKey}")
+                }
+                GeneratedFlipcardTranslation(conceptId = concept.conceptId, displayWord = displayWord)
             }
-            GeneratedFlipcardTranslation(conceptId = concept.conceptId, displayWord = displayWord)
+            Database.useConnection { it.replaceGeneratedFlipcardTranslations(language, generated) }
+        } finally {
+            backfillReadyCounts.remove(language)
         }
-        Database.useConnection { it.replaceGeneratedFlipcardTranslations(language, generated) }
+    }
+
+    private fun translateAll(
+        language: LearningLanguage,
+        concepts: List<FlipcardConceptTranslationSource>,
+    ): Map<String, TranslationItem> {
+        val translations = linkedMapOf<String, TranslationItem>()
+        translateRobust(language, concepts, translations)
+        val missing = concepts.firstOrNull { translations[it.conceptKey]?.displayWord.isNullOrBlank() }
+        if (missing != null) {
+            throw FlipcardTranslationException("translation_missing:${missing.conceptKey}")
+        }
+        return translations
+    }
+
+    private fun translateRobust(
+        language: LearningLanguage,
+        concepts: List<FlipcardConceptTranslationSource>,
+        translations: MutableMap<String, TranslationItem>,
+    ) {
+        val pending = concepts.filterNot { translations[it.conceptKey]?.displayWord?.isNotBlank() == true }
+        if (pending.isEmpty()) return
+        if (pending.size > maxConceptsPerTranslationRequest) {
+            translateSplit(language, pending, translations)
+            return
+        }
+
+        var lastError: Throwable? = null
+        repeat(maxTranslationAttempts) {
+            try {
+                val translated = acceptedTranslations(pending, translate(language, pending))
+                translated.forEach { (conceptKey, item) ->
+                    translations.putIfAbsent(conceptKey, item)
+                }
+                backfillReadyCounts[language] = translations.size
+                val missing = pending.filter { translations[it.conceptKey]?.displayWord.isNullOrBlank() }
+                if (missing.isEmpty()) return
+                if (missing.size < pending.size) {
+                    translateRobust(language, missing, translations)
+                    return
+                }
+                lastError = FlipcardTranslationException("translation_missing:${missing.first().conceptKey}")
+                if (pending.size > 1) {
+                    translateSplit(language, pending, translations)
+                    return
+                }
+            } catch (error: Throwable) {
+                if (!isRecoverableTranslationFailure(error)) throw error
+                lastError = error
+                if (pending.size > 1) {
+                    translateSplit(language, pending, translations)
+                    return
+                }
+            }
+        }
+
+        val concept = pending.first()
+        throw FlipcardTranslationException(
+            "translation_failed_for:${concept.conceptKey}:${lastError?.message ?: "unknown"}",
+        )
+    }
+
+    private fun translateSplit(
+        language: LearningLanguage,
+        concepts: List<FlipcardConceptTranslationSource>,
+        translations: MutableMap<String, TranslationItem>,
+    ) {
+        if (concepts.size == 1) {
+            translateRobust(language, concepts, translations)
+            return
+        }
+        val midpoint = concepts.size / 2
+        val left = concepts.subList(0, midpoint)
+        val right = concepts.subList(midpoint, concepts.size)
+        translateRobust(language, left, translations)
+        translateRobust(language, right, translations)
+    }
+
+    private fun acceptedTranslations(
+        concepts: List<FlipcardConceptTranslationSource>,
+        translations: List<TranslationItem>,
+    ): Map<String, TranslationItem> {
+        val requestedKeys = concepts.mapTo(mutableSetOf()) { it.conceptKey }
+        val accepted = linkedMapOf<String, TranslationItem>()
+        translations.forEach { translation ->
+            val conceptKey = translation.conceptKey.trim()
+            val displayWord = translation.displayWord.trim()
+            if (conceptKey in requestedKeys && displayWord.isNotBlank() && conceptKey !in accepted) {
+                accepted[conceptKey] = TranslationItem(conceptKey = conceptKey, displayWord = displayWord)
+            }
+        }
+        return accepted
     }
 
     private fun translate(
@@ -115,12 +229,16 @@ object FlipcardTranslationService {
             ?: throw FlipcardTranslationException("translation_not_configured")
         val body = translationJson.encodeToString(responsesRequest(language, concepts))
         val request = HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/responses"))
-            .timeout(Duration.ofSeconds(90))
+            .timeout(Duration.ofSeconds(translationRequestTimeoutSeconds))
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build()
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        val response = try {
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        } catch (error: HttpTimeoutException) {
+            throw FlipcardTranslationException("translation_timeout")
+        }
         if (response.statusCode() !in 200..299) {
             throw FlipcardTranslationException("translation_failed:${response.statusCode()}:${response.body().take(500)}")
         }
@@ -165,7 +283,7 @@ object FlipcardTranslationService {
 
     private fun userPrompt(concepts: List<FlipcardConceptTranslationSource>): String {
         return concepts.joinToString(
-            prefix = "Translate these concept keys and English words. Preserve conceptKey exactly.\n",
+            prefix = "Translate every line below. Return one translation object for every line, exactly ${concepts.size} objects total. Preserve every conceptKey exactly. Do not omit, merge, rename, or add concept keys.\n",
             separator = "\n",
         ) { "${it.conceptKey}: ${it.englishWord}" }
     }
@@ -238,6 +356,17 @@ object FlipcardTranslationService {
         ?: defaultOpenAiTranslationModel
 
     private fun jobKey(language: LearningLanguage): String = "flipcard_translation:${language.name}"
+
+    private fun isRecoverableTranslationFailure(error: Throwable): Boolean {
+        val message = error.message ?: return true
+        return when {
+            message == "translation_not_configured" -> false
+            message.startsWith("translation_failed:400:") -> false
+            message.startsWith("translation_failed:401:") -> false
+            message.startsWith("translation_failed:403:") -> false
+            else -> true
+        }
+    }
 
     private fun ArtifactJobStatus.toSpellingAudioStatus(): SpellingAudioStatus {
         return when (this) {

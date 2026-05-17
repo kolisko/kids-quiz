@@ -163,6 +163,7 @@ interface FlipcardTranslationBackfillStatusResponse {
   readyCount: number;
   totalCount: number;
   error?: string | null;
+  updatedAt?: string | null;
 }
 
 interface FlipcardStatsSnapshot {
@@ -298,7 +299,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private backendAudio: HTMLAudioElement | null = null;
   private assetLibraryPollToken: PollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
-  private translationBackfillPollToken: PollToken | null = null;
+  private translationBackfillPollTokens: Partial<Record<LearningLanguage, PollToken>> = {};
   private readonly flipcardImagePreloads = new Map<string, HTMLImageElement>();
   private readonly flipcardAudioPreloads = new Map<string, HTMLAudioElement>();
 
@@ -466,6 +467,27 @@ export class AppComponent implements OnInit, OnDestroy {
     const status = this.currentTranslationBackfillStatus;
     if (!status) return 'Stav překladů zatím není načtený.';
     return `Překlady ${status.readyCount} / ${status.totalCount} - ${this.translationBackfillStatusLabel(status.status)}`;
+  }
+
+  get translationBackfillProgressPercent(): number {
+    const status = this.currentTranslationBackfillStatus;
+    if (!status || status.totalCount <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((status.readyCount / status.totalCount) * 100)));
+  }
+
+  get translationBackfillUpdatedAtText(): string {
+    const updatedAt = this.currentTranslationBackfillStatus?.updatedAt;
+    if (!updatedAt) return '';
+    const normalized = updatedAt.includes('T') ? updatedAt : updatedAt.replace(' ', 'T');
+    const date = new Date(normalized.endsWith('Z') ? normalized : `${normalized}Z`);
+    if (Number.isNaN(date.getTime())) return updatedAt;
+    return date.toLocaleString('cs-CZ', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   audioPrepItemTypeLabel(item: AudioPrepItem): string {
@@ -795,6 +817,8 @@ export class AppComponent implements OnInit, OnDestroy {
       this.applyTranslationBackfillStatus(status);
       if (status.status === 'queued' || status.status === 'generating') {
         this.startTranslationBackfillPolling(language);
+      } else if (status.status === 'ready') {
+        await this.loadFlipcardWords(language);
       }
     } catch (error) {
       this.translationBackfillError = error instanceof Error ? error.message : 'Překlady se nepodařilo doplnit.';
@@ -994,10 +1018,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private cancelTranslationBackfillPolling(): void {
-    if (this.translationBackfillPollToken) {
-      this.translationBackfillPollToken.cancelled = true;
-      this.translationBackfillPollToken = null;
-    }
+    Object.values(this.translationBackfillPollTokens).forEach((token) => {
+      if (token) token.cancelled = true;
+    });
+    this.translationBackfillPollTokens = {};
   }
 
   private async pollAssetLibrary(token: PollToken): Promise<void> {
@@ -2034,9 +2058,12 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private startTranslationBackfillPolling(language: LearningLanguage): void {
-    if (this.translationBackfillPollToken) return;
+    if (this.translationBackfillPollTokens[language]) return;
     const token: PollToken = { cancelled: false };
-    this.translationBackfillPollToken = token;
+    this.translationBackfillPollTokens = {
+      ...this.translationBackfillPollTokens,
+      [language]: token,
+    };
     void this.pollTranslationBackfill(language, token);
   }
 
@@ -2069,8 +2096,9 @@ export class AppComponent implements OnInit, OnDestroy {
         break;
       }
     }
-    if (this.translationBackfillPollToken === token) {
-      this.translationBackfillPollToken = null;
+    if (this.translationBackfillPollTokens[language] === token) {
+      const { [language]: _finished, ...remainingTokens } = this.translationBackfillPollTokens;
+      this.translationBackfillPollTokens = remainingTokens;
     }
   }
 

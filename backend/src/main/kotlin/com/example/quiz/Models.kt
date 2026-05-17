@@ -256,4 +256,5 @@ data class FlipcardTranslationBackfillStatusResponse(
     val readyCount: Int,
     val totalCount: Int,
     val error: String? = null,
+    val updatedAt: String? = null,
 )

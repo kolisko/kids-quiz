@@ -236,6 +236,12 @@
       </button>
       <div class="translation-backfill" *ngIf="translationBackfillVisible">
         <strong>{{ translationBackfillSummary }}</strong>
+        <div class="translation-progress" *ngIf="currentTranslationBackfillStatus">
+          <div class="translation-progress-bar" [class.translation-progress-bar-active]="translationBackfillActive" [style.width.%]="translationBackfillProgressPercent"></div>
+        </div>
+        <p class="settings-note translation-updated-at" *ngIf="translationBackfillUpdatedAtText">
+          Aktualizováno {{ translationBackfillUpdatedAtText }}
+        </p>
         <p class="settings-note">
           Doplnění překladů přepíše slovíčka pro {{ settingsLanguageLabel }} bez anglických fallbacků. Němčina dostane členy der/die/das.
         </p>
@@ -250,13 +256,14 @@
         <textarea
           rows="5"
           [(ngModel)]="flipcardWordInputByLanguage[settingsLanguage]"
+          [disabled]="translationBackfillActive"
           [name]="'flipcardWords' + settingsLanguage"></textarea>
       </label>
     </section>
 
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>
     <p class="error settings-error" *ngIf="settingsError">{{ settingsError }}</p>
-    <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading">
+    <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading || translationBackfillActive">
       Uložit
     </button>
   </section>

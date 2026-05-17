@@ -617,6 +617,46 @@ textarea {
   font-weight: 800;
 }
 
+.translation-progress {
+  width: 100%;
+  height: 0.7rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+}
+
+.translation-progress-bar {
+  min-width: 0.35rem;
+  height: 100%;
+  border-radius: inherit;
+  background: #14b8a6;
+  transition: width 220ms ease;
+}
+
+.translation-progress-bar-active {
+  background: linear-gradient(90deg, #14b8a6, #5eead4, #14b8a6);
+  background-size: 220% 100%;
+  animation: translation-progress 1.2s linear infinite;
+}
+
+.translation-updated-at {
+  color: #0f766e !important;
+}
+
+textarea:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+@keyframes translation-progress {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 220% 0;
+  }
+}
+
 .settings-save-button {
   width: min(100%, 18rem);
   min-height: 5rem;
