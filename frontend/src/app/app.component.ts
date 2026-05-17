@@ -308,6 +308,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private ttsVoicesTimerId: number | null = null;
   private ttsVoicesChangedHandler: (() => void) | null = null;
   private backendAudio: HTMLAudioElement | null = null;
+  private ttsPlaybackToken = 0;
   private assetLibraryPollToken: AssetLibraryPollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
   private translationBackfillPollTokens: Partial<Record<LearningLanguage, PollToken>> = {};
@@ -851,9 +852,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   playAssetAudio(asset: FlipcardAsset): void {
     if (!asset.audioUrl) return;
-    this.stopBackendAudio();
-    this.backendAudio = new Audio(asset.audioUrl);
-    void this.backendAudio.play();
+    void this.playBackendAudioUrl(asset.audioUrl);
   }
 
   assetAudioIsGenerating(asset: FlipcardAsset): boolean {
@@ -2220,24 +2219,8 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     const word = this.currentSpellingWord?.text;
-    const speech = window.speechSynthesis;
     if (!word) return;
-    if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
-      this.setTtsUnsupported('Web Speech API neni v tomto prohlizeci dostupne.');
-      return;
-    }
-    speech.cancel();
-    const utterance = new SpeechSynthesisUtterance(word);
-    utterance.lang = this.ttsLanguage();
-    utterance.rate = 0.86;
-    utterance.onerror = (event) => {
-      this.setTtsUnsupported('Prehrani TTS skoncilo chybou.', event.error, speech.getVoices().length);
-    };
-    try {
-      speech.speak(utterance);
-    } catch (error) {
-      this.setTtsUnsupported('Prehrani TTS selhalo.', error instanceof Error ? error.message : String(error), speech.getVoices().length);
-    }
+    void this.speakText(word, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
   }
 
   private playCurrentSpellingLettersAudio(): void {
@@ -2246,24 +2229,13 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     const word = this.currentSpellingWord?.text;
-    const speech = window.speechSynthesis;
     if (!word) return;
-    if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
-      this.setTtsUnsupported('Web Speech API neni v tomto prohlizeci dostupne.');
-      return;
-    }
-    speech.cancel();
-    const utterance = new SpeechSynthesisUtterance(formatSpellingSpeech(word, this.selectedLanguage));
-    utterance.lang = this.ttsLanguage();
-    utterance.rate = 0.82;
-    utterance.onerror = (event) => {
-      this.setTtsUnsupported('Prehrani spelling TTS skoncilo chybou.', event.error, speech.getVoices().length);
-    };
-    try {
-      speech.speak(utterance);
-    } catch (error) {
-      this.setTtsUnsupported('Prehrani spelling TTS selhalo.', error instanceof Error ? error.message : String(error), speech.getVoices().length);
-    }
+    void this.speakText(
+      formatSpellingSpeech(word, this.selectedLanguage),
+      0.82,
+      'Prehrani spelling TTS skoncilo chybou.',
+      'Prehrani spelling TTS selhalo.',
+    );
   }
 
   private playCurrentBackendAudio(): void {
@@ -2271,9 +2243,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!word) return;
     const audioUrl = this.backendAudioUrls[word.normalized];
     if (!audioUrl) return;
-    this.stopBackendAudio();
-    this.backendAudio = new Audio(audioUrl);
-    void this.backendAudio.play();
+    void this.playBackendAudioUrl(audioUrl);
   }
 
   private playCurrentBackendSpellingAudio(): void {
@@ -2281,9 +2251,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!word) return;
     const audioUrl = this.backendSpellingAudioUrls[word.normalized];
     if (!audioUrl) return;
-    this.stopBackendAudio();
-    this.backendAudio = new Audio(audioUrl);
-    void this.backendAudio.play();
+    void this.playBackendAudioUrl(audioUrl);
   }
 
   private preloadAdjacentFlipcardAssets(): void {
@@ -2333,55 +2301,98 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.settings.audioSource === 'backend_mp3') {
       const audioUrl = this.backendAudioUrls[word.normalized];
       if (!audioUrl) return;
-      this.stopBackendAudio();
-      this.backendAudio = this.flipcardAudioPreloads.get(word.normalized) ?? new Audio(audioUrl);
-      this.backendAudio.currentTime = 0;
-      await this.playAudioElement(this.backendAudio);
+      await this.playBackendAudioUrl(audioUrl);
       return;
     }
-    await this.speakFlipcardWord(word);
+    await this.speakText(word.text, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
+  }
+
+  private async playBackendAudioUrl(audioUrl: string): Promise<void> {
+    this.stopBackendAudio();
+    const audio = new Audio(audioUrl);
+    audio.preload = 'auto';
+    this.backendAudio = audio;
+    await this.playAudioElement(audio);
   }
 
   private async playAudioElement(audio: HTMLAudioElement): Promise<void> {
+    audio.preload = 'auto';
+    audio.load();
+    await this.waitForAudioReady(audio);
+    try {
+      audio.currentTime = 0;
+    } catch {
+      // Some embedded browsers reject seeking before metadata is fully available.
+    }
+    await this.delay(60);
     await new Promise<void>((resolve) => {
-      const timeout = window.setTimeout(() => done(), 7000);
+      const timeout = window.setTimeout(() => done(), 10000);
       const done = () => {
         window.clearTimeout(timeout);
         audio.removeEventListener('ended', done);
         audio.removeEventListener('error', done);
+        audio.removeEventListener('abort', done);
+        audio.removeEventListener('emptied', done);
         resolve();
       };
       audio.addEventListener('ended', done, { once: true });
       audio.addEventListener('error', done, { once: true });
+      audio.addEventListener('abort', done, { once: true });
+      audio.addEventListener('emptied', done, { once: true });
       void audio.play().catch(() => done());
     });
   }
 
-  private async speakFlipcardWord(word: FlipcardWord): Promise<void> {
+  private async waitForAudioReady(audio: HTMLAudioElement): Promise<void> {
+    if (audio.readyState >= 2) return;
+    await new Promise<void>((resolve) => {
+      const timeout = window.setTimeout(() => done(), 4000);
+      const done = () => {
+        window.clearTimeout(timeout);
+        audio.removeEventListener('loadeddata', done);
+        audio.removeEventListener('canplay', done);
+        audio.removeEventListener('error', done);
+        audio.removeEventListener('abort', done);
+        audio.removeEventListener('emptied', done);
+        resolve();
+      };
+      audio.addEventListener('loadeddata', done, { once: true });
+      audio.addEventListener('canplay', done, { once: true });
+      audio.addEventListener('error', done, { once: true });
+      audio.addEventListener('abort', done, { once: true });
+      audio.addEventListener('emptied', done, { once: true });
+    });
+  }
+
+  private async speakText(text: string, rate: number, errorMessage: string, failureMessage: string): Promise<void> {
     const speech = window.speechSynthesis;
     if (!speech || typeof window.SpeechSynthesisUtterance === 'undefined') {
       this.setTtsUnsupported('Web Speech API neni v tomto prohlizeci dostupne.');
       return;
     }
+    const playbackToken = this.ttsPlaybackToken + 1;
+    this.ttsPlaybackToken = playbackToken;
+    speech.cancel();
+    await this.delay(90);
+    if (this.ttsPlaybackToken !== playbackToken) return;
     await new Promise<void>((resolve) => {
-      speech.cancel();
-      const utterance = new SpeechSynthesisUtterance(word.text);
-      const timeout = window.setTimeout(() => resolve(), 8000);
+      const utterance = new SpeechSynthesisUtterance(text);
+      const timeout = window.setTimeout(() => done(), 8000);
       const done = () => {
         window.clearTimeout(timeout);
         resolve();
       };
       utterance.lang = this.ttsLanguage();
-      utterance.rate = 0.86;
+      utterance.rate = rate;
       utterance.onend = done;
       utterance.onerror = (event) => {
-        this.setTtsUnsupported('Prehrani TTS skoncilo chybou.', event.error, speech.getVoices().length);
+        this.setTtsUnsupported(errorMessage, event.error, speech.getVoices().length);
         done();
       };
       try {
         speech.speak(utterance);
       } catch (error) {
-        this.setTtsUnsupported('Prehrani TTS selhalo.', error instanceof Error ? error.message : String(error), speech.getVoices().length);
+        this.setTtsUnsupported(failureMessage, error instanceof Error ? error.message : String(error), speech.getVoices().length);
         done();
       }
     });
@@ -2389,7 +2400,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private stopBackendAudio(): void {
     if (!this.backendAudio) return;
-    this.backendAudio.pause();
+    const audio = this.backendAudio;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
     this.backendAudio = null;
   }
 
