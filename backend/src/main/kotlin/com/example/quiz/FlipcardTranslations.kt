@@ -85,8 +85,6 @@ object FlipcardTranslationService {
 
     fun enqueueBackfill(language: LearningLanguage): FlipcardTranslationBackfillStatusResponse {
         if (language == LearningLanguage.en) return status(language)
-        val current = status(language)
-        if (current.status == SpellingAudioStatus.ready) return current
         ArtifactGenerationQueue.enqueueTranslation(jobKey(language), language)
         return status(language)
     }
