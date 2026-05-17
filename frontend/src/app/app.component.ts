@@ -17,7 +17,7 @@ type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error';
-type TeslaMp3LoopMode = 'digital_silence' | 'near_silent_ticks' | 'soft_noise' | 'soft_tone' | 'audible_tone' | 'loud_tone' | 'ambient_music';
+type TeslaMp3LoopMode = 'digital_silence' | 'near_silent_ticks' | 'soft_noise' | 'smooth_tone_220_micro' | 'smooth_tone_220_quiet' | 'smooth_tone_440_quiet' | 'smooth_sub_bass_55' | 'loopable_noise_quiet' | 'webaudio_tone_220_quiet' | 'soft_tone' | 'audible_tone' | 'loud_tone' | 'ambient_music';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
@@ -32,9 +32,13 @@ interface TeslaMp3LoopOption {
   mode: TeslaMp3LoopMode;
   label: string;
   description: string;
-  url: string;
+  url?: string;
   volume: number;
   backgroundMusic: boolean;
+  webAudio?: {
+    frequency: number;
+    gain: number;
+  };
 }
 
 const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
@@ -69,6 +73,57 @@ const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
     url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 55),
     volume: 1,
     backgroundMusic: false,
+  },
+  {
+    mode: 'smooth_tone_220_micro',
+    label: 'Plynulý 220 Hz mikro',
+    description: '1s tón s nízkou amplitudou přímo ve WAV samplech.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 220, 10),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'smooth_tone_220_quiet',
+    label: 'Plynulý 220 Hz tichý',
+    description: '1s tón s přesnou periodou; silnější než mikro varianta.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 220, 24),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'smooth_tone_440_quiet',
+    label: 'Plynulý 440 Hz tichý',
+    description: '1s vyšší tón s nízkou amplitudou a navazující periodou.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 24),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'smooth_sub_bass_55',
+    label: 'Plynulý 55 Hz sub-bas',
+    description: '1s nízký tón; může být méně rušivý podle reproduktorů.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 55, 40),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'loopable_noise_quiet',
+    label: 'Plynulý slabý šum',
+    description: '1s šum složený z periodických vln, aby navazoval na hraně smyčky.',
+    url: createLoopableNoiseWavDataUrl(TESLA_AUDIO_PRIME_MS, 22),
+    volume: 1,
+    backgroundMusic: false,
+  },
+  {
+    mode: 'webaudio_tone_220_quiet',
+    label: 'WebAudio 220 Hz tichý',
+    description: 'Běžící oscillator bez HTML audio loopu; MP3 dál hraje přes audio element.',
+    volume: 1,
+    backgroundMusic: false,
+    webAudio: {
+      frequency: 220,
+      gain: 0.0008,
+    },
   },
   {
     mode: 'audible_tone',
@@ -2730,6 +2785,7 @@ export class AppComponent implements OnInit, OnDestroy {
 class TeslaMp3AudioController {
   private readonly audio = new Audio();
   private foregroundAudio: HTMLAudioElement | null = null;
+  private webAudioLoop: { context: AudioContext; oscillator: OscillatorNode; gain: GainNode } | null = null;
   private playbackToken = 0;
   private primed = false;
   private primePromise: Promise<void> | null = null;
@@ -2782,6 +2838,7 @@ class TeslaMp3AudioController {
       return;
     }
 
+    this.stopWebAudioLoop();
     this.audio.pause();
     this.setState('mp3');
     this.audio.loop = false;
@@ -2807,6 +2864,7 @@ class TeslaMp3AudioController {
   stopCurrentAndResumeLoop(): void {
     this.nextPlaybackToken();
     this.stopForegroundAudio();
+    this.stopWebAudioLoop();
     if (this.destroyed || !this.primed) return;
     this.audio.pause();
     void this.resumeSilentLoop(false);
@@ -2816,6 +2874,7 @@ class TeslaMp3AudioController {
     this.destroyed = true;
     this.nextPlaybackToken();
     this.stopForegroundAudio();
+    this.stopWebAudioLoop();
     this.audio.pause();
     this.audio.removeAttribute('src');
     this.audio.load();
@@ -2841,10 +2900,17 @@ class TeslaMp3AudioController {
     const loop = this.currentLoopOption();
     this.audio.pause();
     this.setState('loop');
+    if (loop.webAudio) {
+      this.audio.removeAttribute('src');
+      this.audio.load();
+      await this.startWebAudioLoop(loop, throwOnFailure);
+      return;
+    }
+    this.stopWebAudioLoop();
     this.audio.loop = true;
     this.audio.preload = 'auto';
     this.audio.volume = loop.volume;
-    if (this.audio.src !== loop.url) {
+    if (loop.url && this.audio.src !== loop.url) {
       this.audio.src = loop.url;
       this.audio.load();
     }
@@ -2855,6 +2921,32 @@ class TeslaMp3AudioController {
     }
     try {
       await this.audio.play();
+    } catch (error) {
+      this.setState('error');
+      if (throwOnFailure) throw error;
+    }
+  }
+
+  private async startWebAudioLoop(loop: TeslaMp3LoopOption, throwOnFailure: boolean): Promise<void> {
+    if (!loop.webAudio) return;
+    this.stopWebAudioLoop();
+    try {
+      const AudioContextConstructor = window.AudioContext
+        ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextConstructor) throw new Error('Web Audio API is unavailable.');
+      const context = new AudioContextConstructor();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = loop.webAudio.frequency;
+      gain.gain.value = loop.webAudio.gain;
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
+      this.webAudioLoop = { context, oscillator, gain };
     } catch (error) {
       this.setState('error');
       if (throwOnFailure) throw error;
@@ -2940,6 +3032,18 @@ class TeslaMp3AudioController {
     this.foregroundAudio = null;
   }
 
+  private stopWebAudioLoop(): void {
+    if (!this.webAudioLoop) return;
+    const loop = this.webAudioLoop;
+    try {
+      loop.oscillator.stop();
+    } catch {
+      // The oscillator may already be stopped if the browser tears down the context.
+    }
+    void loop.context.close().catch(() => undefined);
+    this.webAudioLoop = null;
+  }
+
   private async fadeLoopVolume(target: number, durationMs: number): Promise<void> {
     const start = this.audio.volume;
     const startedAt = performance.now();
@@ -2987,6 +3091,19 @@ function createNoiseWavDataUrl(durationMs: number, amplitude: number): string {
   return createMonoPcmWavDataUrl(durationMs, (index) => {
     const value = Math.sin(index * 12.9898) * 43758.5453;
     return (value - Math.floor(value) - 0.5) * 2 * amplitude;
+  });
+}
+
+function createLoopableNoiseWavDataUrl(durationMs: number, amplitude: number): string {
+  const frequencies = [137, 211, 307, 431, 563];
+  const phases = [0.2, 1.7, 2.9, 4.1, 5.4];
+  return createMonoPcmWavDataUrl(durationMs, (index, sampleRate) => {
+    const seconds = index / sampleRate;
+    const sum = frequencies.reduce((total, frequency, frequencyIndex) => {
+      const phase = phases[frequencyIndex] ?? 0;
+      return total + Math.sin(seconds * Math.PI * 2 * frequency + phase);
+    }, 0);
+    return (sum / frequencies.length) * amplitude;
   });
 }
 
