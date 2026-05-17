@@ -177,6 +177,14 @@
       <p class="settings-note" *ngIf="settings.audioSource === 'backend_mp3'">
         Serverový hlas je generovaný AI a připraví se před spuštěním hry.
       </p>
+      <label class="audio-source-option tesla-audio-option">
+        <input
+          type="checkbox"
+          name="teslaMp3AudioEnabled"
+          [(ngModel)]="teslaMp3AudioEnabled"
+          (ngModelChange)="onTeslaMp3AudioEnabledChange($event)">
+        Tesla režim pro MP3 audio v tomto prohlížeči
+      </label>
     </section>
 
     <section class="settings-section">
@@ -262,11 +270,6 @@
           [disabled]="translationBackfillActive"
           [name]="'flipcardWords' + settingsLanguage"></textarea>
       </label>
-    </section>
-
-    <section class="settings-section browser-diagnostics">
-      <h2>Prohlížeč a zařízení</h2>
-      <pre>{{ browserEnvironmentDetails }}</pre>
     </section>
 
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>

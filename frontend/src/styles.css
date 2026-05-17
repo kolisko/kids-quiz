@@ -593,6 +593,10 @@ textarea {
   accent-color: #0f766e;
 }
 
+.tesla-audio-option {
+  justify-content: flex-start;
+}
+
 .compact-button {
   justify-self: start;
   min-height: 2.75rem;
@@ -633,20 +637,6 @@ textarea {
   margin: 0;
   color: #4b5563 !important;
   font-weight: 800;
-}
-
-.browser-diagnostics pre {
-  max-height: 22rem;
-  margin: 0;
-  padding: 0.9rem 1rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  border: 2px solid rgba(31, 41, 55, 0.1);
-  border-radius: 0.5rem;
-  color: #1f2937;
-  background: rgba(255, 255, 255, 0.72);
-  font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 .translation-progress {
