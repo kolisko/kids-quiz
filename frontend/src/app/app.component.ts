@@ -19,6 +19,9 @@ type AssetLibraryTab = 'images' | 'audio';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
+const AUDIO_PREROLL_MS = 220;
+const AUDIO_PREROLL_URL = createSilentWavDataUrl(AUDIO_PREROLL_MS);
+
 interface LanguageOption {
   code: LearningLanguage;
   label: string;
@@ -308,6 +311,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private ttsVoicesTimerId: number | null = null;
   private ttsVoicesChangedHandler: (() => void) | null = null;
   private backendAudio: HTMLAudioElement | null = null;
+  private backendPlaybackToken = 0;
   private ttsPlaybackToken = 0;
   private assetLibraryPollToken: AssetLibraryPollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
@@ -2309,13 +2313,27 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async playBackendAudioUrl(audioUrl: string): Promise<void> {
     this.stopBackendAudio();
+    const playbackToken = this.backendPlaybackToken + 1;
+    this.backendPlaybackToken = playbackToken;
+    await this.playAudioPreroll();
+    if (this.backendPlaybackToken !== playbackToken) return;
     const audio = new Audio(audioUrl);
     audio.preload = 'auto';
     this.backendAudio = audio;
     await this.playAudioElement(audio);
+    if (this.backendPlaybackToken === playbackToken && this.backendAudio === audio) {
+      this.backendAudio = null;
+    }
   }
 
-  private async playAudioElement(audio: HTMLAudioElement): Promise<void> {
+  private async playAudioPreroll(): Promise<void> {
+    const audio = new Audio(AUDIO_PREROLL_URL);
+    audio.preload = 'auto';
+    await this.playAudioElement(audio, 1200);
+    await this.delay(80);
+  }
+
+  private async playAudioElement(audio: HTMLAudioElement, timeoutMs = 10000): Promise<void> {
     audio.preload = 'auto';
     audio.load();
     await this.waitForAudioReady(audio);
@@ -2326,7 +2344,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     await this.delay(60);
     await new Promise<void>((resolve) => {
-      const timeout = window.setTimeout(() => done(), 10000);
+      const timeout = window.setTimeout(() => done(), timeoutMs);
       const done = () => {
         window.clearTimeout(timeout);
         audio.removeEventListener('ended', done);
@@ -2399,6 +2417,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private stopBackendAudio(): void {
+    this.backendPlaybackToken += 1;
     if (!this.backendAudio) return;
     const audio = this.backendAudio;
     audio.pause();
@@ -2506,6 +2525,41 @@ function answerCountLabel(count: number): string {
 
 function parseSpellingWords(rawWords: string): string[] {
   return rawWords.split(',').map((word) => word.trim()).filter(Boolean);
+}
+
+function createSilentWavDataUrl(durationMs: number): string {
+  const sampleRate = 8000;
+  const channelCount = 1;
+  const bytesPerSample = 2;
+  const sampleCount = Math.max(1, Math.ceil((sampleRate * durationMs) / 1000));
+  const dataSize = sampleCount * channelCount * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  writeAscii(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(view, 8, 'WAVE');
+  writeAscii(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channelCount * bytesPerSample, true);
+  view.setUint16(32, channelCount * bytesPerSample, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeAscii(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return `data:audio/wav;base64,${btoa(binary)}`;
+}
+
+function writeAscii(view: DataView, offset: number, value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    view.setUint8(offset + index, value.charCodeAt(index));
+  }
 }
 
 function spellingLetterGroups(word: string): string[][] {
