@@ -14,6 +14,13 @@ enum class QuizTestType {
     english,
 }
 
+@Serializable
+enum class LearningLanguage {
+    en,
+    de,
+    es,
+}
+
 enum class SpellingSessionMode {
     latest,
     older,
@@ -121,6 +128,7 @@ data class SpellingSet(
     val rawWords: String,
     val isLatest: Boolean = false,
     val words: List<SpellingWord> = emptyList(),
+    val language: LearningLanguage = LearningLanguage.en,
 )
 
 @Serializable
@@ -150,6 +158,7 @@ data class SpellingSetsRequest(
 data class SpellingSession(
     val setId: Long,
     val words: List<SpellingWord>,
+    val language: LearningLanguage = LearningLanguage.en,
 )
 
 @Serializable
@@ -174,6 +183,7 @@ data class SpellingAnswerResultResponse(
 data class FlipcardWord(
     val text: String,
     val normalized: String,
+    val conceptKey: String = normalized,
 )
 
 @Serializable
@@ -190,6 +200,7 @@ data class FlipcardWordsResponse(
 @Serializable
 data class FlipcardSession(
     val words: List<FlipcardWord>,
+    val language: LearningLanguage = LearningLanguage.en,
 )
 
 @Serializable
@@ -223,6 +234,8 @@ data class FlipcardImageResponse(
 data class FlipcardAsset(
     val word: String,
     val normalized: String,
+    val conceptKey: String,
+    val language: LearningLanguage = LearningLanguage.en,
     val imageStatus: FlipcardImageStatus,
     val imageUrl: String? = null,
     val imageError: String? = null,

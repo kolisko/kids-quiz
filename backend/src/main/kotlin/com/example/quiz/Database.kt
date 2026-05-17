@@ -69,6 +69,12 @@ private data class MigratedStats(
     var updatedAt: String = "",
 )
 
+private data class LegacyFlipcardRow(
+    val word: String,
+    val normalized: String,
+    val sortOrder: Int,
+)
+
 object Database {
     fun <T> useConnection(block: (Connection) -> T): T {
         DatabaseMigrator.ensureMigrated()
@@ -177,6 +183,12 @@ object DatabaseMigrator {
                 connection.transaction {
                     addFlipcardSourceSetting()
                     recordMigration(11, "add_flipcard_source_setting")
+                }
+            }
+            if (12 !in applied) {
+                connection.transaction {
+                    addMultilingualLanguageContent()
+                    recordMigration(12, "add_multilingual_language_content")
                 }
             }
         }
@@ -642,7 +654,218 @@ object DatabaseMigrator {
                 """.trimIndent(),
             )
         }
-        replaceFlipcardWords(defaultFlipcardWords.joinToString(", "))
+        replaceLegacyFlipcardWords(defaultFlipcardWords)
+    }
+
+    private fun Connection.replaceLegacyFlipcardWords(words: List<String>) {
+        prepareStatement("DELETE FROM flipcard_words").use { it.executeUpdate() }
+        prepareStatement(
+            """
+            INSERT INTO flipcard_words(word, normalized_word, sort_order, updated_at)
+            VALUES(?, ?, ?, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).use { statement ->
+            words.forEachIndexed { index, word ->
+                statement.setString(1, word)
+                statement.setString(2, normalizeFlipcardWord(word))
+                statement.setInt(3, index)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+    }
+
+    private fun Connection.addMultilingualLanguageContent() {
+        createStatement().use { statement ->
+            val spellingSetColumns = statement.executeQuery("PRAGMA table_info(spelling_sets)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            if ("language" !in spellingSetColumns) {
+                statement.executeUpdate("ALTER TABLE spelling_sets ADD COLUMN language TEXT NOT NULL DEFAULT '${LearningLanguage.en.name}'")
+            }
+            val spellingWordColumns = statement.executeQuery("PRAGMA table_info(spelling_words)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            if ("language" !in spellingWordColumns) {
+                statement.executeUpdate("ALTER TABLE spelling_words ADD COLUMN language TEXT NOT NULL DEFAULT '${LearningLanguage.en.name}'")
+            }
+            statement.executeUpdate("UPDATE spelling_sets SET language = '${LearningLanguage.en.name}' WHERE language IS NULL OR language = ''")
+            statement.executeUpdate("UPDATE spelling_words SET language = '${LearningLanguage.en.name}' WHERE language IS NULL OR language = ''")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_spelling_sets_language_sort_order ON spelling_sets(language, sort_order, id)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_spelling_words_language_normalized ON spelling_words(language, normalized_word)")
+
+            statement.executeUpdate("DROP TABLE IF EXISTS spelling_word_stats_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE spelling_word_stats_new (
+                    language TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    timeout INTEGER NOT NULL DEFAULT 0 CHECK(timeout >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(language, normalized_word)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO spelling_word_stats_new(language, normalized_word, correct, wrong, timeout, updated_at)
+                SELECT '${LearningLanguage.en.name}', normalized_word, correct, wrong, timeout, updated_at
+                FROM spelling_word_stats
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE spelling_word_stats")
+            statement.executeUpdate("ALTER TABLE spelling_word_stats_new RENAME TO spelling_word_stats")
+
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS flipcard_concepts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    concept_key TEXT NOT NULL UNIQUE,
+                    sort_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_flipcard_concepts_sort_order ON flipcard_concepts(sort_order, id)")
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS flipcard_translations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    concept_id INTEGER NOT NULL,
+                    language TEXT NOT NULL,
+                    word TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(concept_id) REFERENCES flipcard_concepts(id) ON DELETE CASCADE,
+                    UNIQUE(concept_id, language),
+                    UNIQUE(language, normalized_word)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_flipcard_translations_language_sort_order ON flipcard_translations(language, sort_order, id)")
+
+            statement.executeUpdate("DROP TABLE IF EXISTS flipcard_word_stats_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE flipcard_word_stats_new (
+                    language TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    timeout INTEGER NOT NULL DEFAULT 0 CHECK(timeout >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(language, normalized_word)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO flipcard_word_stats_new(language, normalized_word, correct, wrong, timeout, updated_at)
+                SELECT '${LearningLanguage.en.name}', normalized_word, correct, wrong, timeout, updated_at
+                FROM flipcard_word_stats
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE flipcard_word_stats")
+            statement.executeUpdate("ALTER TABLE flipcard_word_stats_new RENAME TO flipcard_word_stats")
+        }
+        seedFlipcardConceptsAndTranslations()
+        seedDefaultSpellingSetsForNewLanguages()
+    }
+
+    private fun Connection.seedFlipcardConceptsAndTranslations() {
+        val englishRows = readLegacyFlipcardRows().ifEmpty {
+            defaultFlipcardWords.mapIndexed { index, word -> LegacyFlipcardRow(word, normalizeFlipcardWord(word), index) }
+        }
+        prepareStatement(
+            """
+            INSERT INTO flipcard_concepts(concept_key, sort_order, updated_at)
+            VALUES(?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(concept_key) DO UPDATE SET
+                sort_order = excluded.sort_order,
+                updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+        ).use { statement ->
+            englishRows.forEach { row ->
+                statement.setString(1, row.normalized)
+                statement.setInt(2, row.sortOrder)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+        replaceFlipcardTranslationsForLanguage(LearningLanguage.en, englishRows.map { it.word })
+        replaceFlipcardTranslationsForLanguage(LearningLanguage.de, englishRows.map { defaultGermanFlipcardTranslations[it.normalized] ?: it.word })
+        replaceFlipcardTranslationsForLanguage(LearningLanguage.es, englishRows.map { defaultSpanishFlipcardTranslations[it.normalized] ?: it.word })
+    }
+
+    private fun Connection.seedDefaultSpellingSetsForNewLanguages() {
+        if (readSpellingSets(LearningLanguage.de).isEmpty()) {
+            replaceSpellingSets(listOf(defaultGermanSpellingWords.joinToString(", ")), 0, LearningLanguage.de)
+        }
+        if (readSpellingSets(LearningLanguage.es).isEmpty()) {
+            replaceSpellingSets(listOf(defaultSpanishSpellingWords.joinToString(", ")), 0, LearningLanguage.es)
+        }
+    }
+
+    private fun Connection.replaceFlipcardTranslationsForLanguage(language: LearningLanguage, words: List<String>) {
+        val conceptKeys = readFlipcardConceptKeys()
+        prepareStatement("DELETE FROM flipcard_translations WHERE language = ?").use {
+            it.setString(1, language.name)
+            it.executeUpdate()
+        }
+        prepareStatement(
+            """
+            INSERT INTO flipcard_translations(concept_id, language, word, normalized_word, sort_order, updated_at)
+            VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).use { statement ->
+            words.forEachIndexed { index, word ->
+                val conceptKey = when (language) {
+                    LearningLanguage.en -> normalizeFlipcardWord(word)
+                    else -> conceptKeys.getOrNull(index) ?: normalizeFlipcardWord(word)
+                }
+                val conceptId = requireFlipcardConceptId(conceptKey)
+                statement.setLong(1, conceptId)
+                statement.setString(2, language.name)
+                statement.setString(3, word)
+                statement.setString(4, normalizeFlipcardWord(word))
+                statement.setInt(5, index)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+    }
+
+    private fun Connection.readLegacyFlipcardRows(): List<LegacyFlipcardRow> {
+        return createStatement().use { statement ->
+            statement.executeQuery(
+                """
+                SELECT word, normalized_word, sort_order
+                FROM flipcard_words
+                ORDER BY sort_order, id
+                """.trimIndent(),
+            ).use { rows ->
+                buildList {
+                    while (rows.next()) {
+                        add(
+                            LegacyFlipcardRow(
+                                word = rows.getString("word"),
+                                normalized = rows.getString("normalized_word"),
+                                sortOrder = rows.getInt("sort_order"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private fun Connection.readExistingQuestionRows(): List<ExistingQuestionRow> {
@@ -910,14 +1133,16 @@ fun Connection.replaceAppSettings(settings: AppSettings) {
     }
 }
 
-fun Connection.readSpellingSets(): List<SpellingSet> {
+fun Connection.readSpellingSets(language: LearningLanguage = LearningLanguage.en): List<SpellingSet> {
     return prepareStatement(
         """
-        SELECT id, raw_words, is_latest
+        SELECT id, raw_words, is_latest, language
         FROM spelling_sets
+        WHERE language = ?
         ORDER BY sort_order, id
         """.trimIndent(),
     ).use { statement ->
+        statement.setString(1, language.name)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {
@@ -928,6 +1153,7 @@ fun Connection.readSpellingSets(): List<SpellingSet> {
                             rawWords = rows.getString("raw_words"),
                             isLatest = rows.getInt("is_latest") == 1,
                             words = readSpellingWords(setId),
+                            language = rows.getString("language").toLearningLanguage(),
                         ),
                     )
                 }
@@ -936,7 +1162,11 @@ fun Connection.readSpellingSets(): List<SpellingSet> {
     }
 }
 
-fun Connection.replaceSpellingSets(rawSets: List<String>, latestSetIndex: Int?) {
+fun Connection.replaceSpellingSets(
+    rawSets: List<String>,
+    latestSetIndex: Int?,
+    language: LearningLanguage = LearningLanguage.en,
+) {
     val preparedSets = rawSets
         .mapIndexed { index, rawWords -> index to rawWords.trim() }
         .filter { (_, rawWords) -> rawWords.isNotBlank() }
@@ -946,23 +1176,27 @@ fun Connection.replaceSpellingSets(rawSets: List<String>, latestSetIndex: Int?) 
         ?: preparedSets.lastOrNull { (_, rawWords) -> parseSpellingWords(rawWords).isNotEmpty() }?.first
 
     transaction {
-        prepareStatement("DELETE FROM spelling_sets").use { it.executeUpdate() }
+        prepareStatement("DELETE FROM spelling_sets WHERE language = ?").use {
+            it.setString(1, language.name)
+            it.executeUpdate()
+        }
         prepareStatement(
             """
-            INSERT INTO spelling_sets(raw_words, sort_order, is_latest, updated_at)
-            VALUES(?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO spelling_sets(raw_words, sort_order, is_latest, language, updated_at)
+            VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
             """.trimIndent(),
         ).use { setStatement ->
             prepareStatement(
                 """
-                INSERT INTO spelling_words(set_id, word, normalized_word, sort_order, updated_at)
-                VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO spelling_words(set_id, word, normalized_word, sort_order, language, updated_at)
+                VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """.trimIndent(),
             ).use { wordStatement ->
                 preparedSets.forEachIndexed { setIndex, (originalIndex, rawWords) ->
                         setStatement.setString(1, rawWords)
                         setStatement.setInt(2, setIndex)
                         setStatement.setInt(3, if (originalIndex == selectedOriginalIndex) 1 else 0)
+                        setStatement.setString(4, language.name)
                         setStatement.executeUpdate()
 
                         val setId = lastInsertRowId()
@@ -971,6 +1205,7 @@ fun Connection.replaceSpellingSets(rawSets: List<String>, latestSetIndex: Int?) 
                             wordStatement.setString(2, word)
                             wordStatement.setString(3, normalizeSpellingWord(word))
                             wordStatement.setInt(4, wordIndex)
+                            wordStatement.setString(5, language.name)
                             wordStatement.addBatch()
                         }
                     }
@@ -980,7 +1215,10 @@ fun Connection.replaceSpellingSets(rawSets: List<String>, latestSetIndex: Int?) 
     }
 }
 
-fun Connection.readSpellingSession(mode: SpellingSessionMode): SpellingSession? {
+fun Connection.readSpellingSession(
+    mode: SpellingSessionMode,
+    language: LearningLanguage = LearningLanguage.en,
+): SpellingSession? {
     val modeClause = when (mode) {
         SpellingSessionMode.latest -> "spelling_sets.is_latest = 1"
         SpellingSessionMode.older -> "spelling_sets.is_latest = 0"
@@ -994,6 +1232,7 @@ fun Connection.readSpellingSession(mode: SpellingSessionMode): SpellingSession? 
         SELECT spelling_sets.id
         FROM spelling_sets
         WHERE $modeClause
+        AND spelling_sets.language = ?
         AND EXISTS (
             SELECT 1 FROM spelling_words
             WHERE spelling_words.set_id = spelling_sets.id
@@ -1002,22 +1241,25 @@ fun Connection.readSpellingSession(mode: SpellingSessionMode): SpellingSession? 
         LIMIT 1
         """.trimIndent(),
     ).use { statement ->
+        statement.setString(1, language.name)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return null
             rows.getLong("id")
         }
     }
-    return SpellingSession(setId = setId, words = readSpellingWords(setId))
+    return SpellingSession(setId = setId, words = readSpellingWords(setId), language = language)
 }
 
-fun Connection.readSpellingStats(): Map<String, QuestionStats> {
+fun Connection.readSpellingStats(language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
     return prepareStatement(
         """
         SELECT normalized_word, correct, wrong, timeout
         FROM spelling_word_stats
+        WHERE language = ?
         ORDER BY normalized_word
         """.trimIndent(),
     ).use { statement ->
+        statement.setString(1, language.name)
         statement.executeQuery().use { rows ->
             buildMap {
                 while (rows.next()) {
@@ -1035,80 +1277,117 @@ fun Connection.readSpellingStats(): Map<String, QuestionStats> {
     }
 }
 
-fun Connection.recordSpellingStats(word: String, correct: Boolean, timedOut: Boolean): Pair<String, QuestionStats>? {
+fun Connection.recordSpellingStats(
+    word: String,
+    correct: Boolean,
+    timedOut: Boolean,
+    language: LearningLanguage = LearningLanguage.en,
+): Pair<String, QuestionStats>? {
     val normalized = normalizeSpellingWord(word)
-    if (normalized.isBlank() || !spellingWordExists(normalized)) {
+    if (normalized.isBlank() || !spellingWordExists(normalized, language)) {
         return null
     }
     prepareStatement(
         """
-        INSERT INTO spelling_word_stats(normalized_word, correct, wrong, timeout, updated_at)
-        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(normalized_word) DO UPDATE SET
+        INSERT INTO spelling_word_stats(language, normalized_word, correct, wrong, timeout, updated_at)
+        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(language, normalized_word) DO UPDATE SET
             correct = spelling_word_stats.correct + excluded.correct,
             wrong = spelling_word_stats.wrong + excluded.wrong,
             timeout = spelling_word_stats.timeout + excluded.timeout,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, normalized)
-        statement.setInt(2, if (correct) 1 else 0)
-        statement.setInt(3, if (!correct && !timedOut) 1 else 0)
-        statement.setInt(4, if (timedOut) 1 else 0)
+        statement.setString(1, language.name)
+        statement.setString(2, normalized)
+        statement.setInt(3, if (correct) 1 else 0)
+        statement.setInt(4, if (!correct && !timedOut) 1 else 0)
+        statement.setInt(5, if (timedOut) 1 else 0)
         statement.executeUpdate()
     }
-    return normalized to readSpellingStat(normalized)
+    return normalized to readSpellingStat(normalized, language)
 }
 
-fun Connection.readFlipcardWordsResponse(): FlipcardWordsResponse {
-    val words = readFlipcardWords()
+fun Connection.readFlipcardWordsResponse(language: LearningLanguage = LearningLanguage.en): FlipcardWordsResponse {
+    val words = readFlipcardWords(language)
     return FlipcardWordsResponse(
         words = words.joinToString(", ") { it.text },
         items = words,
     )
 }
 
-fun Connection.replaceFlipcardWords(rawWords: String) {
+fun Connection.replaceFlipcardWords(rawWords: String, language: LearningLanguage = LearningLanguage.en) {
     val words = parseFlipcardWords(rawWords)
         .distinctBy { normalizeFlipcardWord(it) }
     transaction {
-        prepareStatement("DELETE FROM flipcard_words").use { it.executeUpdate() }
+        val existingConceptKeys = readFlipcardConceptKeys()
         prepareStatement(
             """
-            INSERT INTO flipcard_words(word, normalized_word, sort_order, updated_at)
-            VALUES(?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO flipcard_concepts(concept_key, sort_order, updated_at)
+            VALUES(?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(concept_key) DO UPDATE SET
+                sort_order = excluded.sort_order,
+                updated_at = CURRENT_TIMESTAMP
             """.trimIndent(),
-        ).use { statement ->
-            words.forEachIndexed { index, word ->
-                statement.setString(1, word)
-                statement.setString(2, normalizeFlipcardWord(word))
-                statement.setInt(3, index)
-                statement.addBatch()
+        ).use { conceptStatement ->
+            prepareStatement("DELETE FROM flipcard_translations WHERE language = ?").use {
+                it.setString(1, language.name)
+                it.executeUpdate()
             }
-            statement.executeBatch()
+            prepareStatement(
+                """
+                INSERT INTO flipcard_translations(concept_id, language, word, normalized_word, sort_order, updated_at)
+                VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """.trimIndent(),
+            ).use { translationStatement ->
+                words.forEachIndexed { index, word ->
+                    val normalized = normalizeFlipcardWord(word)
+                    val conceptKey = when (language) {
+                        LearningLanguage.en -> normalized
+                        else -> existingConceptKeys.getOrNull(index) ?: normalized
+                    }
+                    conceptStatement.setString(1, conceptKey)
+                    conceptStatement.setInt(2, index)
+                    conceptStatement.executeUpdate()
+
+                    val conceptId = requireFlipcardConceptId(conceptKey)
+                    translationStatement.setLong(1, conceptId)
+                    translationStatement.setString(2, language.name)
+                    translationStatement.setString(3, word)
+                    translationStatement.setString(4, normalized)
+                    translationStatement.setInt(5, index)
+                    translationStatement.addBatch()
+                }
+                translationStatement.executeBatch()
+            }
         }
     }
 }
 
-fun Connection.readFlipcardSession(limit: Int): FlipcardSession {
+fun Connection.readFlipcardSession(limit: Int, language: LearningLanguage = LearningLanguage.en): FlipcardSession {
     val safeLimit = limit.coerceAtLeast(1)
     return prepareStatement(
         """
-        SELECT word, normalized_word
-        FROM flipcard_words
+        SELECT flipcard_translations.word, flipcard_translations.normalized_word, flipcard_concepts.concept_key
+        FROM flipcard_translations
+        INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
+        WHERE flipcard_translations.language = ?
         ORDER BY RANDOM()
         LIMIT ?
         """.trimIndent(),
     ).use { statement ->
-        statement.setInt(1, safeLimit)
+        statement.setString(1, language.name)
+        statement.setInt(2, safeLimit)
         statement.executeQuery().use { rows ->
             FlipcardSession(
+                language = language,
                 words = buildList {
                     while (rows.next()) {
                         add(
                             FlipcardWord(
                                 text = rows.getString("word"),
                                 normalized = rows.getString("normalized_word"),
+                                conceptKey = rows.getString("concept_key"),
                             ),
                         )
                     }
@@ -1118,14 +1397,16 @@ fun Connection.readFlipcardSession(limit: Int): FlipcardSession {
     }
 }
 
-fun Connection.readFlipcardStats(): Map<String, QuestionStats> {
+fun Connection.readFlipcardStats(language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
     return prepareStatement(
         """
         SELECT normalized_word, correct, wrong, timeout
         FROM flipcard_word_stats
+        WHERE language = ?
         ORDER BY normalized_word
         """.trimIndent(),
     ).use { statement ->
+        statement.setString(1, language.name)
         statement.executeQuery().use { rows ->
             buildMap {
                 while (rows.next()) {
@@ -1143,29 +1424,35 @@ fun Connection.readFlipcardStats(): Map<String, QuestionStats> {
     }
 }
 
-fun Connection.recordFlipcardStats(word: String, correct: Boolean, timedOut: Boolean): Pair<String, QuestionStats>? {
+fun Connection.recordFlipcardStats(
+    word: String,
+    correct: Boolean,
+    timedOut: Boolean,
+    language: LearningLanguage = LearningLanguage.en,
+): Pair<String, QuestionStats>? {
     val normalized = normalizeFlipcardWord(word)
-    if (normalized.isBlank() || !flipcardWordExists(normalized)) {
+    if (normalized.isBlank() || !flipcardWordExists(normalized, language)) {
         return null
     }
     prepareStatement(
         """
-        INSERT INTO flipcard_word_stats(normalized_word, correct, wrong, timeout, updated_at)
-        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(normalized_word) DO UPDATE SET
+        INSERT INTO flipcard_word_stats(language, normalized_word, correct, wrong, timeout, updated_at)
+        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(language, normalized_word) DO UPDATE SET
             correct = flipcard_word_stats.correct + excluded.correct,
             wrong = flipcard_word_stats.wrong + excluded.wrong,
             timeout = flipcard_word_stats.timeout + excluded.timeout,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, normalized)
-        statement.setInt(2, if (correct) 1 else 0)
-        statement.setInt(3, if (!correct && !timedOut) 1 else 0)
-        statement.setInt(4, if (timedOut) 1 else 0)
+        statement.setString(1, language.name)
+        statement.setString(2, normalized)
+        statement.setInt(3, if (correct) 1 else 0)
+        statement.setInt(4, if (!correct && !timedOut) 1 else 0)
+        statement.setInt(5, if (timedOut) 1 else 0)
         statement.executeUpdate()
     }
-    return normalized to readFlipcardStat(normalized)
+    return normalized to readFlipcardStat(normalized, language)
 }
 
 fun Connection.testExists(testId: Long): Boolean {
@@ -1357,6 +1644,26 @@ private fun Connection.lastInsertRowId(): Long {
     }
 }
 
+private fun Connection.requireFlipcardConceptId(conceptKey: String): Long {
+    return prepareStatement("SELECT id FROM flipcard_concepts WHERE concept_key = ?").use { statement ->
+        statement.setString(1, conceptKey)
+        statement.executeQuery().use { rows ->
+            require(rows.next()) { "Missing flipcard concept: $conceptKey" }
+            rows.getLong("id")
+        }
+    }
+}
+
+private fun Connection.readFlipcardConceptKeys(): List<String> {
+    return prepareStatement("SELECT concept_key FROM flipcard_concepts ORDER BY sort_order, id").use { statement ->
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) add(rows.getString("concept_key"))
+            }
+        }
+    }
+}
+
 private fun Connection.ensureAppSettingsRow() {
     prepareStatement(
         """
@@ -1367,22 +1674,24 @@ private fun Connection.ensureAppSettingsRow() {
     ).use { it.executeUpdate() }
 }
 
-private fun Connection.spellingWordExists(normalizedWord: String): Boolean {
-    return prepareStatement("SELECT 1 FROM spelling_words WHERE normalized_word = ? LIMIT 1").use { statement ->
-        statement.setString(1, normalizedWord)
+private fun Connection.spellingWordExists(normalizedWord: String, language: LearningLanguage): Boolean {
+    return prepareStatement("SELECT 1 FROM spelling_words WHERE language = ? AND normalized_word = ? LIMIT 1").use { statement ->
+        statement.setString(1, language.name)
+        statement.setString(2, normalizedWord)
         statement.executeQuery().use { rows -> rows.next() }
     }
 }
 
-private fun Connection.readSpellingStat(normalizedWord: String): QuestionStats {
+private fun Connection.readSpellingStat(normalizedWord: String, language: LearningLanguage): QuestionStats {
     return prepareStatement(
         """
         SELECT correct, wrong, timeout
         FROM spelling_word_stats
-        WHERE normalized_word = ?
+        WHERE language = ? AND normalized_word = ?
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, normalizedWord)
+        statement.setString(1, language.name)
+        statement.setString(2, normalizedWord)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return QuestionStats()
             QuestionStats(
@@ -1394,14 +1703,17 @@ private fun Connection.readSpellingStat(normalizedWord: String): QuestionStats {
     }
 }
 
-fun Connection.readFlipcardWords(): List<FlipcardWord> {
+fun Connection.readFlipcardWords(language: LearningLanguage = LearningLanguage.en): List<FlipcardWord> {
     return prepareStatement(
         """
-        SELECT word, normalized_word
-        FROM flipcard_words
-        ORDER BY sort_order, id
+        SELECT flipcard_translations.word, flipcard_translations.normalized_word, flipcard_concepts.concept_key
+        FROM flipcard_translations
+        INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
+        WHERE flipcard_translations.language = ?
+        ORDER BY flipcard_translations.sort_order, flipcard_translations.id
         """.trimIndent(),
     ).use { statement ->
+        statement.setString(1, language.name)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {
@@ -1409,6 +1721,7 @@ fun Connection.readFlipcardWords(): List<FlipcardWord> {
                         FlipcardWord(
                             text = rows.getString("word"),
                             normalized = rows.getString("normalized_word"),
+                            conceptKey = rows.getString("concept_key"),
                         ),
                     )
                 }
@@ -1417,22 +1730,24 @@ fun Connection.readFlipcardWords(): List<FlipcardWord> {
     }
 }
 
-private fun Connection.flipcardWordExists(normalizedWord: String): Boolean {
-    return prepareStatement("SELECT 1 FROM flipcard_words WHERE normalized_word = ? LIMIT 1").use { statement ->
-        statement.setString(1, normalizedWord)
+private fun Connection.flipcardWordExists(normalizedWord: String, language: LearningLanguage): Boolean {
+    return prepareStatement("SELECT 1 FROM flipcard_translations WHERE language = ? AND normalized_word = ? LIMIT 1").use { statement ->
+        statement.setString(1, language.name)
+        statement.setString(2, normalizedWord)
         statement.executeQuery().use { rows -> rows.next() }
     }
 }
 
-private fun Connection.readFlipcardStat(normalizedWord: String): QuestionStats {
+private fun Connection.readFlipcardStat(normalizedWord: String, language: LearningLanguage): QuestionStats {
     return prepareStatement(
         """
         SELECT correct, wrong, timeout
         FROM flipcard_word_stats
-        WHERE normalized_word = ?
+        WHERE language = ? AND normalized_word = ?
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, normalizedWord)
+        statement.setString(1, language.name)
+        statement.setString(2, normalizedWord)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return QuestionStats()
             QuestionStats(
@@ -1540,12 +1855,114 @@ private val defaultFlipcardWords = listOf(
     "toy", "game", "slide", "swing", "pool", "farm", "forest", "zoo", "shop", "library",
 )
 
+private val defaultGermanSpellingWords = listOf(
+    "Katze", "Hund", "Apfel", "Sonne", "Mond", "Haus", "Buch", "Ball", "Auto", "Baum",
+)
+
+private val defaultSpanishSpellingWords = listOf(
+    "gato", "perro", "manzana", "sol", "luna", "casa", "libro", "pelota", "coche", "arbol",
+)
+
+private val defaultGermanFlipcardTranslations = mapOf(
+    "apple" to "Apfel", "banana" to "Banane", "orange" to "Orange", "pear" to "Birne", "grape" to "Traube",
+    "lemon" to "Zitrone", "strawberry" to "Erdbeere", "watermelon" to "Wassermelone", "pineapple" to "Ananas", "peach" to "Pfirsich",
+    "cherry" to "Kirsche", "blueberry" to "Blaubeere", "raspberry" to "Himbeere", "mango" to "Mango", "kiwi" to "Kiwi",
+    "plum" to "Pflaume", "melon" to "Melone", "coconut" to "Kokosnuss", "carrot" to "Karotte", "potato" to "Kartoffel",
+    "tomato" to "Tomate", "corn" to "Mais", "peas" to "Erbsen", "onion" to "Zwiebel", "pumpkin" to "Kuerbis",
+    "cucumber" to "Gurke", "pepper" to "Paprika", "lettuce" to "Salat", "broccoli" to "Brokkoli", "mushroom" to "Pilz",
+    "cat" to "Katze", "dog" to "Hund", "bird" to "Vogel", "fish" to "Fisch", "horse" to "Pferd",
+    "cow" to "Kuh", "pig" to "Schwein", "sheep" to "Schaf", "goat" to "Ziege", "duck" to "Ente",
+    "chicken" to "Huhn", "rabbit" to "Kaninchen", "mouse" to "Maus", "bear" to "Baer", "lion" to "Loewe",
+    "tiger" to "Tiger", "elephant" to "Elefant", "giraffe" to "Giraffe", "zebra" to "Zebra", "monkey" to "Affe",
+    "panda" to "Panda", "koala" to "Koala", "kangaroo" to "Kaenguru", "frog" to "Frosch", "snake" to "Schlange",
+    "turtle" to "Schildkroete", "whale" to "Wal", "dolphin" to "Delfin", "shark" to "Hai", "octopus" to "Oktopus",
+    "house" to "Haus", "school" to "Schule", "park" to "Park", "garden" to "Garten", "kitchen" to "Kueche",
+    "bedroom" to "Schlafzimmer", "bathroom" to "Badezimmer", "window" to "Fenster", "door" to "Tuer", "table" to "Tisch",
+    "chair" to "Stuhl", "bed" to "Bett", "sofa" to "Sofa", "lamp" to "Lampe", "clock" to "Uhr",
+    "book" to "Buch", "pencil" to "Bleistift", "pen" to "Stift", "paper" to "Papier", "bag" to "Tasche",
+    "ball" to "Ball", "doll" to "Puppe", "kite" to "Drachen", "train" to "Zug", "car" to "Auto",
+    "bus" to "Bus", "bike" to "Fahrrad", "boat" to "Boot", "plane" to "Flugzeug", "truck" to "Lastwagen",
+    "sun" to "Sonne", "moon" to "Mond", "star" to "Stern", "cloud" to "Wolke", "rain" to "Regen",
+    "snow" to "Schnee", "wind" to "Wind", "rainbow" to "Regenbogen", "tree" to "Baum", "flower" to "Blume",
+    "grass" to "Gras", "leaf" to "Blatt", "rock" to "Stein", "river" to "Fluss", "lake" to "See",
+    "sea" to "Meer", "beach" to "Strand", "mountain" to "Berg", "road" to "Strasse", "bridge" to "Bruecke",
+    "shirt" to "Hemd", "pants" to "Hose", "dress" to "Kleid", "skirt" to "Rock", "shoe" to "Schuh",
+    "sock" to "Socke", "hat" to "Hut", "coat" to "Mantel", "glove" to "Handschuh", "scarf" to "Schal",
+    "eye" to "Auge", "ear" to "Ohr", "nose" to "Nase", "mouth" to "Mund", "hand" to "Hand",
+    "foot" to "Fuss", "leg" to "Bein", "arm" to "Arm", "head" to "Kopf", "hair" to "Haar",
+    "baby" to "Baby", "boy" to "Junge", "girl" to "Maedchen", "mother" to "Mutter", "father" to "Vater",
+    "family" to "Familie", "friend" to "Freund", "teacher" to "Lehrer", "doctor" to "Arzt", "farmer" to "Bauer",
+    "happy" to "gluecklich", "sad" to "traurig", "big" to "gross", "small" to "klein", "hot" to "heiss",
+    "cold" to "kalt", "fast" to "schnell", "slow" to "langsam", "red" to "rot", "blue" to "blau",
+    "green" to "gruen", "yellow" to "gelb", "black" to "schwarz", "white" to "weiss", "pink" to "rosa",
+    "purple" to "lila", "brown" to "braun", "gray" to "grau", "circle" to "Kreis", "square" to "Quadrat",
+    "triangle" to "Dreieck", "heart" to "Herz", "number" to "Zahl", "letter" to "Buchstabe", "music" to "Musik",
+    "song" to "Lied", "drum" to "Trommel", "guitar" to "Gitarre", "piano" to "Klavier", "bell" to "Glocke",
+    "cake" to "Kuchen", "bread" to "Brot", "milk" to "Milch", "water" to "Wasser", "juice" to "Saft",
+    "egg" to "Ei", "cheese" to "Kaese", "rice" to "Reis", "soup" to "Suppe", "cookie" to "Keks",
+    "spoon" to "Loeffel", "fork" to "Gabel", "cup" to "Tasse", "plate" to "Teller", "bowl" to "Schuessel",
+    "toothbrush" to "Zahnbuerste", "soap" to "Seife", "towel" to "Handtuch", "brush" to "Buerste", "comb" to "Kamm",
+    "fire" to "Feuer", "waterfall" to "Wasserfall", "castle" to "Schloss", "robot" to "Roboter", "rocket" to "Rakete",
+    "crown" to "Krone", "flag" to "Flagge", "map" to "Karte", "key" to "Schluessel", "box" to "Kiste",
+    "toy" to "Spielzeug", "game" to "Spiel", "slide" to "Rutsche", "swing" to "Schaukel", "pool" to "Schwimmbecken",
+    "farm" to "Bauernhof", "forest" to "Wald", "zoo" to "Zoo", "shop" to "Laden", "library" to "Bibliothek",
+)
+
+private val defaultSpanishFlipcardTranslations = mapOf(
+    "apple" to "manzana", "banana" to "platano", "orange" to "naranja", "pear" to "pera", "grape" to "uva",
+    "lemon" to "limon", "strawberry" to "fresa", "watermelon" to "sandia", "pineapple" to "pina", "peach" to "durazno",
+    "cherry" to "cereza", "blueberry" to "arandano", "raspberry" to "frambuesa", "mango" to "mango", "kiwi" to "kiwi",
+    "plum" to "ciruela", "melon" to "melon", "coconut" to "coco", "carrot" to "zanahoria", "potato" to "patata",
+    "tomato" to "tomate", "corn" to "maiz", "peas" to "guisantes", "onion" to "cebolla", "pumpkin" to "calabaza",
+    "cucumber" to "pepino", "pepper" to "pimiento", "lettuce" to "lechuga", "broccoli" to "brocoli", "mushroom" to "seta",
+    "cat" to "gato", "dog" to "perro", "bird" to "pajaro", "fish" to "pez", "horse" to "caballo",
+    "cow" to "vaca", "pig" to "cerdo", "sheep" to "oveja", "goat" to "cabra", "duck" to "pato",
+    "chicken" to "pollo", "rabbit" to "conejo", "mouse" to "raton", "bear" to "oso", "lion" to "leon",
+    "tiger" to "tigre", "elephant" to "elefante", "giraffe" to "jirafa", "zebra" to "cebra", "monkey" to "mono",
+    "panda" to "panda", "koala" to "koala", "kangaroo" to "canguro", "frog" to "rana", "snake" to "serpiente",
+    "turtle" to "tortuga", "whale" to "ballena", "dolphin" to "delfin", "shark" to "tiburon", "octopus" to "pulpo",
+    "house" to "casa", "school" to "escuela", "park" to "parque", "garden" to "jardin", "kitchen" to "cocina",
+    "bedroom" to "dormitorio", "bathroom" to "bano", "window" to "ventana", "door" to "puerta", "table" to "mesa",
+    "chair" to "silla", "bed" to "cama", "sofa" to "sofa", "lamp" to "lampara", "clock" to "reloj",
+    "book" to "libro", "pencil" to "lapiz", "pen" to "boligrafo", "paper" to "papel", "bag" to "bolsa",
+    "ball" to "pelota", "doll" to "muneca", "kite" to "cometa", "train" to "tren", "car" to "coche",
+    "bus" to "autobus", "bike" to "bicicleta", "boat" to "barco", "plane" to "avion", "truck" to "camion",
+    "sun" to "sol", "moon" to "luna", "star" to "estrella", "cloud" to "nube", "rain" to "lluvia",
+    "snow" to "nieve", "wind" to "viento", "rainbow" to "arcoiris", "tree" to "arbol", "flower" to "flor",
+    "grass" to "hierba", "leaf" to "hoja", "rock" to "roca", "river" to "rio", "lake" to "lago",
+    "sea" to "mar", "beach" to "playa", "mountain" to "montana", "road" to "camino", "bridge" to "puente",
+    "shirt" to "camisa", "pants" to "pantalones", "dress" to "vestido", "skirt" to "falda", "shoe" to "zapato",
+    "sock" to "calcetin", "hat" to "sombrero", "coat" to "abrigo", "glove" to "guante", "scarf" to "bufanda",
+    "eye" to "ojo", "ear" to "oreja", "nose" to "nariz", "mouth" to "boca", "hand" to "mano",
+    "foot" to "pie", "leg" to "pierna", "arm" to "brazo", "head" to "cabeza", "hair" to "pelo",
+    "baby" to "bebe", "boy" to "nino", "girl" to "nina", "mother" to "madre", "father" to "padre",
+    "family" to "familia", "friend" to "amigo", "teacher" to "maestro", "doctor" to "doctor", "farmer" to "granjero",
+    "happy" to "feliz", "sad" to "triste", "big" to "grande", "small" to "pequeno", "hot" to "caliente",
+    "cold" to "frio", "fast" to "rapido", "slow" to "lento", "red" to "rojo", "blue" to "azul",
+    "green" to "verde", "yellow" to "amarillo", "black" to "negro", "white" to "blanco", "pink" to "rosa",
+    "purple" to "morado", "brown" to "marron", "gray" to "gris", "circle" to "circulo", "square" to "cuadrado",
+    "triangle" to "triangulo", "heart" to "corazon", "number" to "numero", "letter" to "letra", "music" to "musica",
+    "song" to "cancion", "drum" to "tambor", "guitar" to "guitarra", "piano" to "piano", "bell" to "campana",
+    "cake" to "pastel", "bread" to "pan", "milk" to "leche", "water" to "agua", "juice" to "zumo",
+    "egg" to "huevo", "cheese" to "queso", "rice" to "arroz", "soup" to "sopa", "cookie" to "galleta",
+    "spoon" to "cuchara", "fork" to "tenedor", "cup" to "taza", "plate" to "plato", "bowl" to "cuenco",
+    "toothbrush" to "cepillo dental", "soap" to "jabon", "towel" to "toalla", "brush" to "cepillo", "comb" to "peine",
+    "fire" to "fuego", "waterfall" to "cascada", "castle" to "castillo", "robot" to "robot", "rocket" to "cohete",
+    "crown" to "corona", "flag" to "bandera", "map" to "mapa", "key" to "llave", "box" to "caja",
+    "toy" to "juguete", "game" to "juego", "slide" to "tobogan", "swing" to "columpio", "pool" to "piscina",
+    "farm" to "granja", "forest" to "bosque", "zoo" to "zoo", "shop" to "tienda", "library" to "biblioteca",
+)
+
 private fun String?.toAudioSource(): AudioSource {
     return AudioSource.entries.firstOrNull { it.name == this } ?: defaultAudioSource
 }
 
 private fun String?.toFlipcardSource(): FlipcardSource {
     return FlipcardSource.entries.firstOrNull { it.name == this } ?: defaultFlipcardSource
+}
+
+fun String?.toLearningLanguage(): LearningLanguage {
+    return LearningLanguage.entries.firstOrNull { it.name == this } ?: LearningLanguage.en
 }
 
 private fun timestamp(): String = backupTimestampFormatter.format(Instant.now())

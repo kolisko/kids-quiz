@@ -108,21 +108,24 @@ fun Application.module() {
             route("/spelling") {
                 get("/sets") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    call.respond(SpellingStore.readSets())
+                    val language = call.requireLearningLanguage() ?: return@get
+                    call.respond(SpellingStore.readSets(language))
                 }
                 put("/sets") {
                     if (!Auth.requireAuthenticated(call)) return@put
+                    val language = call.requireLearningLanguage() ?: return@put
                     val request = runCatching { call.receive<SpellingSetsRequest>() }.getOrNull()
                     if (request == null) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@put
                     }
-                    call.respond(SpellingStore.replaceSets(request.sets, request.latestSetIndex))
+                    call.respond(SpellingStore.replaceSets(request.sets, request.latestSetIndex, language))
                 }
                 get("/session") {
                     if (!Auth.requireAuthenticated(call)) return@get
+                    val language = call.requireLearningLanguage() ?: return@get
                     val mode = call.requireSpellingSessionMode() ?: return@get
-                    val session = SpellingStore.readSession(mode)
+                    val session = SpellingStore.readSession(mode, language)
                     if (session == null) {
                         val error = if (mode == SpellingSessionMode.older) "no_older_spelling_sets" else "no_spelling_sets"
                         call.respond(HttpStatusCode.NotFound, mapOf("error" to error))
@@ -132,16 +135,18 @@ fun Application.module() {
                 }
                 get("/stats") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    call.respond(SpellingStatsSnapshot(statsByWord = SpellingStore.snapshot()))
+                    val language = call.requireLearningLanguage() ?: return@get
+                    call.respond(SpellingStatsSnapshot(statsByWord = SpellingStore.snapshot(language)))
                 }
                 post("/stats/answer") {
                     if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
                     val request = runCatching { call.receive<SpellingAnswerResultRequest>() }.getOrNull()
                     if (request == null || request.word.isBlank()) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@post
                     }
-                    val (word, stats) = SpellingStore.record(request.word, request.correct, request.timedOut)
+                    val (word, stats) = SpellingStore.record(request.word, request.correct, request.timedOut, language)
                         ?: run {
                             call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
                             return@post
@@ -151,8 +156,9 @@ fun Application.module() {
                 get("/audio/words/{word}.mp3") {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val word = call.requireSpellingAudioWord() ?: return@get
+                    val language = call.requireLearningLanguage() ?: return@get
                     val kind = call.requireSpellingAudioKind() ?: return@get
-                    val audioFile = SpellingAudioService.audioFile(word, kind)
+                    val audioFile = SpellingAudioService.audioFile(word, kind, language)
                     if (audioFile == null) {
                         call.respond(HttpStatusCode.NotFound, mapOf("error" to "audio_not_found"))
                         return@get
@@ -166,8 +172,9 @@ fun Application.module() {
                 get("/audio/words/{word}") {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val word = call.requireSpellingAudioWord() ?: return@get
+                    val language = call.requireLearningLanguage() ?: return@get
                     val kind = call.requireSpellingAudioKind() ?: return@get
-                    val response = SpellingAudioService.status(word, kind)
+                    val response = SpellingAudioService.status(word, kind, language)
                         ?: run {
                             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                             return@get
@@ -177,9 +184,10 @@ fun Application.module() {
                 post("/audio/words/{word}") {
                     if (!Auth.requireAuthenticated(call)) return@post
                     val word = call.requireSpellingAudioWord() ?: return@post
+                    val language = call.requireLearningLanguage() ?: return@post
                     val kind = call.requireSpellingAudioKind() ?: return@post
                     try {
-                        val response = SpellingAudioService.enqueueGeneration(word, kind)
+                        val response = SpellingAudioService.enqueueGeneration(word, kind, language)
                             ?: run {
                                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                                 return@post
@@ -198,38 +206,44 @@ fun Application.module() {
             route("/flipcards") {
                 get("/words") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    call.respond(FlipcardStore.readWords())
+                    val language = call.requireLearningLanguage() ?: return@get
+                    call.respond(FlipcardStore.readWords(language))
                 }
                 put("/words") {
                     if (!Auth.requireAuthenticated(call)) return@put
+                    val language = call.requireLearningLanguage() ?: return@put
                     val request = runCatching { call.receive<FlipcardWordsRequest>() }.getOrNull()
                     if (request == null) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@put
                     }
-                    call.respond(FlipcardStore.replaceWords(request.words))
+                    call.respond(FlipcardStore.replaceWords(request.words, language))
                 }
                 get("/session") {
                     if (!Auth.requireAuthenticated(call)) return@get
+                    val language = call.requireLearningLanguage() ?: return@get
                     val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceAtLeast(1) ?: 10
-                    call.respond(FlipcardStore.readSession(limit))
+                    call.respond(FlipcardStore.readSession(limit, language))
                 }
                 get("/assets") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    call.respond(FlipcardStore.readAssets())
+                    val language = call.requireLearningLanguage() ?: return@get
+                    call.respond(FlipcardStore.readAssets(language))
                 }
                 get("/stats") {
                     if (!Auth.requireAuthenticated(call)) return@get
-                    call.respond(FlipcardStatsSnapshot(statsByWord = FlipcardStore.snapshot()))
+                    val language = call.requireLearningLanguage() ?: return@get
+                    call.respond(FlipcardStatsSnapshot(statsByWord = FlipcardStore.snapshot(language)))
                 }
                 post("/stats/answer") {
                     if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
                     val request = runCatching { call.receive<FlipcardAnswerResultRequest>() }.getOrNull()
                     if (request == null || request.word.isBlank()) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@post
                     }
-                    val (word, stats) = FlipcardStore.record(request.word, request.correct, request.timedOut)
+                    val (word, stats) = FlipcardStore.record(request.word, request.correct, request.timedOut, language)
                         ?: run {
                             call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
                             return@post
@@ -279,6 +293,52 @@ fun Application.module() {
                             HttpStatusCode.BadGateway
                         }
                         call.respond(status, mapOf("error" to (error.message ?: "image_generation_failed")))
+                    }
+                }
+                get("/audio/{language}/{word}.mp3") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val language = call.requirePathLearningLanguage() ?: return@get
+                    val word = call.requireSpellingAudioWord() ?: return@get
+                    val audioFile = SpellingAudioService.audioFile(word, SpellingAudioKind.word, language)
+                    if (audioFile == null) {
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "audio_not_found"))
+                        return@get
+                    }
+                    call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+                    call.respondBytes(
+                        bytes = java.nio.file.Files.readAllBytes(audioFile),
+                        contentType = ContentType.Audio.MPEG,
+                    )
+                }
+                get("/audio/{language}/{word}") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val language = call.requirePathLearningLanguage() ?: return@get
+                    val word = call.requireSpellingAudioWord() ?: return@get
+                    val response = SpellingAudioService.status(word, SpellingAudioKind.word, language)
+                        ?: run {
+                            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
+                            return@get
+                        }
+                    call.respond(response)
+                }
+                post("/audio/{language}/{word}") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requirePathLearningLanguage() ?: return@post
+                    val word = call.requireSpellingAudioWord() ?: return@post
+                    try {
+                        val response = SpellingAudioService.enqueueGeneration(word, SpellingAudioKind.word, language)
+                            ?: run {
+                                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
+                                return@post
+                            }
+                        call.respond(response)
+                    } catch (error: SpellingAudioException) {
+                        val status = if (error.message == "tts_not_configured") {
+                            HttpStatusCode.ServiceUnavailable
+                        } else {
+                            HttpStatusCode.BadGateway
+                        }
+                        call.respond(status, mapOf("error" to (error.message ?: "tts_generation_failed")))
                     }
                 }
             }
@@ -344,6 +404,26 @@ private suspend fun ApplicationCall.requireSpellingSessionMode(): SpellingSessio
         return null
     }
     return mode
+}
+
+private suspend fun ApplicationCall.requireLearningLanguage(): LearningLanguage? {
+    val rawLanguage = request.queryParameters["language"] ?: LearningLanguage.en.name
+    val language = LearningLanguage.entries.firstOrNull { it.name == rawLanguage }
+    if (language == null) {
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_language"))
+        return null
+    }
+    return language
+}
+
+private suspend fun ApplicationCall.requirePathLearningLanguage(): LearningLanguage? {
+    val rawLanguage = parameters["language"] ?: LearningLanguage.en.name
+    val language = LearningLanguage.entries.firstOrNull { it.name == rawLanguage }
+    if (language == null) {
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_language"))
+        return null
+    }
+    return language
 }
 
 private suspend fun ApplicationCall.requireSpellingAudioWord(): String? {

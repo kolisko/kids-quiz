@@ -9,6 +9,7 @@ type ActiveGame = 'multiplication' | 'spelling' | 'flipcards';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
 type PracticeMode = PracticeDirection | 'mix';
 type SpellingSessionMode = 'latest' | 'older';
+type LearningLanguage = 'en' | 'de' | 'es';
 type TtsStatus = 'checking' | 'supported' | 'unsupported';
 type AudioSource = 'browser_tts' | 'backend_mp3';
 type ArtifactStatus = 'ready' | 'missing' | 'queued' | 'generating' | 'error';
@@ -16,6 +17,12 @@ type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 type PollToken = { cancelled: boolean };
+
+interface LanguageOption {
+  code: LearningLanguage;
+  label: string;
+  ttsLang: string;
+}
 
 interface GameSettings {
   secondsLimit: number;
@@ -66,6 +73,7 @@ interface SpellingSet {
   rawWords: string;
   isLatest: boolean;
   words: SpellingWord[];
+  language: LearningLanguage;
 }
 
 interface SpellingWord {
@@ -96,6 +104,7 @@ interface AudioPrepItem {
 interface SpellingSession {
   setId: number;
   words: SpellingWord[];
+  language: LearningLanguage;
 }
 
 interface SpellingStatsSnapshot {
@@ -110,6 +119,7 @@ interface SpellingAnswerResultResponse {
 interface FlipcardWord {
   text: string;
   normalized: string;
+  conceptKey: string;
 }
 
 interface FlipcardWordsResponse {
@@ -119,6 +129,7 @@ interface FlipcardWordsResponse {
 
 interface FlipcardSession {
   words: FlipcardWord[];
+  language: LearningLanguage;
 }
 
 interface FlipcardImageResponse {
@@ -132,6 +143,8 @@ interface FlipcardImageResponse {
 interface FlipcardAsset {
   word: string;
   normalized: string;
+  conceptKey: string;
+  language: LearningLanguage;
   imageStatus: ArtifactStatus;
   imageUrl: string | null;
   imageError?: string | null;
@@ -190,6 +203,11 @@ export class AppComponent implements OnInit, OnDestroy {
     { mode: 'factors_to_product', label: 'Spočítej výsledek' },
     { mode: 'mix', label: 'Mix' },
   ];
+  readonly languageOptions: LanguageOption[] = [
+    { code: 'en', label: 'Angličtina', ttsLang: 'en-US' },
+    { code: 'de', label: 'Němčina', ttsLang: 'de-DE' },
+    { code: 'es', label: 'Španělština', ttsLang: 'es-ES' },
+  ];
 
   screen: Screen = 'login';
   loading = true;
@@ -203,6 +221,8 @@ export class AppComponent implements OnInit, OnDestroy {
   settings: GameSettings = { secondsLimit: 30, targetScore: 10, audioSource: 'browser_tts', flipcardSource: 'all_words' };
   tests: QuizTest[] = [];
   selectedTest: QuizTest | null = null;
+  selectedLanguage: LearningLanguage = 'en';
+  settingsLanguage: LearningLanguage = 'en';
   activeGame: ActiveGame = 'multiplication';
   selectedMode: PracticeMode | null = null;
   questions: Question[] = [];
@@ -210,9 +230,9 @@ export class AppComponent implements OnInit, OnDestroy {
     product_to_factors: {},
     factors_to_product: {},
   };
-  spellingSetInputs: string[] = [''];
-  flipcardWordInput = '';
-  latestSpellingSetIndex = 0;
+  spellingSetInputsByLanguage: Record<LearningLanguage, string[]> = { en: [''], de: [''], es: [''] };
+  flipcardWordInputByLanguage: Record<LearningLanguage, string> = { en: '', de: '', es: '' };
+  latestSpellingSetIndexByLanguage: Record<LearningLanguage, number> = { en: 0, de: 0, es: 0 };
   spellingStats: Record<string, QuestionStats> = {};
   flipcardStats: Record<string, QuestionStats> = {};
   spellingWords: SpellingWord[] = [];
@@ -302,7 +322,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentFlipcardImageUrl(): string | null {
     const word = this.currentFlipcardWord;
-    return word ? this.flipcardImageUrls[word.normalized] ?? null : null;
+    return word ? this.flipcardImageUrls[word.conceptKey] ?? null : null;
   }
 
   get flipcardAnswersDisabled(): boolean {
@@ -333,7 +353,19 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get spellingSetsConfigured(): boolean {
-    return this.spellingSetInputs.some((value) => parseSpellingWords(value).length > 0);
+    return this.spellingSetInputsByLanguage[this.settingsLanguage].some((value) => parseSpellingWords(value).length > 0);
+  }
+
+  get multiplicationTests(): QuizTest[] {
+    return this.tests.filter((test) => test.type !== 'english');
+  }
+
+  get selectedLanguageLabel(): string {
+    return this.languageLabel(this.selectedLanguage);
+  }
+
+  get settingsLanguageLabel(): string {
+    return this.languageLabel(this.settingsLanguage);
   }
 
   get ttsTechnicalDetails(): string {
@@ -485,6 +517,22 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  startLanguage(language: LearningLanguage): void {
+    this.selectedLanguage = language;
+    this.selectedTest = {
+      id: -1,
+      name: this.languageLabel(language),
+      type: 'english',
+      questionCount: 0,
+    };
+    this.loading = true;
+    this.resetRoundState();
+    this.activeGame = 'spelling';
+    this.setScreen('category');
+    this.loading = false;
+    this.render();
+  }
+
   openSpellingModes(): void {
     this.setScreen('spellingMode');
   }
@@ -496,13 +544,13 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
     try {
       const [stats, settings] = await Promise.all([
-        this.apiGet<FlipcardStatsSnapshot>('flipcards/stats'),
+        this.apiGet<FlipcardStatsSnapshot>(`flipcards/stats?language=${this.selectedLanguage}`),
         this.apiGet<GameSettings>('settings'),
       ]);
       this.applySettings(settings);
       this.flipcardStats = stats.statsByWord ?? {};
       const [session, answerPool] = await Promise.all([
-        this.apiGet<FlipcardSession>(`flipcards/session?limit=${this.settings.targetScore}`),
+        this.apiGet<FlipcardSession>(`flipcards/session?language=${this.selectedLanguage}&limit=${this.settings.targetScore}`),
         this.loadFlipcardAnswerPool(),
       ]);
       this.flipcardWords = session.words;
@@ -542,9 +590,9 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
     try {
       const [stats, settings, session] = await Promise.all([
-        this.apiGet<SpellingStatsSnapshot>('spelling/stats'),
+        this.apiGet<SpellingStatsSnapshot>(`spelling/stats?language=${this.selectedLanguage}`),
         this.apiGet<GameSettings>('settings'),
-        this.apiGet<SpellingSession>(`spelling/session?mode=${mode}`),
+        this.apiGet<SpellingSession>(`spelling/session?language=${this.selectedLanguage}&mode=${mode}`),
       ]);
       this.applySettings(settings);
       this.spellingStats = stats.statsByWord ?? {};
@@ -570,12 +618,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async loadFlipcardAnswerPool(): Promise<FlipcardWord[]> {
     if (this.settings.flipcardSource === 'ready_only') {
-      const response = await this.apiGet<FlipcardAssetsResponse>('flipcards/assets');
+      const response = await this.apiGet<FlipcardAssetsResponse>(`flipcards/assets?language=${this.selectedLanguage}`);
       return response.items
         .filter((asset) => asset.imageStatus === 'ready' && asset.audioStatus === 'ready')
-        .map((asset) => ({ text: asset.word, normalized: asset.normalized }));
+        .map((asset) => ({ text: asset.word, normalized: asset.normalized, conceptKey: asset.conceptKey }));
     }
-    const response = await this.apiGet<FlipcardWordsResponse>('flipcards/words');
+    const response = await this.apiGet<FlipcardWordsResponse>(`flipcards/words?language=${this.selectedLanguage}`);
     return response.items;
   }
 
@@ -659,8 +707,7 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       await Promise.all([
         this.loadSettings(),
-        this.loadSpellingSets(),
-        this.loadFlipcardWords(),
+        this.loadAllLanguageSettings(),
       ]);
     } catch {
       this.settingsError = 'Nastavení se nepodařilo načíst.';
@@ -723,13 +770,13 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   assetImageIsGenerating(asset: FlipcardAsset): boolean {
-    return Boolean(this.assetImageGenerating[asset.normalized])
+    return Boolean(this.assetImageGenerating[asset.conceptKey])
       || asset.imageStatus === 'queued'
       || asset.imageStatus === 'generating';
   }
 
   assetImageError(asset: FlipcardAsset): string | null {
-    return this.assetImageErrors[asset.normalized] ?? asset.imageError ?? null;
+    return this.assetImageErrors[asset.conceptKey] ?? asset.imageError ?? null;
   }
 
   assetImageStatusLabel(asset: FlipcardAsset): string {
@@ -751,13 +798,13 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async enqueueAssetImage(asset: FlipcardAsset, force: boolean): Promise<void> {
-    this.assetImageGenerating = { ...this.assetImageGenerating, [asset.normalized]: true };
-    const { [asset.normalized]: _removed, ...nextErrors } = this.assetImageErrors;
+    this.assetImageGenerating = { ...this.assetImageGenerating, [asset.conceptKey]: true };
+    const { [asset.conceptKey]: _removed, ...nextErrors } = this.assetImageErrors;
     this.assetImageErrors = nextErrors;
     this.render();
 
     try {
-      const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(asset.word, force), {});
+      const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(asset.conceptKey, force), {});
       await this.applyAssetImageResponse(response);
       if (response.status !== 'ready') {
         this.startAssetLibraryPolling();
@@ -765,10 +812,10 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch (error) {
       this.assetImageErrors = {
         ...this.assetImageErrors,
-        [asset.normalized]: error instanceof Error ? error.message : 'Obrazek se nepodarilo pripravit.',
+        [asset.conceptKey]: error instanceof Error ? error.message : 'Obrazek se nepodarilo pripravit.',
       };
     } finally {
-      const { [asset.normalized]: _removed, ...nextGenerating } = this.assetImageGenerating;
+      const { [asset.conceptKey]: _removed, ...nextGenerating } = this.assetImageGenerating;
       this.assetImageGenerating = nextGenerating;
       this.render();
     }
@@ -782,7 +829,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
 
     try {
-      const response = await this.apiPost<SpellingAudioWordResponse>(this.spellingAudioPath(asset.word, 'word'), {});
+      const response = await this.apiPost<SpellingAudioWordResponse>(this.flipcardAudioPath(asset.word), {});
       this.applyAssetAudioResponse(response);
       if (response.status !== 'ready') {
         this.startAssetLibraryPolling();
@@ -818,7 +865,7 @@ export class AppComponent implements OnInit, OnDestroy {
       };
     }
     this.flipcardAssets = this.flipcardAssets.map((item) => (
-      item.normalized === response.normalized
+      item.conceptKey === response.normalized
         ? {
           ...item,
           imageStatus: response.status,
@@ -916,8 +963,8 @@ export class AppComponent implements OnInit, OnDestroy {
     const needsImage = asset.imageStatus === 'queued' || asset.imageStatus === 'generating';
     const needsAudio = asset.audioStatus === 'queued' || asset.audioStatus === 'generating';
     await Promise.all([
-      needsImage ? this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(asset.word)) : Promise.resolve(null),
-      needsAudio ? this.apiGet<SpellingAudioWordResponse>(this.spellingAudioPath(asset.word, 'word')) : Promise.resolve(null),
+      needsImage ? this.apiGet<FlipcardImageResponse>(this.flipcardImagePath(asset.conceptKey)) : Promise.resolve(null),
+      needsAudio ? this.apiGet<SpellingAudioWordResponse>(this.flipcardAudioPath(asset.word)) : Promise.resolve(null),
     ]).then(async ([imageResponse, audioResponse]) => {
       if (token.cancelled || this.screen !== 'assetLibrary') return;
       if (imageResponse) {
@@ -944,17 +991,16 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const [savedSettings] = await Promise.all([
         this.apiPut<GameSettings>('settings', this.normalizedSettings()),
-        this.apiPut<SpellingSet[]>('spelling/sets', {
-          sets: this.spellingSetInputs,
-          latestSetIndex: this.latestSpellingSetIndex,
-        }),
-        this.apiPut<FlipcardWordsResponse>('flipcards/words', {
-          words: this.flipcardWordInput,
-        }),
+        ...this.languageOptions.map((language) => this.apiPut<SpellingSet[]>(`spelling/sets?language=${language.code}`, {
+          sets: this.spellingSetInputsByLanguage[language.code],
+          latestSetIndex: this.latestSpellingSetIndexByLanguage[language.code],
+        })),
+        ...this.languageOptions.map((language) => this.apiPut<FlipcardWordsResponse>(`flipcards/words?language=${language.code}`, {
+          words: this.flipcardWordInputByLanguage[language.code],
+        })),
       ]);
       this.applySettings(savedSettings);
-      await this.loadSpellingSets();
-      await this.loadFlipcardWords();
+      await this.loadAllLanguageSettings();
       this.settingsSaved = true;
     } catch {
       this.settingsError = 'Nastavení se nepodařilo uložit.';
@@ -965,21 +1011,27 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   addSpellingSet(): void {
-    this.spellingSetInputs = [...this.spellingSetInputs, ''];
-    this.latestSpellingSetIndex = this.spellingSetInputs.length - 1;
+    const inputs = [...this.spellingSetInputsByLanguage[this.settingsLanguage], ''];
+    this.spellingSetInputsByLanguage = { ...this.spellingSetInputsByLanguage, [this.settingsLanguage]: inputs };
+    this.latestSpellingSetIndexByLanguage = { ...this.latestSpellingSetIndexByLanguage, [this.settingsLanguage]: inputs.length - 1 };
   }
 
   removeSpellingSet(index: number): void {
-    this.spellingSetInputs = this.spellingSetInputs.filter((_, candidateIndex) => candidateIndex !== index);
-    if (this.spellingSetInputs.length === 0) {
-      this.spellingSetInputs = [''];
+    let inputs = this.spellingSetInputsByLanguage[this.settingsLanguage].filter((_, candidateIndex) => candidateIndex !== index);
+    if (inputs.length === 0) {
+      inputs = [''];
     }
-    if (this.latestSpellingSetIndex === index) {
-      this.latestSpellingSetIndex = this.lastConfiguredSpellingSetIndex();
-    } else if (this.latestSpellingSetIndex > index) {
-      this.latestSpellingSetIndex -= 1;
+    let latestIndex = this.latestSpellingSetIndexByLanguage[this.settingsLanguage];
+    if (latestIndex === index) {
+      latestIndex = this.lastConfiguredSpellingSetIndex();
+    } else if (latestIndex > index) {
+      latestIndex -= 1;
     }
-    this.latestSpellingSetIndex = Math.min(this.latestSpellingSetIndex, this.spellingSetInputs.length - 1);
+    this.spellingSetInputsByLanguage = { ...this.spellingSetInputsByLanguage, [this.settingsLanguage]: inputs };
+    this.latestSpellingSetIndexByLanguage = {
+      ...this.latestSpellingSetIndexByLanguage,
+      [this.settingsLanguage]: Math.min(latestIndex, inputs.length - 1),
+    };
   }
 
   returnToTestSelection(): void {
@@ -1038,8 +1090,7 @@ export class AppComponent implements OnInit, OnDestroy {
       const [tests, settings] = await Promise.all([
         this.apiGet<QuizTest[]>('tests'),
         this.apiGet<GameSettings>('settings'),
-        this.loadSpellingSets(),
-        this.loadFlipcardWords(),
+        this.loadAllLanguageSettings(),
       ]);
       this.applySettings(settings);
       this.tests = tests;
@@ -1183,8 +1234,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardImageUrls = {};
     try {
       const imageItems: AudioPrepItem[] = this.flipcardWords.map((word) => ({
-            audioWord: word.text,
-            normalized: word.normalized,
+            audioWord: word.conceptKey,
+            normalized: word.conceptKey,
             word: word.text,
             kind: 'flipcard_image',
             status: 'pending',
@@ -1245,7 +1296,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async loadAudioItemStatus(item: AudioPrepItem): Promise<void> {
     if (item.kind === 'flipcard_image') return;
-    const response = await this.apiGet<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind));
+    const response = await this.apiGet<SpellingAudioWordResponse>(this.audioStatusPath(item.audioWord, item.kind));
     if (response.status !== 'ready' || !response.audioUrl) {
       if (response.status !== 'missing') {
         this.updateAudioPrepItem(item.normalized, item.kind, {
@@ -1282,7 +1333,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async preloadFlipcardImages(): Promise<void> {
     const urls = this.flipcardWords
-      .map((word) => this.flipcardImageUrls[word.normalized])
+      .map((word) => this.flipcardImageUrls[word.conceptKey])
       .filter((url): url is string => Boolean(url));
     await Promise.allSettled(urls.map((url) => this.preloadImage(url)));
   }
@@ -1358,7 +1409,7 @@ export class AppComponent implements OnInit, OnDestroy {
         }
         return;
       }
-      const response = await this.apiPost<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind), {});
+      const response = await this.apiPost<SpellingAudioWordResponse>(this.audioStatusPath(item.audioWord, item.kind), {});
       if (token.cancelled) return;
       this.applySpellingAudioPrepResponse(item, response);
       if (response.status !== 'ready') {
@@ -1386,7 +1437,7 @@ export class AppComponent implements OnInit, OnDestroy {
         if (response.status === 'ready') return;
         if (response.status === 'error') throw new Error(response.error ?? 'Generování obrázku selhalo.');
       } else {
-        const response = await this.apiGet<SpellingAudioWordResponse>(this.spellingAudioPath(item.audioWord, item.kind));
+        const response = await this.apiGet<SpellingAudioWordResponse>(this.audioStatusPath(item.audioWord, item.kind));
         if (token.cancelled) return;
         this.applySpellingAudioPrepResponse(item, response);
         if (response.status === 'ready') return;
@@ -1442,12 +1493,30 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private spellingAudioPath(word: string, kind: 'word' | 'spelling'): string {
-    return `spelling/audio/words/${encodeURIComponent(word)}?kind=${kind}`;
+    return `spelling/audio/words/${encodeURIComponent(word)}?language=${this.selectedLanguage}&kind=${kind}`;
+  }
+
+  private flipcardAudioPath(word: string): string {
+    return `flipcards/audio/${this.selectedLanguage}/${encodeURIComponent(word)}`;
+  }
+
+  private audioStatusPath(word: string, kind: 'word' | 'spelling'): string {
+    return this.activeGame === 'flipcards' && kind === 'word'
+      ? this.flipcardAudioPath(word)
+      : this.spellingAudioPath(word, kind);
   }
 
   private flipcardImagePath(word: string, force = false): string {
     const suffix = force ? '?force=true' : '';
     return `flipcards/images/${encodeURIComponent(word)}${suffix}`;
+  }
+
+  private languageLabel(language: LearningLanguage): string {
+    return this.languageOptions.find((option) => option.code === language)?.label ?? 'Angličtina';
+  }
+
+  private ttsLanguage(): string {
+    return this.languageOptions.find((option) => option.code === this.selectedLanguage)?.ttsLang ?? 'en-US';
   }
 
   private async delay(milliseconds: number): Promise<void> {
@@ -1775,7 +1844,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private async recordSpellingAnswer(index: number, correct: boolean, timedOut: boolean): Promise<void> {
     const word = this.spellingWords[index];
     if (!word) return;
-    const response = await this.apiPost<SpellingAnswerResultResponse>('spelling/stats/answer', {
+    const response = await this.apiPost<SpellingAnswerResultResponse>(`spelling/stats/answer?language=${this.selectedLanguage}`, {
       word: word.normalized,
       correct,
       timedOut,
@@ -1790,7 +1859,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private async recordFlipcardAnswer(index: number, correct: boolean, timedOut: boolean): Promise<void> {
     const word = this.flipcardWords[index];
     if (!word) return;
-    const response = await this.apiPost<FlipcardAnswerResultResponse>('flipcards/stats/answer', {
+    const response = await this.apiPost<FlipcardAnswerResultResponse>(`flipcards/stats/answer?language=${this.selectedLanguage}`, {
       word: word.normalized,
       correct,
       timedOut,
@@ -1863,30 +1932,47 @@ export class AppComponent implements OnInit, OnDestroy {
     weights.set(index, Math.max(0, (weights.get(index) ?? 0) - 1));
   }
 
-  private async loadSpellingSets(): Promise<void> {
-    const sets = await this.apiGet<SpellingSet[]>('spelling/sets');
-    this.spellingSetInputs = sets.length > 0 ? sets.map((set) => set.rawWords) : [''];
-    const latestIndex = sets.findIndex((set) => set.isLatest);
-    this.latestSpellingSetIndex = latestIndex >= 0 ? latestIndex : this.lastConfiguredSpellingSetIndex();
+  private async loadAllLanguageSettings(): Promise<void> {
+    await Promise.all(this.languageOptions.flatMap((language) => [
+      this.loadSpellingSets(language.code),
+      this.loadFlipcardWords(language.code),
+    ]));
   }
 
-  private async loadFlipcardWords(): Promise<void> {
-    const response = await this.apiGet<FlipcardWordsResponse>('flipcards/words');
-    this.flipcardWordInput = response.words;
+  private async loadSpellingSets(language: LearningLanguage = this.settingsLanguage): Promise<void> {
+    const sets = await this.apiGet<SpellingSet[]>(`spelling/sets?language=${language}`);
+    this.spellingSetInputsByLanguage = {
+      ...this.spellingSetInputsByLanguage,
+      [language]: sets.length > 0 ? sets.map((set) => set.rawWords) : [''],
+    };
+    const latestIndex = sets.findIndex((set) => set.isLatest);
+    this.latestSpellingSetIndexByLanguage = {
+      ...this.latestSpellingSetIndexByLanguage,
+      [language]: latestIndex >= 0 ? latestIndex : this.lastConfiguredSpellingSetIndex(language),
+    };
+  }
+
+  private async loadFlipcardWords(language: LearningLanguage = this.settingsLanguage): Promise<void> {
+    const response = await this.apiGet<FlipcardWordsResponse>(`flipcards/words?language=${language}`);
+    this.flipcardWordInputByLanguage = {
+      ...this.flipcardWordInputByLanguage,
+      [language]: response.words,
+    };
   }
 
   private async loadFlipcardAssets(): Promise<void> {
-    const response = await this.apiGet<FlipcardAssetsResponse>('flipcards/assets');
+    const response = await this.apiGet<FlipcardAssetsResponse>(`flipcards/assets?language=${this.settingsLanguage}`);
     this.flipcardAssets = response.items ?? [];
   }
 
-  private lastConfiguredSpellingSetIndex(): number {
-    for (let index = this.spellingSetInputs.length - 1; index >= 0; index -= 1) {
-      if (parseSpellingWords(this.spellingSetInputs[index]).length > 0) {
+  private lastConfiguredSpellingSetIndex(language: LearningLanguage = this.settingsLanguage): number {
+    const inputs = this.spellingSetInputsByLanguage[language];
+    for (let index = inputs.length - 1; index >= 0; index -= 1) {
+      if (parseSpellingWords(inputs[index]).length > 0) {
         return index;
       }
     }
-    return Math.max(0, this.spellingSetInputs.length - 1);
+    return Math.max(0, inputs.length - 1);
   }
 
   private playCurrentSpellingAudio(): void {
@@ -1903,7 +1989,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     speech.cancel();
     const utterance = new SpeechSynthesisUtterance(word);
-    utterance.lang = 'en-US';
+    utterance.lang = this.ttsLanguage();
     utterance.rate = 0.86;
     utterance.onerror = (event) => {
       this.setTtsUnsupported('Prehrani TTS skoncilo chybou.', event.error, speech.getVoices().length);
@@ -1929,7 +2015,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     speech.cancel();
     const utterance = new SpeechSynthesisUtterance(formatSpellingSpeech(word));
-    utterance.lang = 'en-US';
+    utterance.lang = this.ttsLanguage();
     utterance.rate = 0.82;
     utterance.onerror = (event) => {
       this.setTtsUnsupported('Prehrani spelling TTS skoncilo chybou.', event.error, speech.getVoices().length);
@@ -1969,12 +2055,13 @@ export class AppComponent implements OnInit, OnDestroy {
       const word = this.flipcardWords[index];
       if (!word) continue;
       keep.add(word.normalized);
-      const imageUrl = this.flipcardImageUrls[word.normalized];
-      if (imageUrl && !this.flipcardImagePreloads.has(word.normalized)) {
+      keep.add(word.conceptKey);
+      const imageUrl = this.flipcardImageUrls[word.conceptKey];
+      if (imageUrl && !this.flipcardImagePreloads.has(word.conceptKey)) {
         const image = new Image();
         image.decoding = 'async';
         image.src = imageUrl;
-        this.flipcardImagePreloads.set(word.normalized, image);
+        this.flipcardImagePreloads.set(word.conceptKey, image);
       }
       const audioUrl = this.backendAudioUrls[word.normalized];
       if (this.settings.audioSource === 'backend_mp3' && audioUrl && !this.flipcardAudioPreloads.has(word.normalized)) {
@@ -2045,7 +2132,7 @@ export class AppComponent implements OnInit, OnDestroy {
         window.clearTimeout(timeout);
         resolve();
       };
-      utterance.lang = 'en-US';
+      utterance.lang = this.ttsLanguage();
       utterance.rate = 0.86;
       utterance.onend = done;
       utterance.onerror = (event) => {

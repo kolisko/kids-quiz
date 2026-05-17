@@ -64,10 +64,18 @@
       <button
         class="primary-button test-button"
         type="button"
-        *ngFor="let test of tests"
+        *ngFor="let test of multiplicationTests"
         (click)="startTest(test)"
         [disabled]="loading">
         {{ loading && selectedTest?.id === test.id ? 'Načítám...' : test.name }}
+      </button>
+      <button
+        class="primary-button test-button"
+        type="button"
+        *ngFor="let language of languageOptions"
+        (click)="startLanguage(language.code)"
+        [disabled]="loading">
+        {{ language.label }}
       </button>
     </div>
   </section>
@@ -77,7 +85,7 @@
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
-      <h1>{{ selectedTest?.name }}</h1>
+      <h1>{{ selectedLanguageLabel }}</h1>
       <span class="header-spacer" aria-hidden="true"></span>
     </div>
 
@@ -117,7 +125,7 @@
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
-      <h1>Spelling</h1>
+      <h1>{{ selectedLanguageLabel }} - Spelling</h1>
       <span class="header-spacer" aria-hidden="true"></span>
     </div>
 
@@ -169,26 +177,39 @@
     </section>
 
     <section class="settings-section">
-      <h2>Angličtina - Spelling</h2>
+      <h2>Jazyk</h2>
+      <div class="asset-tabs">
+        <button
+          type="button"
+          *ngFor="let language of languageOptions"
+          [class.asset-tab-active]="settingsLanguage === language.code"
+          (click)="settingsLanguage = language.code">
+          {{ language.label }}
+        </button>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h2>{{ settingsLanguageLabel }} - Spelling</h2>
       <div class="spelling-set-list">
-        <div class="spelling-set-row" *ngFor="let set of spellingSetInputs; let index = index">
+        <div class="spelling-set-row" *ngFor="let set of spellingSetInputsByLanguage[settingsLanguage]; let index = index">
           <span class="spelling-set-title">
             Seznam slov {{ index + 1 }}
-            <span class="latest-marker" *ngIf="latestSpellingSetIndex === index">Nejnovější</span>
+            <span class="latest-marker" *ngIf="latestSpellingSetIndexByLanguage[settingsLanguage] === index">Nejnovější</span>
           </span>
           <textarea
             rows="3"
-            [(ngModel)]="spellingSetInputs[index]"
-            [name]="'spellingSet' + index"></textarea>
+            [(ngModel)]="spellingSetInputsByLanguage[settingsLanguage][index]"
+            [name]="'spellingSet' + settingsLanguage + index"></textarea>
           <label class="latest-choice">
             <input
               type="radio"
-              name="latestSpellingSet"
+              [name]="'latestSpellingSet' + settingsLanguage"
               [value]="index"
-              [(ngModel)]="latestSpellingSetIndex">
+              [(ngModel)]="latestSpellingSetIndexByLanguage[settingsLanguage]">
             Nejnovější seznam
           </label>
-          <button class="danger-button compact-button" type="button" (click)="removeSpellingSet(index)" *ngIf="spellingSetInputs.length > 1">
+          <button class="danger-button compact-button" type="button" (click)="removeSpellingSet(index)" *ngIf="spellingSetInputsByLanguage[settingsLanguage].length > 1">
             Odebrat
           </button>
         </div>
@@ -199,7 +220,7 @@
     </section>
 
     <section class="settings-section">
-      <h2>Angličtina - Flipcards</h2>
+      <h2>{{ settingsLanguageLabel }} - Flipcards</h2>
       <div class="audio-source-options">
         <label class="audio-source-option">
           <input type="radio" name="flipcardSource" value="all_words" [(ngModel)]="settings.flipcardSource">
@@ -217,8 +238,8 @@
         Slovíčka oddělená čárkou
         <textarea
           rows="5"
-          [(ngModel)]="flipcardWordInput"
-          name="flipcardWords"></textarea>
+          [(ngModel)]="flipcardWordInputByLanguage[settingsLanguage]"
+          [name]="'flipcardWords' + settingsLanguage"></textarea>
       </label>
     </section>
 
@@ -234,7 +255,7 @@
       <button class="icon-button" type="button" (click)="openSettings()" title="Zpět do nastavení" aria-label="Zpět do nastavení">
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
-      <h1>Flipcards knihovna</h1>
+      <h1>{{ settingsLanguageLabel }} - Flipcards knihovna</h1>
       <span class="header-spacer" aria-hidden="true"></span>
     </div>
 

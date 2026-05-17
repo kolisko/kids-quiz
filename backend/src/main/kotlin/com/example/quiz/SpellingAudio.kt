@@ -25,6 +25,14 @@ private const val defaultOpenAiTtsInstructions =
     "Pronounce this single English spelling word clearly in American English. Say only the word."
 private const val defaultOpenAiSpellingTtsInstructions =
     "Spell this English word clearly one letter at a time. Say only the letters."
+private const val defaultGermanTtsInstructions =
+    "Pronounce this single German word clearly in standard German. Say only the word."
+private const val defaultGermanSpellingTtsInstructions =
+    "Spell this German word clearly one letter at a time using German letter names. Say only the letters."
+private const val defaultSpanishTtsInstructions =
+    "Pronounce this single Spanish word clearly in neutral Spanish. Say only the word."
+private const val defaultSpanishSpellingTtsInstructions =
+    "Spell this Spanish word clearly one letter at a time using Spanish letter names. Say only the letters."
 
 @Serializable
 private data class OpenAiTtsRequest(
@@ -42,10 +50,14 @@ object SpellingAudioService {
         .connectTimeout(Duration.ofSeconds(20))
         .build()
 
-    fun status(rawWord: String, kind: SpellingAudioKind): SpellingAudioWordResponse? {
+    fun status(
+        rawWord: String,
+        kind: SpellingAudioKind,
+        language: LearningLanguage = LearningLanguage.en,
+    ): SpellingAudioWordResponse? {
         val word = spellingAudioWord(rawWord) ?: return null
-        val ready = Files.isRegularFile(audioPath(word, kind))
-        val job = ArtifactGenerationQueue.snapshot(audioJobKey(word, kind))
+        val ready = Files.isRegularFile(audioPath(word, kind, language))
+        val job = ArtifactGenerationQueue.snapshot(audioJobKey(word, kind, language))
         return SpellingAudioWordResponse(
             word = word.text,
             normalized = word.normalized,
@@ -55,27 +67,31 @@ object SpellingAudioService {
                 else -> SpellingAudioStatus.missing
             },
             kind = kind,
-            audioUrl = if (ready) audioUrl(word, kind) else null,
+            audioUrl = if (ready) audioUrl(word, kind, language) else null,
             error = if (ready) null else job?.error,
         )
     }
 
-    fun enqueueGeneration(rawWord: String, kind: SpellingAudioKind): SpellingAudioWordResponse? {
+    fun enqueueGeneration(
+        rawWord: String,
+        kind: SpellingAudioKind,
+        language: LearningLanguage = LearningLanguage.en,
+    ): SpellingAudioWordResponse? {
         val word = spellingAudioWord(rawWord) ?: return null
-        val outputPath = audioPath(word, kind)
+        val outputPath = audioPath(word, kind, language)
         if (Files.isRegularFile(outputPath)) {
-            ArtifactGenerationQueue.clear(audioJobKey(word, kind))
+            ArtifactGenerationQueue.clear(audioJobKey(word, kind, language))
             return SpellingAudioWordResponse(
                 word = word.text,
                 normalized = word.normalized,
                 status = SpellingAudioStatus.ready,
                 kind = kind,
-                audioUrl = audioUrl(word, kind),
+                audioUrl = audioUrl(word, kind, language),
             )
         }
-        val job = ArtifactGenerationQueue.enqueue(audioJobKey(word, kind), ArtifactJobPool.audio) {
+        val job = ArtifactGenerationQueue.enqueue(audioJobKey(word, kind, language), ArtifactJobPool.audio) {
             if (!Files.isRegularFile(outputPath)) {
-                generateToFile(word, kind, outputPath)
+                generateToFile(word, kind, language, outputPath)
             }
         }
         return SpellingAudioWordResponse(
@@ -88,13 +104,22 @@ object SpellingAudioService {
         )
     }
 
-    fun audioFile(rawWord: String, kind: SpellingAudioKind): Path? {
+    fun audioFile(
+        rawWord: String,
+        kind: SpellingAudioKind,
+        language: LearningLanguage = LearningLanguage.en,
+    ): Path? {
         val word = spellingAudioWord(rawWord) ?: return null
-        val path = audioPath(word, kind)
+        val path = audioPath(word, kind, language)
         return path.takeIf { Files.isRegularFile(it) }
     }
 
-    private fun generateToFile(word: SpellingWord, kind: SpellingAudioKind, outputPath: Path) {
+    private fun generateToFile(
+        word: SpellingWord,
+        kind: SpellingAudioKind,
+        language: LearningLanguage,
+        outputPath: Path,
+    ) {
         val apiKey = System.getenv("OPENAI_API_KEY")?.takeIf { it.isNotBlank() }
             ?: throw SpellingAudioException("tts_not_configured")
         Files.createDirectories(outputPath.parent)
@@ -104,7 +129,7 @@ object SpellingAudioService {
                 model = ttsModel(),
                 voice = ttsVoice(),
                 input = ttsInput(word, kind),
-                instructions = ttsInstructions(kind),
+                instructions = ttsInstructions(kind, language),
             ),
         )
         val request = HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/audio/speech"))
@@ -122,20 +147,23 @@ object SpellingAudioService {
         Files.move(tempPath, outputPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 
-    private fun audioPath(word: SpellingWord, kind: SpellingAudioKind): Path {
-        return runtimeDataPath("audio", "spelling").resolve("${audioCacheKey(word, kind)}.mp3")
+    private fun audioPath(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): Path {
+        return runtimeDataPath("audio", "spelling").resolve("${audioCacheKey(word, kind, language)}.mp3")
     }
 
-    private fun audioCacheKey(word: SpellingWord, kind: SpellingAudioKind): String {
-        return sha256Hex(listOf(kind.name, word.normalized, ttsModel(), ttsVoice(), ttsInstructions(kind)).joinToString("\u001f"))
+    private fun audioCacheKey(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): String {
+        return sha256Hex(
+            listOf(language.name, kind.name, word.normalized, ttsModel(), ttsVoice(), ttsInstructions(kind, language))
+                .joinToString("\u001f"),
+        )
     }
 
-    private fun audioJobKey(word: SpellingWord, kind: SpellingAudioKind): String {
-        return "spelling_audio:${audioCacheKey(word, kind)}"
+    private fun audioJobKey(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): String {
+        return "spelling_audio:${audioCacheKey(word, kind, language)}"
     }
 
-    private fun audioUrl(word: SpellingWord, kind: SpellingAudioKind): String {
-        return "/api/spelling/audio/words/${urlEncodePathSegment(word.text)}.mp3?kind=${kind.name}&v=${audioCacheKey(word, kind)}"
+    private fun audioUrl(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): String {
+        return "/api/spelling/audio/words/${urlEncodePathSegment(word.text)}.mp3?language=${language.name}&kind=${kind.name}&v=${audioCacheKey(word, kind, language)}"
     }
 
     private fun ttsModel(): String = System.getenv("OPENAI_TTS_MODEL")?.takeIf { it.isNotBlank() }
@@ -144,12 +172,26 @@ object SpellingAudioService {
     private fun ttsVoice(): String = System.getenv("OPENAI_TTS_VOICE")?.takeIf { it.isNotBlank() }
         ?: defaultOpenAiTtsVoice
 
-    private fun ttsInstructions(kind: SpellingAudioKind): String {
-        return when (kind) {
-            SpellingAudioKind.word -> System.getenv("OPENAI_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
-                ?: defaultOpenAiTtsInstructions
-            SpellingAudioKind.spelling -> System.getenv("OPENAI_SPELLING_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
-                ?: defaultOpenAiSpellingTtsInstructions
+    private fun ttsInstructions(kind: SpellingAudioKind, language: LearningLanguage): String {
+        return when (language) {
+            LearningLanguage.en -> when (kind) {
+                SpellingAudioKind.word -> System.getenv("OPENAI_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                    ?: defaultOpenAiTtsInstructions
+                SpellingAudioKind.spelling -> System.getenv("OPENAI_SPELLING_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                    ?: defaultOpenAiSpellingTtsInstructions
+            }
+            LearningLanguage.de -> when (kind) {
+                SpellingAudioKind.word -> System.getenv("OPENAI_DE_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                    ?: defaultGermanTtsInstructions
+                SpellingAudioKind.spelling -> System.getenv("OPENAI_DE_SPELLING_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                    ?: defaultGermanSpellingTtsInstructions
+            }
+            LearningLanguage.es -> when (kind) {
+                SpellingAudioKind.word -> System.getenv("OPENAI_ES_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                    ?: defaultSpanishTtsInstructions
+                SpellingAudioKind.spelling -> System.getenv("OPENAI_ES_SPELLING_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                    ?: defaultSpanishSpellingTtsInstructions
+            }
         }
     }
 
