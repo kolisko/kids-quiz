@@ -64,22 +64,27 @@ object FlipcardTranslationService {
         }
         val storedProgress = Database.useConnection { it.readFlipcardTranslationBackfillProgress(language) }
         val job = ArtifactGenerationQueue.snapshot(jobKey(language))
-        val readyCount = if (job?.status == ArtifactJobStatus.queued || job?.status == ArtifactJobStatus.generating) {
-            maxOf(storedProgress.readyCount, backfillReadyCounts[language] ?: 0).coerceAtMost(storedProgress.totalCount)
-        } else {
-            storedProgress.readyCount
+        val activeJobStatus = job?.status?.takeIf {
+            it == ArtifactJobStatus.queued || it == ArtifactJobStatus.generating || it == ArtifactJobStatus.error
+        }
+        val readyCount = when (activeJobStatus) {
+            ArtifactJobStatus.queued -> 0
+            ArtifactJobStatus.generating,
+            ArtifactJobStatus.error -> (backfillReadyCounts[language] ?: 0).coerceAtMost(storedProgress.totalCount)
+            null,
+            ArtifactJobStatus.ready -> storedProgress.readyCount
         }
         return FlipcardTranslationBackfillStatusResponse(
             language = language,
             status = when {
+                activeJobStatus != null -> activeJobStatus.toSpellingAudioStatus()
                 storedProgress.readyCount >= storedProgress.totalCount && storedProgress.totalCount > 0 -> SpellingAudioStatus.ready
-                job != null -> job.status.toSpellingAudioStatus()
                 else -> SpellingAudioStatus.missing
             },
             readyCount = readyCount,
             totalCount = storedProgress.totalCount,
             error = job?.error,
-            updatedAt = storedProgress.updatedAt,
+            updatedAt = if (activeJobStatus == null) storedProgress.updatedAt else null,
         )
     }
 
