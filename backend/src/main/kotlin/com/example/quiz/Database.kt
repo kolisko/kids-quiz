@@ -211,6 +211,13 @@ object DatabaseMigrator {
                     recordMigration(15, "add_artifact_jobs")
                 }
             }
+            if (16 !in applied) {
+                val wordsByLanguage = connection.readAudioCacheMigrationWordsByLanguage()
+                SpellingAudioService.migrateInstructionlessCacheKeys(wordsByLanguage)
+                connection.transaction {
+                    recordMigration(16, "migrate_audio_cache_keys_without_instructions")
+                }
+            }
         }
         migrated = true
     }
@@ -1675,6 +1682,28 @@ fun Connection.readEnglishAudioCacheMigrationWords(): List<String> {
             buildList {
                 while (rows.next()) add(rows.getString("word"))
             }
+        }
+    }
+}
+
+fun Connection.readAudioCacheMigrationWordsByLanguage(): Map<LearningLanguage, List<String>> {
+    return prepareStatement(
+        """
+        SELECT language, word
+        FROM spelling_words
+        UNION
+        SELECT language, word
+        FROM flipcard_translations
+        ORDER BY language, word
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            val words = linkedMapOf<LearningLanguage, MutableList<String>>()
+            while (rows.next()) {
+                val language = rows.getString("language").toLearningLanguage()
+                words.getOrPut(language) { mutableListOf() }.add(rows.getString("word"))
+            }
+            words
         }
     }
 }

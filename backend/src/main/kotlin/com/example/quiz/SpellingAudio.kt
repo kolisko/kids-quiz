@@ -33,6 +33,14 @@ private const val defaultSpanishTtsInstructions =
     "Pronounce this as a single Spanish word in neutral Spanish phonology. Say only the word. Do not use English pronunciation, even if the spelling is identical or similar to English, for example tractor, hotel, radio, animal."
 private const val defaultSpanishSpellingTtsInstructions =
     "Spell this Spanish word clearly one letter at a time using Spanish letter names. Say only the letters in Spanish. Do not pronounce the full word."
+private const val previousGermanTtsInstructions =
+    "Pronounce this single German word clearly in standard German. Say only the word."
+private const val previousGermanSpellingTtsInstructions =
+    "Spell this German word clearly one letter at a time using German letter names. Say only the letters."
+private const val previousSpanishTtsInstructions =
+    "Pronounce this single Spanish word clearly in neutral Spanish. Say only the word."
+private const val previousSpanishSpellingTtsInstructions =
+    "Spell this Spanish word clearly one letter at a time using Spanish letter names. Say only the letters."
 
 @Serializable
 private data class OpenAiTtsRequest(
@@ -161,6 +169,24 @@ object SpellingAudioService {
         }
     }
 
+    fun migrateInstructionlessCacheKeys(wordsByLanguage: Map<LearningLanguage, List<String>>) {
+        wordsByLanguage.forEach { (language, rawWords) ->
+            rawWords
+                .mapNotNull(::spellingAudioWord)
+                .forEach { word ->
+                    SpellingAudioKind.entries.forEach { kind ->
+                        val targetPath = audioPath(word, kind, language)
+                        if (Files.isRegularFile(targetPath)) return@forEach
+                        val sourcePath = legacyInstructionAudioPaths(word, kind, language)
+                            .firstOrNull { Files.isRegularFile(it) }
+                            ?: return@forEach
+                        Files.createDirectories(targetPath.parent)
+                        Files.copy(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
+                    }
+                }
+        }
+    }
+
     private fun generateToFile(
         word: SpellingWord,
         kind: SpellingAudioKind,
@@ -210,7 +236,38 @@ object SpellingAudioService {
                 word.normalized,
                 ttsModel(),
                 ttsVoice(),
-                ttsInstructions(kind, language),
+                ttsInput(word, kind, language),
+            )
+                .joinToString("\u001f"),
+        )
+    }
+
+    private fun legacyInstructionAudioPaths(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): List<Path> {
+        val paths = instructionMigrationCandidates(kind, language)
+            .map { instructions ->
+                runtimeDataPath("audio", "spelling").resolve("${legacyInstructionAudioCacheKey(word, kind, language, instructions)}.mp3")
+            }
+            .toMutableList()
+        if (language == LearningLanguage.en) {
+            paths.add(legacyAudioPath(word, kind))
+        }
+        return paths.distinct()
+    }
+
+    private fun legacyInstructionAudioCacheKey(
+        word: SpellingWord,
+        kind: SpellingAudioKind,
+        language: LearningLanguage,
+        instructions: String,
+    ): String {
+        return sha256Hex(
+            listOf(
+                language.name,
+                kind.name,
+                word.normalized,
+                ttsModel(),
+                ttsVoice(),
+                instructions,
                 ttsInput(word, kind, language),
             )
                 .joinToString("\u001f"),
@@ -256,6 +313,22 @@ object SpellingAudioService {
                     ?: defaultSpanishSpellingTtsInstructions
             }
         }
+    }
+
+    private fun instructionMigrationCandidates(kind: SpellingAudioKind, language: LearningLanguage): List<String> {
+        val current = ttsInstructions(kind, language)
+        val previousDefault = when (language) {
+            LearningLanguage.en -> null
+            LearningLanguage.de -> when (kind) {
+                SpellingAudioKind.word -> previousGermanTtsInstructions
+                SpellingAudioKind.spelling -> previousGermanSpellingTtsInstructions
+            }
+            LearningLanguage.es -> when (kind) {
+                SpellingAudioKind.word -> previousSpanishTtsInstructions
+                SpellingAudioKind.spelling -> previousSpanishSpellingTtsInstructions
+            }
+        }
+        return listOfNotNull(current, previousDefault).distinct()
     }
 
     private fun ttsInput(word: SpellingWord, kind: SpellingAudioKind, language: LearningLanguage): String {
