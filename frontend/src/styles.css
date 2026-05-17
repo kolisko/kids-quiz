@@ -843,6 +843,10 @@ textarea:disabled {
   min-height: 2.5rem;
 }
 
+.asset-row-actions {
+  justify-content: flex-end;
+}
+
 .asset-action-button {
   width: 2.45rem;
   height: 2.45rem;

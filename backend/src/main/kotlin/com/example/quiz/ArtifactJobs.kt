@@ -49,6 +49,7 @@ data class AudioJobPayload(
     val word: String,
     val language: LearningLanguage,
     val kind: SpellingAudioKind,
+    val force: Boolean = false,
 )
 
 @Serializable
@@ -105,12 +106,13 @@ object ArtifactGenerationQueue {
         language: LearningLanguage,
         kind: SpellingAudioKind,
         jobKind: ArtifactJobKind,
+        force: Boolean = false,
     ): ArtifactJobSnapshot {
         return enqueue(
             key = key,
             pool = ArtifactJobPool.audio,
             kind = jobKind,
-            payloadJson = artifactJobJson.encodeToString(AudioJobPayload(word = word, language = language, kind = kind)),
+            payloadJson = artifactJobJson.encodeToString(AudioJobPayload(word = word, language = language, kind = kind, force = force)),
         )
     }
 
@@ -191,7 +193,7 @@ object ArtifactJobRunner {
             ArtifactJobKind.spelling_audio_word,
             ArtifactJobKind.spelling_audio_spelling -> {
                 val payload = artifactJobJson.decodeFromString<AudioJobPayload>(job.payloadJson)
-                SpellingAudioService.runQueuedGeneration(payload.word, payload.kind, payload.language)
+                SpellingAudioService.runQueuedGeneration(payload.word, payload.kind, payload.language, payload.force)
             }
             ArtifactJobKind.flipcard_translation -> {
                 val payload = artifactJobJson.decodeFromString<TranslationJobPayload>(job.payloadJson)

@@ -81,10 +81,11 @@ object SpellingAudioService {
             SpellingAudioKind.word -> ArtifactJobKind.spelling_audio_word
             SpellingAudioKind.spelling -> ArtifactJobKind.spelling_audio_spelling
         },
+        force: Boolean = false,
     ): SpellingAudioWordResponse? {
         val word = spellingAudioWord(rawWord) ?: return null
         val outputPath = audioPath(word, kind, language)
-        if (Files.isRegularFile(outputPath)) {
+        if (!force && Files.isRegularFile(outputPath)) {
             ArtifactGenerationQueue.markReady(audioJobKey(word, kind, language))
             return SpellingAudioWordResponse(
                 word = word.text,
@@ -100,6 +101,7 @@ object SpellingAudioService {
             language = language,
             kind = kind,
             jobKind = jobKind,
+            force = force,
         )
         return SpellingAudioWordResponse(
             word = word.text,
@@ -125,10 +127,11 @@ object SpellingAudioService {
         rawWord: String,
         kind: SpellingAudioKind,
         language: LearningLanguage = LearningLanguage.en,
+        force: Boolean = false,
     ) {
         val word = spellingAudioWord(rawWord) ?: throw SpellingAudioException("invalid_word")
         val outputPath = audioPath(word, kind, language)
-        if (!Files.isRegularFile(outputPath)) {
+        if (force || !Files.isRegularFile(outputPath)) {
             generateToFile(word, kind, language, outputPath)
         }
     }

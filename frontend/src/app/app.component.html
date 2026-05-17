@@ -408,9 +408,43 @@
         <span [class.asset-ready]="asset.audioStatus === 'ready'" [class.asset-missing]="asset.audioStatus !== 'ready'">
           {{ assetAudioStatusLabel(asset) }}
         </span>
-        <button class="icon-button" type="button" (click)="playAssetAudio(asset)" [disabled]="!asset.audioUrl" title="Přehrát" aria-label="Přehrát">
-          <lucide-icon [img]="playIcon" [size]="24"></lucide-icon>
-        </button>
+        <div class="asset-card-actions asset-row-actions">
+          <button
+            class="icon-button asset-action-button"
+            type="button"
+            (click)="regenerateAssetAudio(asset)"
+            [disabled]="assetAudioIsGenerating(asset)"
+            title="Přegenerovat audio"
+            aria-label="Přegenerovat audio">
+            <lucide-icon [img]="refreshIcon" [size]="20"></lucide-icon>
+          </button>
+          <div class="asset-info-action">
+            <button
+              class="icon-button asset-action-button"
+              type="button"
+              (click)="toggleAssetTranslationInfo(asset)"
+              [class.asset-action-button-active]="assetTranslationInfoVisible(asset)"
+              title="Jazykové mutace"
+              aria-label="Jazykové mutace">
+              <lucide-icon [img]="infoIcon" [size]="20"></lucide-icon>
+            </button>
+            <div class="asset-info-tooltip" *ngIf="assetTranslationInfoVisible(asset)">
+              <div class="asset-info-row" *ngFor="let variant of assetLanguageVariants(asset)">
+                <span>{{ variant.label }}</span>
+                <strong>{{ variant.word }}</strong>
+              </div>
+            </div>
+          </div>
+          <button
+            class="icon-button asset-action-button"
+            type="button"
+            (click)="playAssetAudio(asset)"
+            [disabled]="!asset.audioUrl"
+            title="Přehrát audio"
+            aria-label="Přehrát audio">
+            <lucide-icon [img]="playIcon" [size]="20"></lucide-icon>
+          </button>
+        </div>
         <span class="asset-error" *ngIf="assetAudioError(asset)">{{ assetAudioError(asset) }}</span>
       </article>
     </div>

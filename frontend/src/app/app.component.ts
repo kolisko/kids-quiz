@@ -1166,13 +1166,22 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async generateAssetAudio(asset: FlipcardAsset): Promise<void> {
     if (asset.audioStatus === 'ready' || this.assetAudioIsGenerating(asset)) return;
+    await this.enqueueAssetAudio(asset, false);
+  }
+
+  async regenerateAssetAudio(asset: FlipcardAsset): Promise<void> {
+    if (this.assetAudioIsGenerating(asset)) return;
+    await this.enqueueAssetAudio(asset, true);
+  }
+
+  private async enqueueAssetAudio(asset: FlipcardAsset, force: boolean): Promise<void> {
     this.assetAudioGenerating = { ...this.assetAudioGenerating, [asset.normalized]: true };
     const { [asset.normalized]: _removed, ...nextErrors } = this.assetAudioErrors;
     this.assetAudioErrors = nextErrors;
     this.render();
 
     try {
-      const response = await this.apiPost<SpellingAudioWordResponse>(this.flipcardAudioPath(asset.word, asset.language), {});
+      const response = await this.apiPost<SpellingAudioWordResponse>(this.flipcardAudioPath(asset.word, asset.language, force), {});
       if (this.screen !== 'assetLibrary' || this.assetLibraryLanguage !== asset.language) return;
       this.applyAssetAudioResponse(response);
       if (response.status !== 'ready') {
@@ -1884,8 +1893,9 @@ export class AppComponent implements OnInit, OnDestroy {
     return `spelling/audio/words/${encodeURIComponent(word)}?language=${this.selectedLanguage}&kind=${kind}`;
   }
 
-  private flipcardAudioPath(word: string, language: LearningLanguage = this.selectedLanguage): string {
-    return `flipcards/audio/${language}/${encodeURIComponent(word)}`;
+  private flipcardAudioPath(word: string, language: LearningLanguage = this.selectedLanguage, force = false): string {
+    const suffix = force ? '?force=true' : '';
+    return `flipcards/audio/${language}/${encodeURIComponent(word)}${suffix}`;
   }
 
   private audioStatusPath(word: string, kind: 'word' | 'spelling'): string {

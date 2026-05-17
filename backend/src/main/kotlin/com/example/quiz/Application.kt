@@ -377,12 +377,14 @@ fun Application.module() {
                     if (!Auth.requireAuthenticated(call)) return@post
                     val language = call.requirePathLearningLanguage() ?: return@post
                     val word = call.requireSpellingAudioWord() ?: return@post
+                    val force = call.request.queryParameters["force"] == "true"
                     try {
                         val response = SpellingAudioService.enqueueGeneration(
                             rawWord = word,
                             kind = SpellingAudioKind.word,
                             language = language,
                             jobKind = ArtifactJobKind.flipcard_audio_word,
+                            force = force,
                         )
                             ?: run {
                                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
