@@ -17,7 +17,7 @@ type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error';
-type TeslaMp3LoopMode = 'digital_silence' | 'near_silent_ticks' | 'soft_noise' | 'smooth_tone_220_micro' | 'smooth_tone_220_quiet' | 'smooth_tone_440_quiet' | 'smooth_sub_bass_55' | 'loopable_noise_quiet' | 'webaudio_tone_220_quiet' | 'webaudio_stream_220_quiet' | 'webaudio_stream_220_audible' | 'dual_html_220_quiet' | 'dual_html_440_audible' | 'soft_tone' | 'audible_tone' | 'loud_tone' | 'ambient_music';
+type TeslaMp3LoopMode = 'webaudio_tone_220_zero' | 'webaudio_tone_220_micro' | 'webaudio_tone_220_quiet' | 'dual_html_220_quiet' | 'dual_html_440_audible';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
@@ -26,7 +26,7 @@ const AUDIO_PREROLL_URL = createSilentWavDataUrl(AUDIO_PREROLL_MS);
 const TESLA_AUDIO_PRIME_MS = 1000;
 const TESLA_MP3_AUDIO_STORAGE_KEY = 'kidsQuizTeslaMp3AudioEnabled';
 const TESLA_MP3_LOOP_MODE_STORAGE_KEY = 'kidsQuizTeslaMp3LoopMode';
-const DEFAULT_TESLA_MP3_LOOP_MODE: TeslaMp3LoopMode = 'webaudio_stream_220_quiet';
+const DEFAULT_TESLA_MP3_LOOP_MODE: TeslaMp3LoopMode = 'webaudio_tone_220_micro';
 const TESLA_MP3_TEST_POLL_TIMEOUT_MS = 180000;
 
 interface TeslaMp3LoopOption {
@@ -50,29 +50,36 @@ interface TeslaMp3LoopOption {
 
 const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
   {
-    mode: 'webaudio_stream_220_quiet',
-    label: 'Nepřerušený stream 220 Hz',
-    description: 'Jeden trvale hrající audio stream; MP3 se do něj přimíchá bez výměny src.',
+    mode: 'webaudio_tone_220_zero',
+    label: 'WebAudio 220 Hz nulový',
+    description: 'WebAudio oscillator běží s nulovým gainem; test, jestli autu stačí běžící graf bez slyšitelného signálu.',
     volume: 1,
     backgroundMusic: false,
-    webAudioStream: {
+    webAudio: {
       frequency: 220,
-      gain: 0.0006,
-      duckedGain: 0.00008,
-      fadeMs: 90,
+      gain: 0,
     },
   },
   {
-    mode: 'webaudio_stream_220_audible',
-    label: 'Nepřerušený stream slyšitelný',
-    description: 'Stejný jeden MediaStream jako tichá varianta, ale se slyšitelným keepalive tónem.',
+    mode: 'webaudio_tone_220_micro',
+    label: 'WebAudio 220 Hz mikro',
+    description: 'WebAudio oscillator s výrazně menším gainem než předchozí tichá varianta.',
     volume: 1,
     backgroundMusic: false,
-    webAudioStream: {
+    webAudio: {
       frequency: 220,
-      gain: 0.012,
-      duckedGain: 0.0012,
-      fadeMs: 90,
+      gain: 0.00018,
+    },
+  },
+  {
+    mode: 'webaudio_tone_220_quiet',
+    label: 'WebAudio 220 Hz tichý',
+    description: 'WebAudio oscillator s nenulovým signálem; MP3 slovíčko hraje přes audio element.',
+    volume: 1,
+    backgroundMusic: false,
+    webAudio: {
+      frequency: 220,
+      gain: 0.00045,
     },
   },
   {
@@ -91,124 +98,14 @@ const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
     volume: 1,
     backgroundMusic: true,
   },
-  {
-    mode: 'digital_silence',
-    label: 'Digitální ticho',
-    description: 'Nulový WAV; kontrolní varianta, Chrome ji může ignorovat.',
-    url: createSilentWavDataUrl(TESLA_AUDIO_PRIME_MS),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'near_silent_ticks',
-    label: 'Téměř ticho +1/-1',
-    description: 'Extrémně slabý nenulový signál.',
-    url: createNearSilentWavDataUrl(TESLA_AUDIO_PRIME_MS),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'soft_noise',
-    label: 'Velmi slabý šum',
-    description: 'Náhodnější skoro neslyšitelný signál.',
-    url: createNoiseWavDataUrl(TESLA_AUDIO_PRIME_MS, 12),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'soft_tone',
-    label: 'Slabý tón',
-    description: 'Sotva slyšitelný 440 Hz tón.',
-    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 55),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'smooth_tone_220_micro',
-    label: 'Plynulý 220 Hz mikro',
-    description: '1s tón s nízkou amplitudou přímo ve WAV samplech.',
-    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 220, 10),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'smooth_tone_220_quiet',
-    label: 'Plynulý 220 Hz tichý',
-    description: '1s tón s přesnou periodou; silnější než mikro varianta.',
-    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 220, 24),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'smooth_tone_440_quiet',
-    label: 'Plynulý 440 Hz tichý',
-    description: '1s vyšší tón s nízkou amplitudou a navazující periodou.',
-    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 24),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'smooth_sub_bass_55',
-    label: 'Plynulý 55 Hz sub-bas',
-    description: '1s nízký tón; může být méně rušivý podle reproduktorů.',
-    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 55, 40),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'loopable_noise_quiet',
-    label: 'Plynulý slabý šum',
-    description: '1s šum složený z periodických vln, aby navazoval na hraně smyčky.',
-    url: createLoopableNoiseWavDataUrl(TESLA_AUDIO_PRIME_MS, 22),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'webaudio_tone_220_quiet',
-    label: 'WebAudio 220 Hz tichý',
-    description: 'Běžící oscillator bez HTML audio loopu; MP3 dál hraje přes audio element.',
-    volume: 1,
-    backgroundMusic: false,
-    webAudio: {
-      frequency: 220,
-      gain: 0.0008,
-    },
-  },
-  {
-    mode: 'audible_tone',
-    label: 'Slyšitelný tón',
-    description: 'Jasně slyšitelný testovací 440 Hz tón.',
-    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 1400),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'loud_tone',
-    label: 'Hlasitý tón',
-    description: 'Diagnostická hlasitá varianta.',
-    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 7000),
-    volume: 1,
-    backgroundMusic: false,
-  },
-  {
-    mode: 'ambient_music',
-    label: 'Hudba na pozadí',
-    description: 'Jemná generovaná smyčka; při MP3 se stáhne a potom vrátí.',
-    url: createAmbientMusicWavDataUrl(4000),
-    volume: 0.28,
-    backgroundMusic: true,
-  },
 ];
 
 const TESLA_MP3_TEST_VARIANT_MODES: TeslaMp3LoopMode[] = [
-  'webaudio_stream_220_quiet',
-  'webaudio_stream_220_audible',
+  'webaudio_tone_220_zero',
+  'webaudio_tone_220_micro',
+  'webaudio_tone_220_quiet',
   'dual_html_220_quiet',
   'dual_html_440_audible',
-  'webaudio_tone_220_quiet',
-  'smooth_tone_220_quiet',
-  'near_silent_ticks',
-  'ambient_music',
 ];
 
 const TESLA_MP3_TEST_VARIANTS = TESLA_MP3_TEST_VARIANT_MODES.map((mode) => teslaMp3LoopOption(mode));
