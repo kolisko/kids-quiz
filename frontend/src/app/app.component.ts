@@ -17,7 +17,7 @@ type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error';
-type TeslaMp3LoopMode = 'webaudio_tone_220_zero' | 'webaudio_tone_220_micro' | 'webaudio_tone_220_quiet' | 'dual_html_220_quiet' | 'dual_html_440_audible';
+type TeslaMp3LoopMode = 'webaudio_tone_220_zero' | 'webaudio_tone_220_micro' | 'webaudio_tone_220_quiet' | 'dual_html_220_quiet';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
@@ -52,7 +52,7 @@ const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
   {
     mode: 'webaudio_tone_220_zero',
     label: 'WebAudio 220 Hz nulový',
-    description: 'WebAudio oscillator běží s nulovým gainem; test, jestli autu stačí běžící graf bez slyšitelného signálu.',
+    description: 'WebAudio oscillator běží s nulovým gainem; MP3 slovíčko se dekóduje a hraje přes stejný AudioContext.',
     volume: 1,
     backgroundMusic: false,
     webAudio: {
@@ -63,7 +63,7 @@ const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
   {
     mode: 'webaudio_tone_220_micro',
     label: 'WebAudio 220 Hz mikro',
-    description: 'WebAudio oscillator s výrazně menším gainem než předchozí tichá varianta.',
+    description: 'Velmi slabý 220Hz keepalive v AudioContextu; výchozí varianta pro Teslu.',
     volume: 1,
     backgroundMusic: false,
     webAudio: {
@@ -74,7 +74,7 @@ const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
   {
     mode: 'webaudio_tone_220_quiet',
     label: 'WebAudio 220 Hz tichý',
-    description: 'WebAudio oscillator s nenulovým signálem; MP3 slovíčko hraje přes audio element.',
+    description: 'O něco silnější, ale pořád tichý 220Hz keepalive, když mikro nestačí držet vstup.',
     volume: 1,
     backgroundMusic: false,
     webAudio: {
@@ -90,14 +90,6 @@ const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
     volume: 1,
     backgroundMusic: true,
   },
-  {
-    mode: 'dual_html_440_audible',
-    label: 'Dva HTML kanály slyšitelně',
-    description: 'Stejné dva HTML audio kanály, ale s jasně slyšitelným keepalive tónem.',
-    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 1400),
-    volume: 1,
-    backgroundMusic: true,
-  },
 ];
 
 const TESLA_MP3_TEST_VARIANT_MODES: TeslaMp3LoopMode[] = [
@@ -105,7 +97,6 @@ const TESLA_MP3_TEST_VARIANT_MODES: TeslaMp3LoopMode[] = [
   'webaudio_tone_220_micro',
   'webaudio_tone_220_quiet',
   'dual_html_220_quiet',
-  'dual_html_440_audible',
 ];
 
 const TESLA_MP3_TEST_VARIANTS = TESLA_MP3_TEST_VARIANT_MODES.map((mode) => teslaMp3LoopOption(mode));
@@ -315,7 +306,6 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly refreshIcon = RefreshCw;
   readonly infoIcon = Info;
   readonly teslaAudioIcon = CarFront;
-  readonly teslaMp3LoopOptions = TESLA_MP3_LOOP_OPTIONS;
   readonly teslaMp3TestVariants = TESLA_MP3_TEST_VARIANTS;
   readonly practiceModes: PracticeModeOption[] = [
     { mode: 'product_to_factors', label: 'Najdi násobení' },
@@ -404,11 +394,11 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardAdvancing = false;
   teslaMp3AudioEnabled = readLocalBoolean(TESLA_MP3_AUDIO_STORAGE_KEY, false);
   teslaMp3LoopMode: TeslaMp3LoopMode = readLocalLoopMode();
-  teslaMp3LoopTestActive = false;
   teslaMp3TestActiveMode: TeslaMp3LoopMode | null = null;
   teslaMp3TestBusyMode: TeslaMp3LoopMode | null = null;
   teslaMp3TestStatus: string | null = null;
   teslaMp3PlayerState: TeslaMp3PlayerState = 'off';
+  celebrationTapActive = false;
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
     product_to_factors: new Map<number, number>(),
@@ -422,9 +412,10 @@ export class AppComponent implements OnInit, OnDestroy {
   private teslaMp3Audio: TeslaMp3AudioController | null = null;
   private readonly teslaMp3TestAudio = new Map<TeslaMp3LoopMode, TeslaMp3AudioController>();
   private readonly teslaMp3TestAudioUrls = new Map<string, string>();
-  private teslaMp3GestureHandler: (() => void) | null = null;
   private backendPlaybackToken = 0;
   private ttsPlaybackToken = 0;
+  private spellingAudioSequenceToken = 0;
+  private celebrationTapTimerId: number | null = null;
   private assetLibraryPollToken: AssetLibraryPollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
   private translationBackfillPollTokens: Partial<Record<LearningLanguage, PollToken>> = {};
@@ -456,7 +447,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get teslaMp3AudioBadgeVisible(): boolean {
-    return this.teslaMp3AudioEnabled || this.teslaMp3PlayerState !== 'off';
+    return this.teslaMp3PlayerState === 'priming'
+      || this.teslaMp3PlayerState === 'loop'
+      || this.teslaMp3PlayerState === 'mp3'
+      || this.teslaMp3PlayerState === 'error';
   }
 
   get teslaMp3AudioBadgeLabel(): string {
@@ -661,7 +655,6 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async ngOnInit(): Promise<void> {
-    this.installTeslaMp3GestureListeners();
     void this.loadSnapshotNumber();
     await this.loadGameData();
   }
@@ -676,7 +669,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.stopBackendAudio();
     this.destroyTeslaMp3Audio();
     this.destroyTeslaMp3TestAudio();
-    this.removeTeslaMp3GestureListeners();
+    this.clearCelebrationTapTimer();
   }
 
   async submitLogin(): Promise<void> {
@@ -754,6 +747,7 @@ export class AppComponent implements OnInit, OnDestroy {
   async startFlipcards(): Promise<void> {
     this.activeGame = 'flipcards';
     this.resetRoundState();
+    void this.startTeslaMp3AudioForTest();
     this.loading = true;
     this.render();
     try {
@@ -801,6 +795,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.activeGame = 'spelling';
     this.resetRoundState();
     this.startingSpellingMode = mode;
+    void this.startTeslaMp3AudioForTest();
     this.render();
     try {
       const [stats, settings, session] = await Promise.all([
@@ -845,6 +840,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.activeGame = 'multiplication';
     this.selectedMode = mode;
     this.resetRoundState();
+    void this.startTeslaMp3AudioForTest();
     this.setScreen('play');
     this.pickQuestion();
     this.render();
@@ -855,11 +851,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   replaySpellingAudio(): void {
-    this.playCurrentSpellingAudio();
+    void this.playCurrentSpellingWordAudio();
   }
 
   replaySpellingAnswerAudio(): void {
-    this.playCurrentSpellingLettersAudio();
+    void this.playCurrentSpellingAnswerThenWord();
   }
 
   async retryAudioGeneration(): Promise<void> {
@@ -894,24 +890,10 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  onTeslaMp3LoopModeChange(mode: TeslaMp3LoopMode): void {
+  selectTeslaMp3LoopMode(mode: TeslaMp3LoopMode): void {
     this.teslaMp3LoopMode = teslaMp3LoopOption(mode).mode;
     writeLocalString(TESLA_MP3_LOOP_MODE_STORAGE_KEY, this.teslaMp3LoopMode);
     this.teslaMp3Audio?.setLoopMode(this.teslaMp3LoopMode);
-  }
-
-  async toggleTeslaMp3LoopTest(): Promise<void> {
-    if (!this.teslaMp3AudioEnabled) return;
-    if (this.teslaMp3LoopTestActive) {
-      this.destroyTeslaMp3Audio();
-      return;
-    }
-    this.teslaMp3LoopTestActive = true;
-    try {
-      await this.getTeslaMp3Audio().startLoop();
-    } catch {
-      this.teslaMp3LoopTestActive = false;
-    }
   }
 
   isTeslaMp3VariantActive(mode: TeslaMp3LoopMode): boolean {
@@ -1006,6 +988,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async openSettings(): Promise<void> {
+    this.stopTeslaMp3AudioForTest();
     this.setScreen('settings');
     this.clearTimer();
     this.ttsDetailsVisible = false;
@@ -1579,6 +1562,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.checkTtsSupport();
     } else {
       this.ttsDetailsVisible = false;
+      void this.startTeslaMp3AudioForTest();
     }
     this.pickQuestion();
   }
@@ -1589,6 +1573,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.checkTtsSupport();
     } else {
       this.ttsDetailsVisible = false;
+      void this.startTeslaMp3AudioForTest();
     }
     this.pickQuestion();
   }
@@ -1983,6 +1968,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private setScreen(screen: Screen): void {
+    if (this.screen === 'finished' && screen !== 'finished') {
+      this.clearCelebrationTapTimer();
+      this.celebrationTapActive = false;
+    }
     if (this.screen === 'assetLibrary' && screen !== 'assetLibrary') {
       this.cancelAssetLibraryPolling();
     }
@@ -2337,7 +2326,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.cancelAssetLibraryPolling();
     this.cancelAudioPrepPolling();
     this.clearTimer();
+    this.spellingAudioSequenceToken += 1;
     this.stopBackendAudio();
+    this.destroyTeslaMp3Audio();
+    this.destroyTeslaMp3TestAudio();
     this.score = 0;
     this.currentIndex = null;
     this.spellingWordIndex = null;
@@ -2504,44 +2496,70 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private playCurrentSpellingAudio(): void {
-    if (this.settings.audioSource === 'backend_mp3') {
-      this.playCurrentBackendAudio();
-      return;
-    }
-    const word = this.currentSpellingWord?.text;
-    if (!word) return;
-    void this.speakText(word, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
+    void this.playCurrentSpellingWordAudio();
   }
 
   private playCurrentSpellingLettersAudio(): void {
+    void this.playCurrentSpellingAnswerThenWord();
+  }
+
+  private async playCurrentSpellingWordAudio(): Promise<void> {
+    const token = this.nextSpellingAudioSequenceToken();
     if (this.settings.audioSource === 'backend_mp3') {
-      this.playCurrentBackendSpellingAudio();
+      await this.playCurrentBackendAudio(token);
       return;
     }
     const word = this.currentSpellingWord?.text;
     if (!word) return;
-    void this.speakText(
-      formatSpellingSpeech(word, this.selectedLanguage),
+    await this.speakText(word, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
+  }
+
+  private async playCurrentSpellingAnswerThenWord(): Promise<void> {
+    const token = this.nextSpellingAudioSequenceToken();
+    const word = this.currentSpellingWord;
+    if (!word) return;
+    if (this.settings.audioSource === 'backend_mp3') {
+      await this.playCurrentBackendSpellingAudio(token);
+      if (!this.spellingAudioSequenceStillCurrent(token, word.normalized)) return;
+      await this.playCurrentBackendAudio(token);
+      return;
+    }
+    await this.speakText(
+      formatSpellingSpeech(word.text, this.selectedLanguage),
       0.82,
       'Prehrani spelling TTS skoncilo chybou.',
       'Prehrani spelling TTS selhalo.',
     );
+    if (!this.spellingAudioSequenceStillCurrent(token, word.normalized)) return;
+    await this.speakText(word.text, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
   }
 
-  private playCurrentBackendAudio(): void {
+  private async playCurrentBackendAudio(token = this.spellingAudioSequenceToken): Promise<void> {
     const word = this.currentSpellingWord;
     if (!word) return;
     const audioUrl = this.backendAudioUrls[word.normalized];
     if (!audioUrl) return;
-    void this.playBackendAudioUrl(audioUrl);
+    await this.playBackendAudioUrl(audioUrl);
+    if (!this.spellingAudioSequenceStillCurrent(token, word.normalized)) return;
   }
 
-  private playCurrentBackendSpellingAudio(): void {
+  private async playCurrentBackendSpellingAudio(token = this.spellingAudioSequenceToken): Promise<void> {
     const word = this.currentSpellingWord;
     if (!word) return;
     const audioUrl = this.backendSpellingAudioUrls[word.normalized];
     if (!audioUrl) return;
-    void this.playBackendAudioUrl(audioUrl);
+    await this.playBackendAudioUrl(audioUrl);
+  }
+
+  private nextSpellingAudioSequenceToken(): number {
+    this.spellingAudioSequenceToken += 1;
+    return this.spellingAudioSequenceToken;
+  }
+
+  private spellingAudioSequenceStillCurrent(token: number, normalized: string): boolean {
+    return this.spellingAudioSequenceToken === token
+      && this.currentSpellingWord?.normalized === normalized
+      && this.activeGame === 'spelling';
   }
 
   private preloadAdjacentFlipcardAssets(): void {
@@ -2597,35 +2615,6 @@ export class AppComponent implements OnInit, OnDestroy {
     await this.speakText(word.text, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
   }
 
-  private installTeslaMp3GestureListeners(): void {
-    if (this.teslaMp3GestureHandler !== null) return;
-    const handler = () => {
-      void this.primeTeslaMp3AudioFromGesture();
-    };
-    this.teslaMp3GestureHandler = handler;
-    window.addEventListener('pointerdown', handler, { capture: true, passive: true });
-    window.addEventListener('click', handler, { capture: true, passive: true });
-    window.addEventListener('keydown', handler, { capture: true, passive: true });
-  }
-
-  private removeTeslaMp3GestureListeners(): void {
-    const handler = this.teslaMp3GestureHandler;
-    if (handler === null) return;
-    window.removeEventListener('pointerdown', handler, true);
-    window.removeEventListener('click', handler, true);
-    window.removeEventListener('keydown', handler, true);
-    this.teslaMp3GestureHandler = null;
-  }
-
-  private async primeTeslaMp3AudioFromGesture(): Promise<void> {
-    if (!this.teslaMp3AudioModeActive) return;
-    try {
-      await this.getTeslaMp3Audio().prime();
-    } catch {
-      // The next user gesture will try again if Tesla's Chromium blocks this one.
-    }
-  }
-
   private getTeslaMp3Audio(): TeslaMp3AudioController {
     if (this.teslaMp3Audio === null) {
       this.teslaMp3Audio = new TeslaMp3AudioController(
@@ -2636,10 +2625,25 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.teslaMp3Audio;
   }
 
+  private async startTeslaMp3AudioForTest(): Promise<void> {
+    if (!this.teslaMp3AudioModeActive) return;
+    this.destroyTeslaMp3TestAudio();
+    try {
+      await this.getTeslaMp3Audio().startLoop();
+    } catch {
+      // The next MP3 playback attempt will try to start the loop again.
+    }
+  }
+
+  private stopTeslaMp3AudioForTest(): void {
+    this.stopBackendAudio();
+    this.destroyTeslaMp3Audio();
+    this.destroyTeslaMp3TestAudio();
+  }
+
   private destroyTeslaMp3Audio(): void {
     this.teslaMp3Audio?.destroy();
     this.teslaMp3Audio = null;
-    this.teslaMp3LoopTestActive = false;
     this.updateTeslaMp3PlayerState(this.teslaMp3AudioModeActive ? 'idle' : 'off');
   }
 
@@ -2889,6 +2893,60 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
   }
 
+  playCelebrationTap(): void {
+    this.clearCelebrationTapTimer();
+    this.celebrationTapActive = false;
+    this.render();
+    window.setTimeout(() => {
+      this.celebrationTapActive = true;
+      this.playCelebrationFanfare();
+      this.celebrationTapTimerId = window.setTimeout(() => {
+        this.celebrationTapActive = false;
+        this.celebrationTapTimerId = null;
+        this.render();
+      }, 720);
+      this.render();
+    }, 0);
+  }
+
+  private playCelebrationFanfare(): void {
+    try {
+      const AudioContextConstructor = window.AudioContext
+        ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextConstructor) return;
+      const context = new AudioContextConstructor();
+      const masterGain = context.createGain();
+      const now = context.currentTime;
+      masterGain.gain.setValueAtTime(0.0001, now);
+      masterGain.gain.exponentialRampToValueAtTime(0.11, now + 0.03);
+      masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62);
+      masterGain.connect(context.destination);
+      [523.25, 659.25, 783.99].forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const start = now + index * 0.11;
+        const stop = start + 0.25;
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(frequency, start);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.8, start + 0.025);
+        gain.gain.exponentialRampToValueAtTime(0.0001, stop);
+        oscillator.connect(gain);
+        gain.connect(masterGain);
+        oscillator.start(start);
+        oscillator.stop(stop + 0.02);
+      });
+      if (context.state === 'suspended') {
+        void context.resume();
+      }
+      window.setTimeout(() => {
+        void context.close().catch(() => undefined);
+      }, 900);
+    } catch {
+      // Celebration tap animation should still run if Web Audio is unavailable.
+    }
+  }
+
   private async apiGet<T>(path: string, redirectOnUnauthorized = true): Promise<T> {
     const separator = path.includes('?') ? '&' : '?';
     const response = await fetch(`/api/${path}${separator}_=${Date.now()}`, {
@@ -2946,6 +3004,13 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  private clearCelebrationTapTimer(): void {
+    if (this.celebrationTapTimerId !== null) {
+      window.clearTimeout(this.celebrationTapTimerId);
+      this.celebrationTapTimerId = null;
+    }
+  }
+
   private clearTtsVoiceCheck(): void {
     if (this.ttsVoicesTimerId !== null) {
       window.clearTimeout(this.ttsVoicesTimerId);
@@ -2972,10 +3037,19 @@ interface TeslaStreamAudioLoop {
   wordDone: (() => void) | null;
 }
 
+interface TeslaWebAudioLoop {
+  context: AudioContext;
+  oscillator: OscillatorNode;
+  keepaliveGain: GainNode;
+  wordSource: AudioBufferSourceNode | null;
+  wordGain: GainNode | null;
+  wordDone: (() => void) | null;
+}
+
 class TeslaMp3AudioController {
   private readonly audio = new Audio();
   private foregroundAudio: HTMLAudioElement | null = null;
-  private webAudioLoop: { context: AudioContext; oscillator: OscillatorNode; gain: GainNode } | null = null;
+  private webAudioLoop: TeslaWebAudioLoop | null = null;
   private streamAudioLoop: TeslaStreamAudioLoop | null = null;
   private playbackToken = 0;
   private primed = false;
@@ -3030,6 +3104,11 @@ class TeslaMp3AudioController {
       return;
     }
 
+    if (loop.webAudio) {
+      await this.playWithWebAudio(audioUrl, token);
+      return;
+    }
+
     if (loop.backgroundMusic) {
       await this.playWithBackgroundFade(audioUrl, token);
       return;
@@ -3066,6 +3145,13 @@ class TeslaMp3AudioController {
     if (loop.webAudioStream && this.streamAudioLoop) {
       this.stopStreamWord();
       this.rampStreamKeepalive(loop.webAudioStream.gain, loop.webAudioStream.fadeMs);
+      if (!this.destroyed && this.primed) {
+        this.setState('loop');
+      }
+      return;
+    }
+    if (loop.webAudio && this.webAudioLoop) {
+      this.stopWebAudioWord();
       if (!this.destroyed && this.primed) {
         this.setState('loop');
       }
@@ -3196,26 +3282,40 @@ class TeslaMp3AudioController {
 
   private async startWebAudioLoop(loop: TeslaMp3LoopOption, throwOnFailure: boolean): Promise<void> {
     if (!loop.webAudio) return;
-    this.stopWebAudioLoop();
     try {
-      const AudioContextConstructor = this.audioContextConstructor();
-      const context = new AudioContextConstructor();
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = loop.webAudio.frequency;
-      gain.gain.value = loop.webAudio.gain;
-      oscillator.connect(gain);
-      gain.connect(context.destination);
-      oscillator.start();
-      if (context.state === 'suspended') {
-        await context.resume();
+      const webLoop = this.webAudioLoop ?? this.createWebAudioLoop(loop);
+      this.webAudioLoop = webLoop;
+      webLoop.oscillator.frequency.setValueAtTime(loop.webAudio.frequency, webLoop.context.currentTime);
+      webLoop.keepaliveGain.gain.setValueAtTime(loop.webAudio.gain, webLoop.context.currentTime);
+      if (webLoop.context.state === 'suspended') {
+        await webLoop.context.resume();
       }
-      this.webAudioLoop = { context, oscillator, gain };
     } catch (error) {
       this.setState('error');
       if (throwOnFailure) throw error;
     }
+  }
+
+  private createWebAudioLoop(loop: TeslaMp3LoopOption): TeslaWebAudioLoop {
+    if (!loop.webAudio) throw new Error('WebAudio loop is not configured.');
+    const AudioContextConstructor = this.audioContextConstructor();
+    const context = new AudioContextConstructor();
+    const oscillator = context.createOscillator();
+    const keepaliveGain = context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = loop.webAudio.frequency;
+    keepaliveGain.gain.value = loop.webAudio.gain;
+    oscillator.connect(keepaliveGain);
+    keepaliveGain.connect(context.destination);
+    oscillator.start();
+    return {
+      context,
+      oscillator,
+      keepaliveGain,
+      wordSource: null,
+      wordGain: null,
+      wordDone: null,
+    };
   }
 
   private async waitForAudioReady(): Promise<void> {
@@ -3263,6 +3363,77 @@ class TeslaMp3AudioController {
       audio.addEventListener('abort', done, { once: true });
       audio.addEventListener('emptied', done, { once: true });
       void audio.play().catch(() => done());
+    });
+  }
+
+  private async playWithWebAudio(audioUrl: string, token: number): Promise<void> {
+    const loop = this.currentLoopOption();
+    await this.startWebAudioLoop(loop, false);
+    const webLoop = this.webAudioLoop;
+    if (!loop.webAudio || !webLoop || this.destroyed || this.playbackToken !== token) return;
+
+    let source: AudioBufferSourceNode | null = null;
+    let wordGain: GainNode | null = null;
+    try {
+      const buffer = await this.fetchAudioBuffer(webLoop.context, audioUrl);
+      if (this.destroyed || this.playbackToken !== token) return;
+
+      this.stopWebAudioWord();
+      source = webLoop.context.createBufferSource();
+      wordGain = webLoop.context.createGain();
+      source.buffer = buffer;
+      wordGain.gain.value = 1;
+      source.connect(wordGain);
+      wordGain.connect(webLoop.context.destination);
+      webLoop.wordSource = source;
+      webLoop.wordGain = wordGain;
+
+      this.setState('mp3');
+      const timeoutMs = Math.max(10000, buffer.duration * 1000 + 1200);
+      await this.playWebAudioSourceUntilDone(webLoop, source, timeoutMs);
+    } finally {
+      if (webLoop.wordSource === source) {
+        webLoop.wordSource = null;
+        webLoop.wordGain = null;
+      }
+      try {
+        source?.disconnect();
+      } catch {
+        // Some browsers disconnect ended sources automatically.
+      }
+      try {
+        wordGain?.disconnect();
+      } catch {
+        // Some browsers disconnect ended nodes automatically.
+      }
+      if (!this.destroyed && this.playbackToken === token) {
+        this.setState('loop');
+      }
+    }
+  }
+
+  private async playWebAudioSourceUntilDone(
+    webLoop: TeslaWebAudioLoop,
+    source: AudioBufferSourceNode,
+    timeoutMs: number,
+  ): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const timeout = window.setTimeout(() => done(), timeoutMs);
+      const done = () => {
+        window.clearTimeout(timeout);
+        source.onended = null;
+        if (webLoop.wordDone === done) {
+          webLoop.wordDone = null;
+        }
+        resolve();
+      };
+      webLoop.wordDone = done;
+      source.onended = done;
+      try {
+        source.start();
+      } catch {
+        done();
+      }
     });
   }
 
@@ -3425,13 +3596,47 @@ class TeslaMp3AudioController {
     this.streamAudioLoop = null;
   }
 
+  private stopWebAudioWord(): void {
+    const loop = this.webAudioLoop;
+    if (!loop?.wordSource) return;
+    const source = loop.wordSource;
+    const gain = loop.wordGain;
+    const done = loop.wordDone;
+    loop.wordSource = null;
+    loop.wordGain = null;
+    loop.wordDone = null;
+    try {
+      source.stop();
+    } catch {
+      // The source may already be stopped or not started yet.
+    }
+    done?.();
+    try {
+      source.disconnect();
+    } catch {
+      // Some browsers disconnect stopped sources automatically.
+    }
+    try {
+      gain?.disconnect();
+    } catch {
+      // Some browsers disconnect stopped nodes automatically.
+    }
+  }
+
   private stopWebAudioLoop(): void {
     if (!this.webAudioLoop) return;
     const loop = this.webAudioLoop;
+    this.stopWebAudioWord();
     try {
       loop.oscillator.stop();
     } catch {
       // The oscillator may already be stopped if the browser tears down the context.
+    }
+    try {
+      loop.oscillator.disconnect();
+      loop.keepaliveGain.disconnect();
+    } catch {
+      // Some browsers disconnect closed graphs automatically.
     }
     void loop.context.close().catch(() => undefined);
     this.webAudioLoop = null;

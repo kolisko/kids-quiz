@@ -446,6 +446,18 @@ lucide-icon {
   line-height: 1.1;
 }
 
+.spelling-word-audio-button {
+  margin-top: 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.55rem 1rem;
+  color: #0f766e;
+  background: rgba(204, 251, 241, 0.72);
+  cursor: pointer;
+  font-size: clamp(1.25rem, 3.5vw, 2rem);
+  font-weight: 950;
+}
+
 .wide-action {
   grid-column: 1 / -1;
 }
@@ -669,6 +681,12 @@ textarea {
   border: 1px solid rgba(15, 118, 110, 0.16);
   border-radius: 0.5rem;
   background: rgba(255, 255, 255, 0.72);
+}
+
+.tesla-audio-test-selected {
+  border-color: rgba(15, 118, 110, 0.5);
+  background: rgba(204, 251, 241, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.18);
 }
 
 .tesla-audio-test-copy {
@@ -1096,6 +1114,9 @@ textarea:disabled {
   place-items: center;
   width: min(42vh, 20rem);
   aspect-ratio: 1;
+  border: 0;
+  cursor: pointer;
+  isolation: isolate;
 }
 
 .animal-fallback {
@@ -1119,6 +1140,47 @@ textarea:disabled {
   width: 100%;
   height: 100%;
   filter: drop-shadow(0 24px 30px rgba(15, 23, 42, 0.18));
+}
+
+.celebration-tap .animal-image {
+  animation: celebrationPop 680ms cubic-bezier(.2,.9,.25,1.3);
+}
+
+.celebration-burst {
+  position: absolute;
+  z-index: 0;
+  width: 28%;
+  aspect-ratio: 1;
+  clip-path: polygon(50% 0%, 61% 34%, 98% 35%, 68% 56%, 79% 91%, 50% 70%, 21% 91%, 32% 56%, 2% 35%, 39% 34%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.celebration-burst-one {
+  background: rgba(94, 234, 212, 0.64);
+  transform: translate(-68%, -44%) scale(0.3);
+}
+
+.celebration-burst-two {
+  background: rgba(251, 191, 36, 0.66);
+  transform: translate(72%, -18%) scale(0.3);
+}
+
+.celebration-burst-three {
+  background: rgba(244, 114, 182, 0.58);
+  transform: translate(8%, 68%) scale(0.3);
+}
+
+.celebration-tap .celebration-burst-one {
+  animation: celebrationBurstOne 680ms ease-out;
+}
+
+.celebration-tap .celebration-burst-two {
+  animation: celebrationBurstTwo 680ms ease-out 60ms;
+}
+
+.celebration-tap .celebration-burst-three {
+  animation: celebrationBurstThree 680ms ease-out 110ms;
 }
 
 .confetti {
@@ -1180,6 +1242,28 @@ textarea:disabled {
 @keyframes bounce {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-1.3rem); }
+}
+
+@keyframes celebrationPop {
+  0% { transform: scale(1) rotate(0); }
+  32% { transform: scale(1.16) rotate(-5deg); }
+  64% { transform: scale(0.96) rotate(4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+@keyframes celebrationBurstOne {
+  0% { opacity: 0.9; transform: translate(-32%, -18%) scale(0.22); }
+  100% { opacity: 0; transform: translate(-104%, -76%) scale(1.18); }
+}
+
+@keyframes celebrationBurstTwo {
+  0% { opacity: 0.86; transform: translate(30%, -10%) scale(0.22); }
+  100% { opacity: 0; transform: translate(104%, -34%) scale(1.14); }
+}
+
+@keyframes celebrationBurstThree {
+  0% { opacity: 0.8; transform: translate(0, 30%) scale(0.22); }
+  100% { opacity: 0; transform: translate(12%, 110%) scale(1.16); }
 }
 
 @keyframes audioPulse {

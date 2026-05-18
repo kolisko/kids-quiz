@@ -194,25 +194,25 @@
         Tesla režim pro MP3 audio v tomto prohlížeči
       </label>
       <div class="tesla-loop-settings" *ngIf="teslaMp3AudioEnabled">
-        <label>
-          MP3 keepalive smyčka
-          <select
-            name="teslaMp3LoopMode"
-            [(ngModel)]="teslaMp3LoopMode"
-            (ngModelChange)="onTeslaMp3LoopModeChange($event)">
-            <option *ngFor="let option of teslaMp3LoopOptions" [value]="option.mode">
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
+        <p class="settings-note tesla-loop-description">MP3 keepalive smyčka</p>
         <p class="settings-note tesla-loop-description">{{ currentTeslaMp3LoopOption.description }}</p>
         <div class="tesla-audio-test-grid">
-          <div class="tesla-audio-test-row" *ngFor="let option of teslaMp3TestVariants">
+          <div
+            class="tesla-audio-test-row"
+            *ngFor="let option of teslaMp3TestVariants"
+            [class.tesla-audio-test-selected]="teslaMp3LoopMode === option.mode">
             <div class="tesla-audio-test-copy">
               <strong>{{ option.label }}</strong>
               <span>{{ option.description }}</span>
             </div>
             <div class="tesla-audio-test-actions">
+              <button
+                class="secondary-button compact-button"
+                type="button"
+                [disabled]="teslaMp3LoopMode === option.mode"
+                (click)="selectTeslaMp3LoopMode(option.mode)">
+                {{ teslaMp3LoopMode === option.mode ? 'Používá se' : 'Používat' }}
+              </button>
               <button
                 class="secondary-button compact-button"
                 type="button"
@@ -515,6 +515,13 @@
         </button>
         <span class="label">{{ answerVisible ? 'Odpověď' : 'Otázka' }}</span>
         <h1>{{ answerVisible ? currentAnswerText : currentQuestionText }}</h1>
+        <button
+          class="spelling-word-audio-button"
+          type="button"
+          *ngIf="activeGame === 'spelling' && answerVisible && currentSpellingWord"
+          (click)="replaySpellingAudio()">
+          {{ currentSpellingWord.text }}
+        </button>
         <p class="answer-hint" *ngIf="!answerVisible && currentAnswerHint">{{ currentAnswerHint }}</p>
         <p class="timeout-note" *ngIf="timedOut">Čas vypršel, bod je odečtený.</p>
       </div>
@@ -573,7 +580,17 @@
 
   <section class="finish-screen" *ngIf="screen === 'finished'">
     <div class="confetti">*  +  *  +  *</div>
-    <div class="animal-frame" [ngClass]="surprise.animationClass">
+    <div
+      class="animal-frame"
+      [ngClass]="[surprise.animationClass, celebrationTapActive ? 'celebration-tap' : '']"
+      (click)="playCelebrationTap()"
+      role="button"
+      tabindex="0"
+      (keydown.enter)="playCelebrationTap()"
+      (keydown.space)="playCelebrationTap(); $event.preventDefault()">
+      <span class="celebration-burst celebration-burst-one" aria-hidden="true"></span>
+      <span class="celebration-burst celebration-burst-two" aria-hidden="true"></span>
+      <span class="celebration-burst celebration-burst-three" aria-hidden="true"></span>
       <span class="animal-fallback">*</span>
       <img class="animal-image" [src]="surprise.imagePath" alt="Gratulace">
     </div>
