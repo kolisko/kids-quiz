@@ -49,7 +49,7 @@ fun Application.module() {
     }
     install(CORS) {
         allowCredentials = true
-        allowHost("beatka.duckdns.org", schemes = listOf("https"))
+        allowHost("beatka.eu", schemes = listOf("https"))
         allowHost("localhost:8080", schemes = listOf("http"))
         allowHost("127.0.0.1:8080", schemes = listOf("http"))
         allowHost("localhost:4200", schemes = listOf("http"))

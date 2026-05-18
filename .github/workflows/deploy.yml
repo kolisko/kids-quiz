@@ -15,9 +15,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  KIDS_QUIZ_DOMAIN: beatka.duckdns.org
-  KIDS_QUIZ_EXTRA_DOMAINS: beatka.207-180-242-157.sslip.io
-  KIDS_QUIZ_HEALTHCHECK_DOMAIN: beatka.207-180-242-157.sslip.io
+  KIDS_QUIZ_DOMAIN: beatka.eu
+  KIDS_QUIZ_EXTRA_DOMAINS: ""
+  KIDS_QUIZ_HEALTHCHECK_DOMAIN: beatka.eu
   KIDS_QUIZ_REMOTE_ROOT: /opt/kids-quiz
 
 jobs:

@@ -1,4 +1,4 @@
-beatka.duckdns.org {
+beatka.eu {
     @noStore not path_regexp ^/api/flipcards/images/.+\.(webp|png|jpe?g)$
     header @noStore Cache-Control "no-store"
     reverse_proxy app:8080

@@ -11,8 +11,8 @@ val kidsQuizImage = providers.gradleProperty("kidsQuizImage").orElse("kids-quiz:
 val kidsQuizPlatform = providers.gradleProperty("kidsQuizPlatform").orElse("linux/amd64")
 val kidsQuizHost = providers.gradleProperty("kidsQuizHost").orElse("contabo")
 val kidsQuizRemoteRoot = providers.gradleProperty("kidsQuizRemoteRoot").orElse("/opt/kids-quiz")
-val kidsQuizDomain = providers.gradleProperty("kidsQuizDomain").orElse("beatka.duckdns.org")
-val kidsQuizExtraDomains = providers.gradleProperty("kidsQuizExtraDomains").orElse("beatka.207-180-242-157.sslip.io")
+val kidsQuizDomain = providers.gradleProperty("kidsQuizDomain").orElse("beatka.eu")
+val kidsQuizExtraDomains = providers.gradleProperty("kidsQuizExtraDomains").orElse("")
 
 val deployDir = layout.buildDirectory.dir("deploy")
 val imageContextDir = deployDir.map { it.dir("image-context") }
