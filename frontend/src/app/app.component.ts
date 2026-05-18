@@ -1,9 +1,9 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, CarFront, Info, ListRestart, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings } from 'lucide-angular';
+import { ArrowLeft, CarFront, Info, ListRestart, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings, Trophy } from 'lucide-angular';
 
-type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'finished';
+type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
 type QuizTestType = 'multiplication' | 'english';
 type ActiveGame = 'multiplication' | 'spelling' | 'flipcards';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
@@ -279,8 +279,17 @@ interface FlipcardOption {
 }
 
 interface AnimalSurprise {
+  animalKey: string;
   imagePath: string;
   animationClass: string;
+}
+
+interface TrophyItem {
+  animalKey: string;
+  imagePath: string;
+  wonCount: number;
+  firstWonAt: string;
+  lastWonAt: string;
 }
 
 type CelebrationEffect = 'pop' | 'spin' | 'squash' | 'bounce';
@@ -325,6 +334,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly refreshIcon = RefreshCw;
   readonly infoIcon = Info;
   readonly teslaAudioIcon = CarFront;
+  readonly trophyIcon = Trophy;
   readonly teslaMp3TestVariants = TESLA_MP3_TEST_VARIANTS;
   readonly practiceModes: PracticeModeOption[] = [
     { mode: 'product_to_factors', label: 'Najdi násobení' },
@@ -404,6 +414,9 @@ export class AppComponent implements OnInit, OnDestroy {
   assetImageErrors: Record<string, string> = {};
   assetAudioErrors: Record<string, string> = {};
   assetTranslationInfoKey: string | null = null;
+  trophies: TrophyItem[] = [];
+  trophiesLoading = false;
+  trophiesError: string | null = null;
   translationBackfillStatusByLanguage: Record<LearningLanguage, FlipcardTranslationBackfillStatusResponse | null> = { en: null, de: null, es: null };
   translationBackfillLoading = false;
   translationBackfillError: string | null = null;
@@ -1104,6 +1117,23 @@ export class AppComponent implements OnInit, OnDestroy {
         this.assetLibraryLoading = false;
         this.render();
       }
+    }
+  }
+
+  async openTrophies(): Promise<void> {
+    this.clearTimer();
+    this.ttsDetailsVisible = false;
+    this.trophiesError = null;
+    this.trophiesLoading = true;
+    this.setScreen('trophies');
+    this.render();
+    try {
+      this.trophies = await this.apiGet<TrophyItem[]>('trophies');
+    } catch {
+      this.trophiesError = 'Sbírku trofejí se nepodařilo načíst.';
+    } finally {
+      this.trophiesLoading = false;
+      this.render();
     }
   }
 
@@ -3019,6 +3049,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.celebrationTapTimerId = window.setTimeout(() => {
         this.celebrationTap = null;
         this.celebrationTapTimerId = null;
+        if (isFinalTap) {
+          void this.awardCurrentTrophy();
+        }
         this.render();
       }, 720);
       this.render();
@@ -3041,17 +3074,30 @@ export class AppComponent implements OnInit, OnDestroy {
   private nextCelebrationTap(): CelebrationTapState {
     const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
     const animalWidth = Math.min(window.innerHeight * 0.42, 20 * rootFontSize);
-    const maxOffsetX = Math.max(0, Math.min(7.5, ((window.innerWidth - animalWidth) / 2 - 8) / rootFontSize));
-    const maxOffsetY = Math.max(1.2, Math.min(8.5, (window.innerHeight * 0.12) / rootFontSize));
-    const nextOffsetX = this.celebrationPosition.offsetX + randomNumber(-2.2, 2.2);
-    const nextOffsetY = this.celebrationPosition.offsetY + randomNumber(-1.9, 0.7);
+    const maxOffsetX = Math.max(4, ((window.innerWidth - animalWidth) / 2 - 12) / rootFontSize);
+    const maxOffsetY = Math.max(5, Math.min(20, (window.innerHeight * 0.34) / rootFontSize));
+    const nextOffsetX = this.nextCelebrationAxisOffset(this.celebrationPosition.offsetX, -maxOffsetX, maxOffsetX);
+    const nextOffsetY = this.nextCelebrationAxisOffset(this.celebrationPosition.offsetY, -maxOffsetY, -1.2);
     return {
       effect: randomItem<CelebrationEffect>(['pop', 'spin', 'squash', 'bounce'], 'pop'),
       direction: randomItem<CelebrationDirection>(['left', 'right'], 'right'),
       burst: randomItem<CelebrationBurst>(['wide', 'high', 'low'], 'wide'),
-      offsetX: clamp(nextOffsetX, -maxOffsetX, maxOffsetX),
-      offsetY: clamp(nextOffsetY, -maxOffsetY, -1.2),
+      offsetX: nextOffsetX,
+      offsetY: nextOffsetY,
     };
+  }
+
+  private nextCelebrationAxisOffset(current: number, min: number, max: number): number {
+    const range = max - min;
+    const edgePadding = Math.max(0.8, range * 0.08);
+    const candidates = [
+      randomNumber(min, max),
+      randomNumber(min, max),
+      randomNumber(min, min + edgePadding),
+      randomNumber(max - edgePadding, max),
+    ];
+    const farCandidates = candidates.filter((candidate) => Math.abs(candidate - current) >= range * 0.34);
+    return randomItem(farCandidates.length ? farCandidates : candidates, current);
   }
 
   private nextCelebrationEscapeTap(): CelebrationTapState {
@@ -3067,6 +3113,14 @@ export class AppComponent implements OnInit, OnDestroy {
       offsetY: escapeY,
       escaping: true,
     };
+  }
+
+  private async awardCurrentTrophy(): Promise<void> {
+    try {
+      this.trophies = await this.apiPost<TrophyItem[]>('trophies', { animalKey: this.surprise.animalKey });
+    } catch {
+      // Trophy awarding is celebratory only; gameplay should not be interrupted by a transient save failure.
+    }
   }
 
   private playCelebrationFanfare(): void {
@@ -3906,10 +3960,6 @@ function randomNumber(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 function answerCountLabel(count: number): string {
   if (count === 1) return '1 správná odpověď';
   if (count > 1 && count < 5) return `${count} správné odpovědi`;
@@ -4188,6 +4238,7 @@ function parseApiError(body: string): string | null {
 }
 
 const surprises: AnimalSurprise[] = Array.from({ length: 40 }, (_, index) => ({
+  animalKey: `animal-${String(index + 1).padStart(2, '0')}`,
   imagePath: `/assets/animals/animal-${String(index + 1).padStart(2, '0')}.svg`,
   animationClass: ['pop', 'floaty', 'wiggle', 'spinny', 'bounce'][index % 5],
 }));

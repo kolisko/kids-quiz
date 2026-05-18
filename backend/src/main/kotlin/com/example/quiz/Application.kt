@@ -33,6 +33,7 @@ private val appJson = Json {
     encodeDefaults = true
     prettyPrint = false
 }
+private val validTrophyAnimalKeys = (1..40).map { "animal-${it.toString().padStart(2, '0')}" }.toSet()
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
@@ -108,6 +109,21 @@ fun Application.module() {
                         return@put
                     }
                     call.respond(SettingsStore.replace(request))
+                }
+            }
+            route("/trophies") {
+                get {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    call.respond(TrophyStore.readAll())
+                }
+                post {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val request = runCatching { call.receive<TrophyAwardRequest>() }.getOrNull()
+                    if (request == null || request.animalKey !in validTrophyAnimalKeys) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_trophy"))
+                        return@post
+                    }
+                    call.respond(TrophyStore.award(request.animalKey))
                 }
             }
             route("/spelling") {

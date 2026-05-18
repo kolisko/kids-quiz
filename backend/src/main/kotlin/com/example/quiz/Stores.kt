@@ -33,6 +33,23 @@ object SettingsStore {
     }
 }
 
+object TrophyStore {
+    private val lock = Any()
+
+    fun readAll(): List<TrophyItem> = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readTrophies()
+        }
+    }
+
+    fun award(animalKey: String): List<TrophyItem> = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.awardTrophy(animalKey)
+            connection.readTrophies()
+        }
+    }
+}
+
 object QuestionsStore {
     private val lock = Any()
 
