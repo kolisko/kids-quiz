@@ -104,6 +104,7 @@ data class LoginRequest(
 data class AppSettings(
     val secondsLimit: Int = 30,
     val targetScore: Int = 10,
+    val celebrationTapLimit: Int = 100,
     val audioSource: AudioSource = AudioSource.browser_tts,
     val flipcardSource: FlipcardSource = FlipcardSource.all_words,
 )

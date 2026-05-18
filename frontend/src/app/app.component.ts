@@ -110,6 +110,7 @@ interface LanguageOption {
 interface GameSettings {
   secondsLimit: number;
   targetScore: number;
+  celebrationTapLimit: number;
   audioSource: AudioSource;
   flipcardSource: FlipcardSource;
 }
@@ -290,6 +291,8 @@ interface CelebrationTapState {
   effect: CelebrationEffect;
   direction: CelebrationDirection;
   burst: CelebrationBurst;
+  offsetX: number;
+  offsetY: number;
 }
 
 interface TtsDiagnostics {
@@ -337,7 +340,7 @@ export class AppComponent implements OnInit, OnDestroy {
   password = '';
   snapshotNumber = 'dev';
 
-  settings: GameSettings = { secondsLimit: 30, targetScore: 10, audioSource: 'browser_tts', flipcardSource: 'all_words' };
+  settings: GameSettings = { secondsLimit: 30, targetScore: 10, celebrationTapLimit: 100, audioSource: 'browser_tts', flipcardSource: 'all_words' };
   tests: QuizTest[] = [];
   selectedTest: QuizTest | null = null;
   selectedLanguage: LearningLanguage = 'en';
@@ -409,6 +412,7 @@ export class AppComponent implements OnInit, OnDestroy {
   teslaMp3TestStatus: string | null = null;
   teslaMp3PlayerState: TeslaMp3PlayerState = 'off';
   celebrationTap: CelebrationTapState | null = null;
+  celebrationTapCount = 0;
   spellingAnswerWordActive = false;
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
@@ -480,6 +484,14 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentTeslaMp3LoopOption(): TeslaMp3LoopOption {
     return teslaMp3LoopOption(this.teslaMp3LoopMode);
+  }
+
+  get celebrationTapOffsetX(): number {
+    return this.celebrationTap?.offsetX ?? 0;
+  }
+
+  get celebrationTapOffsetY(): number {
+    return this.celebrationTap?.offsetY ?? 0;
   }
 
   get currentQuestionText(): string {
@@ -1439,8 +1451,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.settingsError = null;
     this.loading = true;
     try {
-      const [savedSettings] = await Promise.all([
-        this.apiPut<GameSettings>('settings', this.normalizedSettings()),
+      const savedSettings = await this.apiPut<GameSettings>('settings', this.normalizedSettings());
+      this.applySettings(savedSettings);
+
+      const languageSaveResults = await Promise.allSettled([
         ...this.languageOptions.map((language) => this.apiPut<SpellingSet[]>(`spelling/sets?language=${language.code}`, {
           sets: this.spellingSetInputsByLanguage[language.code],
           latestSetIndex: this.latestSpellingSetIndexByLanguage[language.code],
@@ -1449,9 +1463,17 @@ export class AppComponent implements OnInit, OnDestroy {
           words: this.flipcardWordInputByLanguage[language.code],
         })),
       ]);
-      this.applySettings(savedSettings);
-      await this.loadAllLanguageSettings();
-      this.settingsSaved = true;
+      if (languageSaveResults.some((result) => result.status === 'rejected')) {
+        this.settingsError = 'Nastavení aplikace je uložené, ale nepodařilo se uložit některá jazyková data.';
+        return;
+      }
+
+      try {
+        await this.loadAllLanguageSettings();
+        this.settingsSaved = true;
+      } catch {
+        this.settingsError = 'Nastavení je uložené, ale nepodařilo se znovu načíst aktuální hodnoty.';
+      }
     } catch {
       this.settingsError = 'Nastavení se nepodařilo uložit.';
     } finally {
@@ -1585,6 +1607,7 @@ export class AppComponent implements OnInit, OnDestroy {
     return {
       secondsLimit: Math.max(1, Math.floor(Number(this.settings.secondsLimit) || 10)),
       targetScore: Math.max(1, Math.floor(Number(this.settings.targetScore) || 10)),
+      celebrationTapLimit: Math.max(0, Math.floor(Number(this.settings.celebrationTapLimit) || 0)),
       audioSource: this.settings.audioSource === 'backend_mp3' ? 'backend_mp3' : 'browser_tts',
       flipcardSource: this.settings.flipcardSource === 'ready_only' ? 'ready_only' : 'all_words',
     };
@@ -1592,9 +1615,11 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private applySettings(settings: GameSettings): void {
     const wasTeslaMp3AudioModeActive = this.teslaMp3AudioModeActive;
+    const celebrationTapLimit = Math.floor(Number(settings.celebrationTapLimit));
     this.settings = {
       secondsLimit: Math.max(1, Math.floor(Number(settings.secondsLimit) || 30)),
       targetScore: Math.max(1, Math.floor(Number(settings.targetScore) || 10)),
+      celebrationTapLimit: Number.isFinite(celebrationTapLimit) ? Math.max(0, celebrationTapLimit) : 100,
       audioSource: settings.audioSource === 'backend_mp3' ? 'backend_mp3' : 'browser_tts',
       flipcardSource: settings.flipcardSource === 'ready_only' ? 'ready_only' : 'all_words',
     };
@@ -2017,9 +2042,14 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private setScreen(screen: Screen): void {
+    if (this.screen !== 'finished' && screen === 'finished') {
+      this.celebrationTapCount = 0;
+      this.celebrationTap = null;
+    }
     if (this.screen === 'finished' && screen !== 'finished') {
       this.clearCelebrationTapTimer();
       this.celebrationTap = null;
+      this.celebrationTapCount = 0;
     }
     if (this.screen === 'play' && screen !== 'play') {
       this.clearSpellingAnswerWordActive();
@@ -2964,6 +2994,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   playCelebrationTap(): void {
+    if (this.celebrationTapCount >= this.settings.celebrationTapLimit) return;
+    this.celebrationTapCount += 1;
     this.clearCelebrationTapTimer();
     this.celebrationTap = null;
     this.render();
@@ -2992,10 +3024,16 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private nextCelebrationTap(): CelebrationTapState {
+    const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const animalWidth = Math.min(window.innerHeight * 0.42, 20 * rootFontSize);
+    const maxOffsetX = Math.max(0, Math.min(7.5, ((window.innerWidth - animalWidth) / 2 - 8) / rootFontSize));
+    const maxOffsetY = Math.max(1.2, Math.min(8.5, (window.innerHeight * 0.12) / rootFontSize));
     return {
       effect: randomItem<CelebrationEffect>(['pop', 'spin', 'squash', 'bounce'], 'pop'),
       direction: randomItem<CelebrationDirection>(['left', 'right'], 'right'),
       burst: randomItem<CelebrationBurst>(['wide', 'high', 'low'], 'wide'),
+      offsetX: randomNumber(-maxOffsetX, maxOffsetX),
+      offsetY: randomNumber(-maxOffsetY, -1.2),
     };
   }
 
@@ -3830,6 +3868,10 @@ class TeslaMp3AudioController {
 
 function randomItem<T>(items: readonly T[], fallback: T): T {
   return items[Math.floor(Math.random() * items.length)] ?? fallback;
+}
+
+function randomNumber(min: number, max: number): number {
+  return min + Math.random() * (max - min);
 }
 
 function answerCountLabel(count: number): string {

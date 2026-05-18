@@ -507,6 +507,36 @@ button,
   box-shadow: 0 12px 24px rgba(239, 68, 68, 0.22);
 }
 
+.primary-button.test-button {
+  min-height: 18rem;
+  padding: 2.25rem 2rem;
+}
+
+.primary-button.mode-button {
+  min-height: 14.5rem;
+  padding: 2rem 1.5rem;
+}
+
+.primary-button.flipcard-option-button {
+  min-height: 10.8rem;
+  padding: 1.55rem 1rem;
+}
+
+.primary-button.answer-button,
+.danger-button.answer-button {
+  min-height: 16.5rem;
+  padding: 2.25rem 2.25rem;
+}
+
+.primary-button.finish-play-button {
+  min-height: 10.8rem;
+  padding: 1.8rem 2.2rem;
+}
+
+.primary-button.settings-save-button {
+  min-height: 10rem;
+}
+
 button:hover {
   transform: translateY(-1px);
 }
@@ -1132,6 +1162,7 @@ textarea:disabled {
   border: 0;
   cursor: pointer;
   isolation: isolate;
+  transition: left 260ms cubic-bezier(.2,.9,.25,1.16), top 260ms cubic-bezier(.2,.9,.25,1.16);
 }
 
 .animal-fallback {
@@ -1458,19 +1489,20 @@ textarea:disabled {
     width: min(100%, 42rem);
   }
 
-  .test-button {
+  .primary-button.test-button {
     min-height: 15rem;
     padding: 1.75rem 1rem;
     font-size: clamp(1.15rem, 4.5vw, 1.8rem);
   }
 
-  .mode-button {
+  .primary-button.mode-button {
     min-height: 12.8rem;
     padding: 1.5rem 1rem;
     font-size: clamp(1.15rem, 5vw, 1.75rem);
   }
 
-  .answer-actions .answer-button {
+  .answer-actions .primary-button.answer-button,
+  .answer-actions .danger-button.answer-button {
     min-height: 13.5rem;
     padding-inline: 1.25rem;
     font-size: clamp(1.2rem, 5vw, 1.65rem);

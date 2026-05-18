@@ -27,6 +27,7 @@ private const val largeMultiplicationTestName = "Velká násobilka"
 private const val englishTestName = "Angličtina"
 private const val defaultSecondsLimit = 30
 private const val defaultTargetScore = 10
+private const val defaultCelebrationTapLimit = 100
 private val defaultAudioSource = AudioSource.browser_tts
 private val defaultFlipcardSource = FlipcardSource.all_words
 
@@ -216,6 +217,12 @@ object DatabaseMigrator {
                 SpellingAudioService.migrateInstructionlessCacheKeys(wordsByLanguage)
                 connection.transaction {
                     recordMigration(16, "migrate_audio_cache_keys_without_instructions")
+                }
+            }
+            if (17 !in applied) {
+                connection.transaction {
+                    addCelebrationTapLimitSetting()
+                    recordMigration(17, "add_celebration_tap_limit_setting")
                 }
             }
         }
@@ -592,6 +599,7 @@ object DatabaseMigrator {
                     id INTEGER PRIMARY KEY CHECK(id = 1),
                     seconds_limit INTEGER NOT NULL DEFAULT $defaultSecondsLimit CHECK(seconds_limit >= 1),
                     target_score INTEGER NOT NULL DEFAULT $defaultTargetScore CHECK(target_score >= 1),
+                    celebration_tap_limit INTEGER NOT NULL DEFAULT $defaultCelebrationTapLimit CHECK(celebration_tap_limit >= 0),
                     audio_source TEXT NOT NULL DEFAULT '${defaultAudioSource.name}',
                     flipcard_source TEXT NOT NULL DEFAULT '${defaultFlipcardSource.name}',
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -600,8 +608,8 @@ object DatabaseMigrator {
             )
             statement.executeUpdate(
                 """
-                INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, flipcard_source, updated_at)
-                VALUES(1, $defaultSecondsLimit, $defaultTargetScore, '${defaultAudioSource.name}', '${defaultFlipcardSource.name}', CURRENT_TIMESTAMP)
+                INSERT INTO app_settings(id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, updated_at)
+                VALUES(1, $defaultSecondsLimit, $defaultTargetScore, $defaultCelebrationTapLimit, '${defaultAudioSource.name}', '${defaultFlipcardSource.name}', CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET
                     seconds_limit = $defaultSecondsLimit,
                     updated_at = CURRENT_TIMESTAMP
@@ -649,6 +657,28 @@ object DatabaseMigrator {
                 UPDATE app_settings
                 SET flipcard_source = '${defaultFlipcardSource.name}'
                 WHERE flipcard_source IS NULL OR flipcard_source = ''
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addCelebrationTapLimitSetting() {
+        createStatement().use { statement ->
+            val columns = statement.executeQuery("PRAGMA table_info(app_settings)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            if ("celebration_tap_limit" !in columns) {
+                statement.executeUpdate(
+                    "ALTER TABLE app_settings ADD COLUMN celebration_tap_limit INTEGER NOT NULL DEFAULT $defaultCelebrationTapLimit CHECK(celebration_tap_limit >= 0)",
+                )
+            }
+            statement.executeUpdate(
+                """
+                UPDATE app_settings
+                SET celebration_tap_limit = $defaultCelebrationTapLimit
+                WHERE celebration_tap_limit IS NULL OR celebration_tap_limit < 0
                 """.trimIndent(),
             )
         }
@@ -1300,7 +1330,7 @@ fun Connection.readAppSettings(): AppSettings {
     ensureAppSettingsRow()
     return prepareStatement(
         """
-        SELECT seconds_limit, target_score, audio_source, flipcard_source
+        SELECT seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source
         FROM app_settings
         WHERE id = 1
         """.trimIndent(),
@@ -1310,6 +1340,7 @@ fun Connection.readAppSettings(): AppSettings {
             AppSettings(
                 secondsLimit = rows.getInt("seconds_limit"),
                 targetScore = rows.getInt("target_score"),
+                celebrationTapLimit = rows.getInt("celebration_tap_limit"),
                 audioSource = rows.getString("audio_source").toAudioSource(),
                 flipcardSource = rows.getString("flipcard_source").toFlipcardSource(),
             )
@@ -1320,13 +1351,15 @@ fun Connection.readAppSettings(): AppSettings {
 fun Connection.replaceAppSettings(settings: AppSettings) {
     val secondsLimit = settings.secondsLimit.coerceAtLeast(1)
     val targetScore = settings.targetScore.coerceAtLeast(1)
+    val celebrationTapLimit = settings.celebrationTapLimit.coerceAtLeast(0)
     prepareStatement(
         """
-        INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, flipcard_source, updated_at)
-        VALUES(1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO app_settings(id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, updated_at)
+        VALUES(1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             seconds_limit = excluded.seconds_limit,
             target_score = excluded.target_score,
+            celebration_tap_limit = excluded.celebration_tap_limit,
             audio_source = excluded.audio_source,
             flipcard_source = excluded.flipcard_source,
             updated_at = CURRENT_TIMESTAMP
@@ -1334,8 +1367,9 @@ fun Connection.replaceAppSettings(settings: AppSettings) {
     ).use { statement ->
         statement.setInt(1, secondsLimit)
         statement.setInt(2, targetScore)
-        statement.setString(3, settings.audioSource.name)
-        statement.setString(4, settings.flipcardSource.name)
+        statement.setInt(3, celebrationTapLimit)
+        statement.setString(4, settings.audioSource.name)
+        statement.setString(5, settings.flipcardSource.name)
         statement.executeUpdate()
     }
 }
@@ -2028,8 +2062,8 @@ private fun Connection.readFlipcardConceptKeys(): List<String> {
 private fun Connection.ensureAppSettingsRow() {
     prepareStatement(
         """
-        INSERT INTO app_settings(id, seconds_limit, target_score, audio_source, flipcard_source, updated_at)
-        VALUES(1, $defaultSecondsLimit, $defaultTargetScore, '${defaultAudioSource.name}', '${defaultFlipcardSource.name}', CURRENT_TIMESTAMP)
+        INSERT INTO app_settings(id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, updated_at)
+        VALUES(1, $defaultSecondsLimit, $defaultTargetScore, $defaultCelebrationTapLimit, '${defaultAudioSource.name}', '${defaultFlipcardSource.name}', CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO NOTHING
         """.trimIndent(),
     ).use { it.executeUpdate() }

@@ -168,6 +168,10 @@
         Cílové skóre
         <input type="number" min="1" inputmode="numeric" [(ngModel)]="settings.targetScore" name="targetScore">
       </label>
+      <label>
+        Max tapnutí na gratulaci
+        <input type="number" min="0" inputmode="numeric" [(ngModel)]="settings.celebrationTapLimit" name="celebrationTapLimit">
+      </label>
     </div>
 
     <section class="settings-section">
@@ -321,7 +325,7 @@
 
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>
     <p class="error settings-error" *ngIf="settingsError">{{ settingsError }}</p>
-    <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading || translationBackfillActive">
+    <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading">
       Uložit
     </button>
   </section>
@@ -585,6 +589,8 @@
     <div
       class="animal-frame"
       [ngClass]="celebrationTapClasses()"
+      [style.left.rem]="celebrationTapOffsetX"
+      [style.top.rem]="celebrationTapOffsetY"
       (click)="playCelebrationTap()"
       role="button"
       tabindex="0"
