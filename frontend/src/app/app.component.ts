@@ -884,8 +884,17 @@ export class AppComponent implements OnInit, OnDestroy {
     this.setSpellingAnswerWordActive(true);
     try {
       if (this.settings.audioSource === 'backend_mp3') {
+        await this.playCurrentBackendSpellingAudio(token);
+        if (!this.spellingAudioSequenceStillCurrent(token, word.normalized)) return;
         await this.playCurrentBackendAudio(token);
       } else {
+        await this.speakText(
+          formatSpellingSpeech(word.text, this.selectedLanguage),
+          0.82,
+          'Prehrani spelling TTS skoncilo chybou.',
+          'Prehrani spelling TTS selhalo.',
+        );
+        if (!this.spellingAudioSequenceStillCurrent(token, word.normalized)) return;
         await this.speakText(word.text, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
       }
     } finally {

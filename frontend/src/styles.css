@@ -6,6 +6,7 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -17,6 +18,15 @@ input,
 textarea,
 lucide-icon {
   font: inherit;
+}
+
+button,
+[role="button"] {
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
 }
 
 .app {
@@ -314,15 +324,15 @@ lucide-icon {
 }
 
 .test-button {
-  min-height: 9rem;
-  padding: 1.4rem 2rem;
+  min-height: 18rem;
+  padding: 2.25rem 2rem;
   font-size: clamp(1.55rem, 3vw, 2.35rem);
   line-height: 1.08;
 }
 
 .mode-button {
-  min-height: 7.25rem;
-  padding: 1.25rem 1.5rem;
+  min-height: 14.5rem;
+  padding: 2rem 1.5rem;
   font-size: clamp(1.45rem, 3vw, 2.2rem);
   line-height: 1.08;
 }
@@ -391,8 +401,8 @@ lucide-icon {
 }
 
 .flipcard-option-button {
-  min-height: 5.4rem;
-  padding: 1rem;
+  min-height: 10.8rem;
+  padding: 1.55rem 1rem;
   font-size: clamp(1.1rem, 2.6vw, 1.75rem);
   overflow-wrap: anywhere;
 }
@@ -440,8 +450,8 @@ lucide-icon {
 }
 
 .answer-button {
-  min-height: 8.25rem;
-  padding: 1.45rem 2.25rem;
+  min-height: 16.5rem;
+  padding: 2.25rem 2.25rem;
   font-size: clamp(1.55rem, 3.2vw, 2.25rem);
   line-height: 1.1;
 }
@@ -486,8 +496,8 @@ lucide-icon {
 
 .finish-play-button {
   min-width: min(100%, 18rem);
-  min-height: 5.4rem;
-  padding: 1rem 2.2rem;
+  min-height: 10.8rem;
+  padding: 1.8rem 2.2rem;
   font-size: 1.45rem;
 }
 
@@ -1449,19 +1459,19 @@ textarea:disabled {
   }
 
   .test-button {
-    min-height: 7.5rem;
-    padding: 1.1rem 1rem;
+    min-height: 15rem;
+    padding: 1.75rem 1rem;
     font-size: clamp(1.15rem, 4.5vw, 1.8rem);
   }
 
   .mode-button {
-    min-height: 6.4rem;
-    padding: 1rem;
+    min-height: 12.8rem;
+    padding: 1.5rem 1rem;
     font-size: clamp(1.15rem, 5vw, 1.75rem);
   }
 
   .answer-actions .answer-button {
-    min-height: 6.75rem;
+    min-height: 13.5rem;
     padding-inline: 1.25rem;
     font-size: clamp(1.2rem, 5vw, 1.65rem);
   }
