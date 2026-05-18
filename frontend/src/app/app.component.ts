@@ -17,7 +17,7 @@ type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error';
-type TeslaMp3LoopMode = 'digital_silence' | 'near_silent_ticks' | 'soft_noise' | 'smooth_tone_220_micro' | 'smooth_tone_220_quiet' | 'smooth_tone_440_quiet' | 'smooth_sub_bass_55' | 'loopable_noise_quiet' | 'webaudio_tone_220_quiet' | 'webaudio_stream_220_quiet' | 'soft_tone' | 'audible_tone' | 'loud_tone' | 'ambient_music';
+type TeslaMp3LoopMode = 'digital_silence' | 'near_silent_ticks' | 'soft_noise' | 'smooth_tone_220_micro' | 'smooth_tone_220_quiet' | 'smooth_tone_440_quiet' | 'smooth_sub_bass_55' | 'loopable_noise_quiet' | 'webaudio_tone_220_quiet' | 'webaudio_stream_220_quiet' | 'webaudio_stream_220_audible' | 'dual_html_220_quiet' | 'dual_html_440_audible' | 'soft_tone' | 'audible_tone' | 'loud_tone' | 'ambient_music';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
@@ -27,6 +27,7 @@ const TESLA_AUDIO_PRIME_MS = 1000;
 const TESLA_MP3_AUDIO_STORAGE_KEY = 'kidsQuizTeslaMp3AudioEnabled';
 const TESLA_MP3_LOOP_MODE_STORAGE_KEY = 'kidsQuizTeslaMp3LoopMode';
 const DEFAULT_TESLA_MP3_LOOP_MODE: TeslaMp3LoopMode = 'webaudio_stream_220_quiet';
+const TESLA_MP3_TEST_POLL_TIMEOUT_MS = 180000;
 
 interface TeslaMp3LoopOption {
   mode: TeslaMp3LoopMode;
@@ -60,6 +61,35 @@ const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
       duckedGain: 0.00008,
       fadeMs: 90,
     },
+  },
+  {
+    mode: 'webaudio_stream_220_audible',
+    label: 'Nepřerušený stream slyšitelný',
+    description: 'Stejný jeden MediaStream jako tichá varianta, ale se slyšitelným keepalive tónem.',
+    volume: 1,
+    backgroundMusic: false,
+    webAudioStream: {
+      frequency: 220,
+      gain: 0.012,
+      duckedGain: 0.0012,
+      fadeMs: 90,
+    },
+  },
+  {
+    mode: 'dual_html_220_quiet',
+    label: 'Dva HTML kanály 220 Hz',
+    description: 'Keepalive HTML audio běží dál, MP3 slovíčko hraje ve druhém audio elementu.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 220, 24),
+    volume: 1,
+    backgroundMusic: true,
+  },
+  {
+    mode: 'dual_html_440_audible',
+    label: 'Dva HTML kanály slyšitelně',
+    description: 'Stejné dva HTML audio kanály, ale s jasně slyšitelným keepalive tónem.',
+    url: createToneWavDataUrl(TESLA_AUDIO_PRIME_MS, 440, 1400),
+    volume: 1,
+    backgroundMusic: true,
   },
   {
     mode: 'digital_silence',
@@ -169,6 +199,19 @@ const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
     backgroundMusic: true,
   },
 ];
+
+const TESLA_MP3_TEST_VARIANT_MODES: TeslaMp3LoopMode[] = [
+  'webaudio_stream_220_quiet',
+  'webaudio_stream_220_audible',
+  'dual_html_220_quiet',
+  'dual_html_440_audible',
+  'webaudio_tone_220_quiet',
+  'smooth_tone_220_quiet',
+  'near_silent_ticks',
+  'ambient_music',
+];
+
+const TESLA_MP3_TEST_VARIANTS = TESLA_MP3_TEST_VARIANT_MODES.map((mode) => teslaMp3LoopOption(mode));
 
 interface LanguageOption {
   code: LearningLanguage;
@@ -376,6 +419,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly infoIcon = Info;
   readonly teslaAudioIcon = CarFront;
   readonly teslaMp3LoopOptions = TESLA_MP3_LOOP_OPTIONS;
+  readonly teslaMp3TestVariants = TESLA_MP3_TEST_VARIANTS;
   readonly practiceModes: PracticeModeOption[] = [
     { mode: 'product_to_factors', label: 'Najdi násobení' },
     { mode: 'factors_to_product', label: 'Spočítej výsledek' },
@@ -464,6 +508,9 @@ export class AppComponent implements OnInit, OnDestroy {
   teslaMp3AudioEnabled = readLocalBoolean(TESLA_MP3_AUDIO_STORAGE_KEY, false);
   teslaMp3LoopMode: TeslaMp3LoopMode = readLocalLoopMode();
   teslaMp3LoopTestActive = false;
+  teslaMp3TestActiveMode: TeslaMp3LoopMode | null = null;
+  teslaMp3TestBusyMode: TeslaMp3LoopMode | null = null;
+  teslaMp3TestStatus: string | null = null;
   teslaMp3PlayerState: TeslaMp3PlayerState = 'off';
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
@@ -476,6 +523,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private ttsVoicesChangedHandler: (() => void) | null = null;
   private backendAudio: HTMLAudioElement | null = null;
   private teslaMp3Audio: TeslaMp3AudioController | null = null;
+  private readonly teslaMp3TestAudio = new Map<TeslaMp3LoopMode, TeslaMp3AudioController>();
+  private readonly teslaMp3TestAudioUrls = new Map<string, string>();
   private teslaMp3GestureHandler: (() => void) | null = null;
   private backendPlaybackToken = 0;
   private ttsPlaybackToken = 0;
@@ -729,6 +778,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearTtsVoiceCheck();
     this.stopBackendAudio();
     this.destroyTeslaMp3Audio();
+    this.destroyTeslaMp3TestAudio();
     this.removeTeslaMp3GestureListeners();
   }
 
@@ -932,6 +982,7 @@ export class AppComponent implements OnInit, OnDestroy {
   onAudioSourceChange(audioSource: AudioSource): void {
     if (audioSource !== 'backend_mp3') {
       this.destroyTeslaMp3Audio();
+      this.destroyTeslaMp3TestAudio();
     }
   }
 
@@ -940,6 +991,7 @@ export class AppComponent implements OnInit, OnDestroy {
     writeLocalBoolean(TESLA_MP3_AUDIO_STORAGE_KEY, enabled);
     if (!enabled || this.settings.audioSource !== 'backend_mp3') {
       this.destroyTeslaMp3Audio();
+      this.destroyTeslaMp3TestAudio();
     } else if (this.teslaMp3Audio === null) {
       this.updateTeslaMp3PlayerState('idle');
     }
@@ -962,6 +1014,63 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.getTeslaMp3Audio().startLoop();
     } catch {
       this.teslaMp3LoopTestActive = false;
+    }
+  }
+
+  isTeslaMp3VariantActive(mode: TeslaMp3LoopMode): boolean {
+    return this.teslaMp3TestActiveMode === mode;
+  }
+
+  isTeslaMp3VariantBusy(mode: TeslaMp3LoopMode): boolean {
+    return this.teslaMp3TestBusyMode === mode;
+  }
+
+  async toggleTeslaMp3VariantLoopTest(mode: TeslaMp3LoopMode): Promise<void> {
+    if (!this.canRunTeslaMp3VariantTest()) return;
+    if (this.teslaMp3TestActiveMode === mode) {
+      this.stopTeslaMp3TestController(mode);
+      this.teslaMp3TestStatus = null;
+      this.render();
+      return;
+    }
+    this.teslaMp3TestBusyMode = mode;
+    this.teslaMp3TestStatus = `Spouštím: ${teslaMp3LoopOption(mode).label}`;
+    this.render();
+    try {
+      await this.startTeslaMp3VariantLoop(mode);
+      this.teslaMp3TestStatus = `Běží: ${teslaMp3LoopOption(mode).label}`;
+    } catch (error) {
+      this.teslaMp3TestStatus = error instanceof Error ? error.message : 'Testovací smyčku se nepodařilo spustit.';
+      this.stopTeslaMp3TestController(mode);
+    } finally {
+      if (this.teslaMp3TestBusyMode === mode) {
+        this.teslaMp3TestBusyMode = null;
+      }
+      this.render();
+    }
+  }
+
+  async playTeslaMp3VariantTestWord(mode: TeslaMp3LoopMode): Promise<void> {
+    if (!this.canRunTeslaMp3VariantTest()) return;
+    this.teslaMp3TestBusyMode = mode;
+    this.teslaMp3TestStatus = `Připravuju testovací MP3: ${this.teslaMp3TestWordForLanguage(this.settingsLanguage)}`;
+    this.render();
+    try {
+      const audioUrl = await this.resolveTeslaMp3TestAudioUrl();
+      const controller = await this.startTeslaMp3VariantLoop(mode);
+      this.teslaMp3TestStatus = `Přehrávám test přes: ${teslaMp3LoopOption(mode).label}`;
+      this.render();
+      await controller.play(audioUrl);
+      if (this.teslaMp3TestActiveMode === mode) {
+        this.teslaMp3TestStatus = `Po testu dál běží: ${teslaMp3LoopOption(mode).label}`;
+      }
+    } catch (error) {
+      this.teslaMp3TestStatus = error instanceof Error ? error.message : 'Testovací slovo se nepodařilo přehrát.';
+    } finally {
+      if (this.teslaMp3TestBusyMode === mode) {
+        this.teslaMp3TestBusyMode = null;
+      }
+      this.render();
     }
   }
 
@@ -1563,6 +1672,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.secondsLeft = this.settings.secondsLimit;
     if (wasTeslaMp3AudioModeActive && !this.teslaMp3AudioModeActive) {
       this.destroyTeslaMp3Audio();
+      this.destroyTeslaMp3TestAudio();
     }
   }
 
@@ -1909,7 +2019,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private spellingAudioPath(word: string, kind: 'word' | 'spelling'): string {
-    return `spelling/audio/words/${encodeURIComponent(word)}?language=${this.selectedLanguage}&kind=${kind}`;
+    return this.spellingAudioPathForLanguage(word, kind, this.selectedLanguage);
+  }
+
+  private spellingAudioPathForLanguage(word: string, kind: 'word' | 'spelling', language: LearningLanguage): string {
+    return `spelling/audio/words/${encodeURIComponent(word)}?language=${language}&kind=${kind}`;
   }
 
   private flipcardAudioPath(word: string, language: LearningLanguage = this.selectedLanguage, force = false): string {
@@ -2630,6 +2744,104 @@ export class AppComponent implements OnInit, OnDestroy {
     this.teslaMp3Audio = null;
     this.teslaMp3LoopTestActive = false;
     this.updateTeslaMp3PlayerState(this.teslaMp3AudioModeActive ? 'idle' : 'off');
+  }
+
+  private canRunTeslaMp3VariantTest(): boolean {
+    if (!this.teslaMp3AudioEnabled) return false;
+    if (this.settings.audioSource === 'backend_mp3') return true;
+    this.teslaMp3TestStatus = 'Pro test přepni Audio na Serverové MP3.';
+    this.render();
+    return false;
+  }
+
+  private async startTeslaMp3VariantLoop(mode: TeslaMp3LoopMode): Promise<TeslaMp3AudioController> {
+    this.destroyTeslaMp3Audio();
+    for (const [activeMode, controller] of this.teslaMp3TestAudio.entries()) {
+      if (activeMode !== mode) {
+        controller.destroy();
+        this.teslaMp3TestAudio.delete(activeMode);
+      }
+    }
+    const controller = this.getTeslaMp3TestController(mode);
+    this.teslaMp3TestActiveMode = mode;
+    await controller.startLoop();
+    return controller;
+  }
+
+  private getTeslaMp3TestController(mode: TeslaMp3LoopMode): TeslaMp3AudioController {
+    const existing = this.teslaMp3TestAudio.get(mode);
+    if (existing) return existing;
+    const controller = new TeslaMp3AudioController(
+      (state) => {
+        if (this.teslaMp3TestActiveMode === mode) {
+          this.updateTeslaMp3PlayerState(state);
+        }
+      },
+      mode,
+    );
+    this.teslaMp3TestAudio.set(mode, controller);
+    return controller;
+  }
+
+  private stopTeslaMp3TestController(mode: TeslaMp3LoopMode): void {
+    const controller = this.teslaMp3TestAudio.get(mode);
+    controller?.destroy();
+    this.teslaMp3TestAudio.delete(mode);
+    if (this.teslaMp3TestActiveMode === mode) {
+      this.teslaMp3TestActiveMode = null;
+      this.updateTeslaMp3PlayerState(this.teslaMp3AudioModeActive ? 'idle' : 'off');
+    }
+    if (this.teslaMp3TestBusyMode === mode) {
+      this.teslaMp3TestBusyMode = null;
+    }
+  }
+
+  private destroyTeslaMp3TestAudio(): void {
+    for (const controller of this.teslaMp3TestAudio.values()) {
+      controller.destroy();
+    }
+    this.teslaMp3TestAudio.clear();
+    this.teslaMp3TestActiveMode = null;
+    this.teslaMp3TestBusyMode = null;
+    this.teslaMp3TestStatus = null;
+    this.updateTeslaMp3PlayerState(this.teslaMp3AudioModeActive ? 'idle' : 'off');
+  }
+
+  private async resolveTeslaMp3TestAudioUrl(): Promise<string> {
+    const language = this.settingsLanguage;
+    const word = this.teslaMp3TestWordForLanguage(language);
+    const cacheKey = `${language}:${word}`;
+    const cached = this.teslaMp3TestAudioUrls.get(cacheKey);
+    if (cached) return cached;
+
+    const path = this.spellingAudioPathForLanguage(word, 'word', language);
+    let response = await this.apiGet<SpellingAudioWordResponse>(path);
+    if (response.status !== 'ready' || !response.audioUrl) {
+      response = await this.apiPost<SpellingAudioWordResponse>(path, {});
+    }
+
+    const startedAt = Date.now();
+    while (response.status !== 'ready' || !response.audioUrl) {
+      if (response.status === 'error') throw new Error(response.error ?? 'Generování testovacího audia selhalo.');
+      if (Date.now() - startedAt > TESLA_MP3_TEST_POLL_TIMEOUT_MS) {
+        throw new Error('Testovací audio se nepodařilo připravit včas.');
+      }
+      this.teslaMp3TestStatus = `Čekám na testovací MP3: ${word}`;
+      this.render();
+      await this.delay(2000);
+      response = await this.apiGet<SpellingAudioWordResponse>(path);
+    }
+
+    this.teslaMp3TestAudioUrls.set(cacheKey, response.audioUrl);
+    return response.audioUrl;
+  }
+
+  private teslaMp3TestWordForLanguage(language: LearningLanguage): string {
+    return ({
+      en: 'tractor',
+      de: 'Traktor',
+      es: 'tractor',
+    } as Record<LearningLanguage, string>)[language];
   }
 
   private updateTeslaMp3PlayerState(state: TeslaMp3PlayerState): void {

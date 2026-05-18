@@ -655,6 +655,46 @@ textarea {
   font-weight: 800;
 }
 
+.tesla-audio-test-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.tesla-audio-test-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.tesla-audio-test-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.tesla-audio-test-copy strong {
+  color: #0f172a;
+  font-size: 0.96rem;
+}
+
+.tesla-audio-test-copy span {
+  color: #475569;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.tesla-audio-test-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .compact-button {
   justify-self: start;
   min-height: 2.75rem;
@@ -1190,9 +1230,14 @@ textarea:disabled {
 
   .audio-source-options,
   .audio-prep-row,
+  .tesla-audio-test-row,
   .asset-row,
   .flipcard-options {
     grid-template-columns: 1fr;
+  }
+
+  .tesla-audio-test-actions {
+    justify-content: flex-start;
   }
 
   .flipcard-image-frame {

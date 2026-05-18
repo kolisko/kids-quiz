@@ -206,9 +206,31 @@
           </select>
         </label>
         <p class="settings-note tesla-loop-description">{{ currentTeslaMp3LoopOption.description }}</p>
-        <button class="secondary-button compact-button" type="button" (click)="toggleTeslaMp3LoopTest()">
-          {{ teslaMp3LoopTestActive ? 'Zastavit test smyčky' : 'Test smyčky' }}
-        </button>
+        <div class="tesla-audio-test-grid">
+          <div class="tesla-audio-test-row" *ngFor="let option of teslaMp3TestVariants">
+            <div class="tesla-audio-test-copy">
+              <strong>{{ option.label }}</strong>
+              <span>{{ option.description }}</span>
+            </div>
+            <div class="tesla-audio-test-actions">
+              <button
+                class="secondary-button compact-button"
+                type="button"
+                [disabled]="teslaMp3TestBusyMode !== null && !isTeslaMp3VariantActive(option.mode)"
+                (click)="toggleTeslaMp3VariantLoopTest(option.mode)">
+                {{ isTeslaMp3VariantActive(option.mode) ? 'Zastavit' : 'Spustit' }}
+              </button>
+              <button
+                class="primary-button compact-button"
+                type="button"
+                [disabled]="teslaMp3TestBusyMode !== null"
+                (click)="playTeslaMp3VariantTestWord(option.mode)">
+                Play slovo
+              </button>
+            </div>
+          </div>
+        </div>
+        <p class="settings-note tesla-loop-description" *ngIf="teslaMp3TestStatus">{{ teslaMp3TestStatus }}</p>
       </div>
     </section>
 
