@@ -17,7 +17,7 @@ type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
 type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error';
-type TeslaMp3LoopMode = 'digital_silence' | 'near_silent_ticks' | 'soft_noise' | 'smooth_tone_220_micro' | 'smooth_tone_220_quiet' | 'smooth_tone_440_quiet' | 'smooth_sub_bass_55' | 'loopable_noise_quiet' | 'webaudio_tone_220_quiet' | 'soft_tone' | 'audible_tone' | 'loud_tone' | 'ambient_music';
+type TeslaMp3LoopMode = 'digital_silence' | 'near_silent_ticks' | 'soft_noise' | 'smooth_tone_220_micro' | 'smooth_tone_220_quiet' | 'smooth_tone_440_quiet' | 'smooth_sub_bass_55' | 'loopable_noise_quiet' | 'webaudio_tone_220_quiet' | 'webaudio_stream_220_quiet' | 'soft_tone' | 'audible_tone' | 'loud_tone' | 'ambient_music';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
 
@@ -26,7 +26,7 @@ const AUDIO_PREROLL_URL = createSilentWavDataUrl(AUDIO_PREROLL_MS);
 const TESLA_AUDIO_PRIME_MS = 1000;
 const TESLA_MP3_AUDIO_STORAGE_KEY = 'kidsQuizTeslaMp3AudioEnabled';
 const TESLA_MP3_LOOP_MODE_STORAGE_KEY = 'kidsQuizTeslaMp3LoopMode';
-const DEFAULT_TESLA_MP3_LOOP_MODE: TeslaMp3LoopMode = 'near_silent_ticks';
+const DEFAULT_TESLA_MP3_LOOP_MODE: TeslaMp3LoopMode = 'webaudio_stream_220_quiet';
 
 interface TeslaMp3LoopOption {
   mode: TeslaMp3LoopMode;
@@ -39,9 +39,28 @@ interface TeslaMp3LoopOption {
     frequency: number;
     gain: number;
   };
+  webAudioStream?: {
+    frequency: number;
+    gain: number;
+    duckedGain: number;
+    fadeMs: number;
+  };
 }
 
 const TESLA_MP3_LOOP_OPTIONS: TeslaMp3LoopOption[] = [
+  {
+    mode: 'webaudio_stream_220_quiet',
+    label: 'Nepřerušený stream 220 Hz',
+    description: 'Jeden trvale hrající audio stream; MP3 se do něj přimíchá bez výměny src.',
+    volume: 1,
+    backgroundMusic: false,
+    webAudioStream: {
+      frequency: 220,
+      gain: 0.0006,
+      duckedGain: 0.00008,
+      fadeMs: 90,
+    },
+  },
   {
     mode: 'digital_silence',
     label: 'Digitální ticho',
@@ -2834,10 +2853,21 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 }
 
+interface TeslaStreamAudioLoop {
+  context: AudioContext;
+  destination: MediaStreamAudioDestinationNode;
+  oscillator: OscillatorNode;
+  keepaliveGain: GainNode;
+  wordSource: AudioBufferSourceNode | null;
+  wordGain: GainNode | null;
+  wordDone: (() => void) | null;
+}
+
 class TeslaMp3AudioController {
   private readonly audio = new Audio();
   private foregroundAudio: HTMLAudioElement | null = null;
   private webAudioLoop: { context: AudioContext; oscillator: OscillatorNode; gain: GainNode } | null = null;
+  private streamAudioLoop: TeslaStreamAudioLoop | null = null;
   private playbackToken = 0;
   private primed = false;
   private primePromise: Promise<void> | null = null;
@@ -2885,11 +2915,18 @@ class TeslaMp3AudioController {
     }
     if (this.destroyed || this.playbackToken !== token) return;
 
-    if (this.currentLoopOption().backgroundMusic) {
+    const loop = this.currentLoopOption();
+    if (loop.webAudioStream) {
+      await this.playWithStreamAudio(audioUrl, token);
+      return;
+    }
+
+    if (loop.backgroundMusic) {
       await this.playWithBackgroundFade(audioUrl, token);
       return;
     }
 
+    this.stopStreamAudioLoop();
     this.stopWebAudioLoop();
     this.audio.pause();
     this.setState('mp3');
@@ -2916,6 +2953,16 @@ class TeslaMp3AudioController {
   stopCurrentAndResumeLoop(): void {
     this.nextPlaybackToken();
     this.stopForegroundAudio();
+    const loop = this.currentLoopOption();
+    if (loop.webAudioStream && this.streamAudioLoop) {
+      this.stopStreamWord();
+      this.rampStreamKeepalive(loop.webAudioStream.gain, loop.webAudioStream.fadeMs);
+      if (!this.destroyed && this.primed) {
+        this.setState('loop');
+      }
+      return;
+    }
+    this.stopStreamAudioLoop();
     this.stopWebAudioLoop();
     if (this.destroyed || !this.primed) return;
     this.audio.pause();
@@ -2926,6 +2973,7 @@ class TeslaMp3AudioController {
     this.destroyed = true;
     this.nextPlaybackToken();
     this.stopForegroundAudio();
+    this.stopStreamAudioLoop();
     this.stopWebAudioLoop();
     this.audio.pause();
     this.audio.removeAttribute('src');
@@ -2950,8 +2998,13 @@ class TeslaMp3AudioController {
   private async resumeSilentLoop(throwOnFailure: boolean): Promise<void> {
     if (this.destroyed) return;
     const loop = this.currentLoopOption();
-    this.audio.pause();
     this.setState('loop');
+    if (loop.webAudioStream) {
+      await this.startStreamAudioLoop(loop, throwOnFailure);
+      return;
+    }
+    this.stopStreamAudioLoop();
+    this.audio.pause();
     if (loop.webAudio) {
       this.audio.removeAttribute('src');
       this.audio.load();
@@ -2979,13 +3032,64 @@ class TeslaMp3AudioController {
     }
   }
 
+  private async startStreamAudioLoop(
+    loop: TeslaMp3LoopOption,
+    throwOnFailure: boolean,
+  ): Promise<TeslaStreamAudioLoop | null> {
+    if (!loop.webAudioStream) return null;
+    this.stopWebAudioLoop();
+    try {
+      const streamLoop = this.streamAudioLoop ?? this.createStreamAudioLoop(loop);
+      this.streamAudioLoop = streamLoop;
+      this.rampStreamKeepalive(loop.webAudioStream.gain, loop.webAudioStream.fadeMs);
+      this.audio.loop = false;
+      this.audio.volume = loop.volume;
+      if (this.audio.srcObject !== streamLoop.destination.stream) {
+        this.audio.pause();
+        this.audio.removeAttribute('src');
+        this.audio.srcObject = streamLoop.destination.stream;
+      }
+      if (streamLoop.context.state === 'suspended') {
+        await streamLoop.context.resume();
+      }
+      await this.audio.play();
+      return streamLoop;
+    } catch (error) {
+      this.setState('error');
+      if (throwOnFailure) throw error;
+      return null;
+    }
+  }
+
+  private createStreamAudioLoop(loop: TeslaMp3LoopOption): TeslaStreamAudioLoop {
+    if (!loop.webAudioStream) throw new Error('WebAudio stream loop is not configured.');
+    const AudioContextConstructor = this.audioContextConstructor();
+    const context = new AudioContextConstructor();
+    const destination = context.createMediaStreamDestination();
+    const oscillator = context.createOscillator();
+    const keepaliveGain = context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = loop.webAudioStream.frequency;
+    keepaliveGain.gain.value = loop.webAudioStream.gain;
+    oscillator.connect(keepaliveGain);
+    keepaliveGain.connect(destination);
+    oscillator.start();
+    return {
+      context,
+      destination,
+      oscillator,
+      keepaliveGain,
+      wordSource: null,
+      wordGain: null,
+      wordDone: null,
+    };
+  }
+
   private async startWebAudioLoop(loop: TeslaMp3LoopOption, throwOnFailure: boolean): Promise<void> {
     if (!loop.webAudio) return;
     this.stopWebAudioLoop();
     try {
-      const AudioContextConstructor = window.AudioContext
-        ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextConstructor) throw new Error('Web Audio API is unavailable.');
+      const AudioContextConstructor = this.audioContextConstructor();
       const context = new AudioContextConstructor();
       const oscillator = context.createOscillator();
       const gain = context.createGain();
@@ -3053,6 +3157,84 @@ class TeslaMp3AudioController {
     });
   }
 
+  private async playWithStreamAudio(audioUrl: string, token: number): Promise<void> {
+    const loop = this.currentLoopOption();
+    const streamLoop = await this.startStreamAudioLoop(loop, false);
+    if (!loop.webAudioStream || !streamLoop || this.destroyed || this.playbackToken !== token) return;
+
+    let source: AudioBufferSourceNode | null = null;
+    let wordGain: GainNode | null = null;
+    try {
+      const buffer = await this.fetchAudioBuffer(streamLoop.context, audioUrl);
+      if (this.destroyed || this.playbackToken !== token) return;
+
+      this.stopStreamWord();
+      source = streamLoop.context.createBufferSource();
+      wordGain = streamLoop.context.createGain();
+      source.buffer = buffer;
+      wordGain.gain.value = 1;
+      source.connect(wordGain);
+      wordGain.connect(streamLoop.destination);
+      streamLoop.wordSource = source;
+      streamLoop.wordGain = wordGain;
+
+      this.rampStreamKeepalive(loop.webAudioStream.duckedGain, loop.webAudioStream.fadeMs);
+      this.setState('mp3');
+      const timeoutMs = Math.max(10000, buffer.duration * 1000 + 1200);
+      await this.playStreamSourceUntilDone(streamLoop, source, timeoutMs);
+    } finally {
+      if (streamLoop.wordSource === source) {
+        streamLoop.wordSource = null;
+        streamLoop.wordGain = null;
+      }
+      try {
+        source?.disconnect();
+      } catch {
+        // Some browsers disconnect ended sources automatically.
+      }
+      try {
+        wordGain?.disconnect();
+      } catch {
+        // Some browsers disconnect ended nodes automatically.
+      }
+      if (!this.destroyed && this.playbackToken === token) {
+        await this.resumeSilentLoop(false);
+      }
+    }
+  }
+
+  private async fetchAudioBuffer(context: AudioContext, audioUrl: string): Promise<AudioBuffer> {
+    const response = await fetch(audioUrl, { credentials: 'same-origin' });
+    if (!response.ok) throw new Error(`Audio fetch failed: ${response.status}`);
+    const data = await response.arrayBuffer();
+    return context.decodeAudioData(data);
+  }
+
+  private async playStreamSourceUntilDone(
+    streamLoop: TeslaStreamAudioLoop,
+    source: AudioBufferSourceNode,
+    timeoutMs: number,
+  ): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const timeout = window.setTimeout(() => done(), timeoutMs);
+      const done = () => {
+        window.clearTimeout(timeout);
+        source.onended = null;
+        if (streamLoop.wordDone === done) {
+          streamLoop.wordDone = null;
+        }
+        resolve();
+      };
+      streamLoop.wordDone = done;
+      source.onended = done;
+      try {
+        source.start();
+      } catch {
+        done();
+      }
+    });
+  }
+
   private async playWithBackgroundFade(audioUrl: string, token: number): Promise<void> {
     const mp3Audio = new Audio(audioUrl);
     this.stopForegroundAudio();
@@ -3084,6 +3266,56 @@ class TeslaMp3AudioController {
     this.foregroundAudio = null;
   }
 
+  private stopStreamWord(): void {
+    const loop = this.streamAudioLoop;
+    if (!loop?.wordSource) return;
+    const source = loop.wordSource;
+    const gain = loop.wordGain;
+    const done = loop.wordDone;
+    loop.wordSource = null;
+    loop.wordGain = null;
+    loop.wordDone = null;
+    try {
+      source.stop();
+    } catch {
+      // The source may already be stopped or not started yet.
+    }
+    done?.();
+    try {
+      source.disconnect();
+    } catch {
+      // Some browsers disconnect stopped sources automatically.
+    }
+    try {
+      gain?.disconnect();
+    } catch {
+      // Some browsers disconnect stopped nodes automatically.
+    }
+  }
+
+  private stopStreamAudioLoop(): void {
+    if (!this.streamAudioLoop) return;
+    const loop = this.streamAudioLoop;
+    this.stopStreamWord();
+    try {
+      loop.oscillator.stop();
+    } catch {
+      // The oscillator may already be stopped if the browser tears down the context.
+    }
+    try {
+      loop.oscillator.disconnect();
+      loop.keepaliveGain.disconnect();
+      loop.destination.disconnect();
+    } catch {
+      // Some browsers disconnect closed graphs automatically.
+    }
+    void loop.context.close().catch(() => undefined);
+    if (this.audio.srcObject === loop.destination.stream) {
+      this.audio.srcObject = null;
+    }
+    this.streamAudioLoop = null;
+  }
+
   private stopWebAudioLoop(): void {
     if (!this.webAudioLoop) return;
     const loop = this.webAudioLoop;
@@ -3094,6 +3326,19 @@ class TeslaMp3AudioController {
     }
     void loop.context.close().catch(() => undefined);
     this.webAudioLoop = null;
+  }
+
+  private rampStreamKeepalive(target: number, durationMs: number): void {
+    const loop = this.streamAudioLoop;
+    if (!loop) return;
+    this.rampAudioParam(loop.keepaliveGain.gain, target, durationMs, loop.context);
+  }
+
+  private rampAudioParam(param: AudioParam, target: number, durationMs: number, context: AudioContext): void {
+    const now = context.currentTime;
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(param.value, now);
+    param.linearRampToValueAtTime(target, now + durationMs / 1000);
   }
 
   private async fadeLoopVolume(target: number, durationMs: number): Promise<void> {
@@ -3118,6 +3363,13 @@ class TeslaMp3AudioController {
 
   private currentLoopOption(): TeslaMp3LoopOption {
     return teslaMp3LoopOption(this.loopMode);
+  }
+
+  private audioContextConstructor(): typeof AudioContext {
+    const AudioContextConstructor = window.AudioContext
+      ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) throw new Error('Web Audio API is unavailable.');
+    return AudioContextConstructor;
   }
 }
 
