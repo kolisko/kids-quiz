@@ -293,6 +293,12 @@ interface CelebrationTapState {
   burst: CelebrationBurst;
   offsetX: number;
   offsetY: number;
+  escaping?: boolean;
+}
+
+interface CelebrationPosition {
+  offsetX: number;
+  offsetY: number;
 }
 
 interface TtsDiagnostics {
@@ -412,6 +418,7 @@ export class AppComponent implements OnInit, OnDestroy {
   teslaMp3TestStatus: string | null = null;
   teslaMp3PlayerState: TeslaMp3PlayerState = 'off';
   celebrationTap: CelebrationTapState | null = null;
+  celebrationPosition: CelebrationPosition = { offsetX: 0, offsetY: 0 };
   celebrationTapCount = 0;
   spellingAnswerWordActive = false;
 
@@ -487,11 +494,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get celebrationTapOffsetX(): number {
-    return this.celebrationTap?.offsetX ?? 0;
+    return this.celebrationPosition.offsetX;
   }
 
   get celebrationTapOffsetY(): number {
-    return this.celebrationTap?.offsetY ?? 0;
+    return this.celebrationPosition.offsetY;
   }
 
   get currentQuestionText(): string {
@@ -2045,11 +2052,13 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.screen !== 'finished' && screen === 'finished') {
       this.celebrationTapCount = 0;
       this.celebrationTap = null;
+      this.celebrationPosition = { offsetX: 0, offsetY: 0 };
     }
     if (this.screen === 'finished' && screen !== 'finished') {
       this.clearCelebrationTapTimer();
       this.celebrationTap = null;
       this.celebrationTapCount = 0;
+      this.celebrationPosition = { offsetX: 0, offsetY: 0 };
     }
     if (this.screen === 'play' && screen !== 'play') {
       this.clearSpellingAnswerWordActive();
@@ -2996,11 +3005,16 @@ export class AppComponent implements OnInit, OnDestroy {
   playCelebrationTap(): void {
     if (this.celebrationTapCount >= this.settings.celebrationTapLimit) return;
     this.celebrationTapCount += 1;
+    const isFinalTap = this.celebrationTapCount >= this.settings.celebrationTapLimit;
     this.clearCelebrationTapTimer();
     this.celebrationTap = null;
     this.render();
     window.setTimeout(() => {
-      this.celebrationTap = this.nextCelebrationTap();
+      this.celebrationTap = isFinalTap ? this.nextCelebrationEscapeTap() : this.nextCelebrationTap();
+      this.celebrationPosition = {
+        offsetX: this.celebrationTap.offsetX,
+        offsetY: this.celebrationTap.offsetY,
+      };
       this.playCelebrationFanfare();
       this.celebrationTapTimerId = window.setTimeout(() => {
         this.celebrationTap = null;
@@ -3020,6 +3034,7 @@ export class AppComponent implements OnInit, OnDestroy {
       `celebration-${tap.effect}`,
       `celebration-${tap.direction}`,
       `celebration-burst-${tap.burst}`,
+      ...(tap.escaping ? ['celebration-escape'] : []),
     ];
   }
 
@@ -3028,12 +3043,29 @@ export class AppComponent implements OnInit, OnDestroy {
     const animalWidth = Math.min(window.innerHeight * 0.42, 20 * rootFontSize);
     const maxOffsetX = Math.max(0, Math.min(7.5, ((window.innerWidth - animalWidth) / 2 - 8) / rootFontSize));
     const maxOffsetY = Math.max(1.2, Math.min(8.5, (window.innerHeight * 0.12) / rootFontSize));
+    const nextOffsetX = this.celebrationPosition.offsetX + randomNumber(-2.2, 2.2);
+    const nextOffsetY = this.celebrationPosition.offsetY + randomNumber(-1.9, 0.7);
     return {
       effect: randomItem<CelebrationEffect>(['pop', 'spin', 'squash', 'bounce'], 'pop'),
       direction: randomItem<CelebrationDirection>(['left', 'right'], 'right'),
       burst: randomItem<CelebrationBurst>(['wide', 'high', 'low'], 'wide'),
-      offsetX: randomNumber(-maxOffsetX, maxOffsetX),
-      offsetY: randomNumber(-maxOffsetY, -1.2),
+      offsetX: clamp(nextOffsetX, -maxOffsetX, maxOffsetX),
+      offsetY: clamp(nextOffsetY, -maxOffsetY, -1.2),
+    };
+  }
+
+  private nextCelebrationEscapeTap(): CelebrationTapState {
+    const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const escapeX = (window.innerWidth / rootFontSize) * randomItem([-0.7, 0.7], 0.7);
+    const escapeY = -(window.innerHeight / rootFontSize) * randomNumber(0.52, 0.82);
+    const direction: CelebrationDirection = escapeX < 0 ? 'left' : 'right';
+    return {
+      effect: randomItem<CelebrationEffect>(['spin', 'bounce', 'pop'], 'spin'),
+      direction,
+      burst: randomItem<CelebrationBurst>(['wide', 'high'], 'wide'),
+      offsetX: escapeX,
+      offsetY: escapeY,
+      escaping: true,
     };
   }
 
@@ -3872,6 +3904,10 @@ function randomItem<T>(items: readonly T[], fallback: T): T {
 
 function randomNumber(min: number, max: number): number {
   return min + Math.random() * (max - min);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function answerCountLabel(count: number): string {

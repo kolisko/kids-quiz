@@ -1165,6 +1165,11 @@ textarea:disabled {
   transition: left 260ms cubic-bezier(.2,.9,.25,1.16), top 260ms cubic-bezier(.2,.9,.25,1.16);
 }
 
+.animal-frame.celebration-escape {
+  transition-duration: 620ms;
+  transition-timing-function: cubic-bezier(.22,.72,.18,1);
+}
+
 .animal-fallback {
   position: absolute;
   display: grid;
