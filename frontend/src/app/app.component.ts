@@ -282,6 +282,16 @@ interface AnimalSurprise {
   animationClass: string;
 }
 
+type CelebrationEffect = 'pop' | 'spin' | 'squash' | 'bounce';
+type CelebrationDirection = 'left' | 'right';
+type CelebrationBurst = 'wide' | 'high' | 'low';
+
+interface CelebrationTapState {
+  effect: CelebrationEffect;
+  direction: CelebrationDirection;
+  burst: CelebrationBurst;
+}
+
 interface TtsDiagnostics {
   reason: string;
   speechSynthesis: boolean;
@@ -398,7 +408,8 @@ export class AppComponent implements OnInit, OnDestroy {
   teslaMp3TestBusyMode: TeslaMp3LoopMode | null = null;
   teslaMp3TestStatus: string | null = null;
   teslaMp3PlayerState: TeslaMp3PlayerState = 'off';
-  celebrationTapActive = false;
+  celebrationTap: CelebrationTapState | null = null;
+  spellingAnswerWordActive = false;
 
   private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
     product_to_factors: new Map<number, number>(),
@@ -416,6 +427,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private ttsPlaybackToken = 0;
   private spellingAudioSequenceToken = 0;
   private celebrationTapTimerId: number | null = null;
+  private spellingAnswerWordTimerId: number | null = null;
+  private lastCelebrationFanfareIndex = -1;
   private assetLibraryPollToken: AssetLibraryPollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
   private translationBackfillPollTokens: Partial<Record<LearningLanguage, PollToken>> = {};
@@ -496,6 +509,10 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.currentDirection === 'factors_to_product'
       ? this.currentQuestion.q
       : this.currentQuestion.answers.join(', ');
+  }
+
+  get spellingAnswerTextClickable(): boolean {
+    return this.activeGame === 'spelling' && this.answerVisible && this.currentSpellingWord !== null;
   }
 
   get currentAnswerHint(): string | null {
@@ -670,6 +687,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.destroyTeslaMp3Audio();
     this.destroyTeslaMp3TestAudio();
     this.clearCelebrationTapTimer();
+    this.clearSpellingAnswerWordTimer();
   }
 
   async submitLogin(): Promise<void> {
@@ -856,6 +874,28 @@ export class AppComponent implements OnInit, OnDestroy {
 
   replaySpellingAnswerAudio(): void {
     void this.playCurrentSpellingAnswerThenWord();
+  }
+
+  async playSpellingAnswerWordFromText(): Promise<void> {
+    if (!this.spellingAnswerTextClickable) return;
+    const word = this.currentSpellingWord;
+    if (!word) return;
+    const token = this.nextSpellingAudioSequenceToken();
+    this.setSpellingAnswerWordActive(true);
+    try {
+      if (this.settings.audioSource === 'backend_mp3') {
+        await this.playCurrentBackendAudio(token);
+      } else {
+        await this.speakText(word.text, 0.86, 'Prehrani TTS skoncilo chybou.', 'Prehrani TTS selhalo.');
+      }
+    } finally {
+      if (this.spellingAudioSequenceStillCurrent(token, word.normalized)) {
+        this.spellingAnswerWordTimerId = window.setTimeout(() => {
+          this.spellingAnswerWordTimerId = null;
+          this.setSpellingAnswerWordActive(false);
+        }, 140);
+      }
+    }
   }
 
   async retryAudioGeneration(): Promise<void> {
@@ -1970,7 +2010,10 @@ export class AppComponent implements OnInit, OnDestroy {
   private setScreen(screen: Screen): void {
     if (this.screen === 'finished' && screen !== 'finished') {
       this.clearCelebrationTapTimer();
-      this.celebrationTapActive = false;
+      this.celebrationTap = null;
+    }
+    if (this.screen === 'play' && screen !== 'play') {
+      this.clearSpellingAnswerWordActive();
     }
     if (this.screen === 'assetLibrary' && screen !== 'assetLibrary') {
       this.cancelAssetLibraryPolling();
@@ -2327,6 +2370,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.cancelAudioPrepPolling();
     this.clearTimer();
     this.spellingAudioSequenceToken += 1;
+    this.clearSpellingAnswerWordActive();
     this.stopBackendAudio();
     this.destroyTeslaMp3Audio();
     this.destroyTeslaMp3TestAudio();
@@ -2552,6 +2596,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private nextSpellingAudioSequenceToken(): number {
+    this.clearSpellingAnswerWordActive();
     this.spellingAudioSequenceToken += 1;
     return this.spellingAudioSequenceToken;
   }
@@ -2560,6 +2605,22 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.spellingAudioSequenceToken === token
       && this.currentSpellingWord?.normalized === normalized
       && this.activeGame === 'spelling';
+  }
+
+  private setSpellingAnswerWordActive(active: boolean): void {
+    this.clearSpellingAnswerWordTimer();
+    if (this.spellingAnswerWordActive === active) return;
+    this.spellingAnswerWordActive = active;
+    this.render();
+  }
+
+  private clearSpellingAnswerWordActive(): void {
+    this.clearSpellingAnswerWordTimer();
+    const wasActive = this.spellingAnswerWordActive;
+    this.spellingAnswerWordActive = false;
+    if (wasActive) {
+      this.render();
+    }
   }
 
   private preloadAdjacentFlipcardAssets(): void {
@@ -2895,18 +2956,38 @@ export class AppComponent implements OnInit, OnDestroy {
 
   playCelebrationTap(): void {
     this.clearCelebrationTapTimer();
-    this.celebrationTapActive = false;
+    this.celebrationTap = null;
     this.render();
     window.setTimeout(() => {
-      this.celebrationTapActive = true;
+      this.celebrationTap = this.nextCelebrationTap();
       this.playCelebrationFanfare();
       this.celebrationTapTimerId = window.setTimeout(() => {
-        this.celebrationTapActive = false;
+        this.celebrationTap = null;
         this.celebrationTapTimerId = null;
         this.render();
       }, 720);
       this.render();
     }, 0);
+  }
+
+  celebrationTapClasses(): string[] {
+    const tap = this.celebrationTap;
+    if (!tap) return [this.surprise.animationClass];
+    return [
+      this.surprise.animationClass,
+      'celebration-tap',
+      `celebration-${tap.effect}`,
+      `celebration-${tap.direction}`,
+      `celebration-burst-${tap.burst}`,
+    ];
+  }
+
+  private nextCelebrationTap(): CelebrationTapState {
+    return {
+      effect: randomItem<CelebrationEffect>(['pop', 'spin', 'squash', 'bounce'], 'pop'),
+      direction: randomItem<CelebrationDirection>(['left', 'right'], 'right'),
+      burst: randomItem<CelebrationBurst>(['wide', 'high', 'low'], 'wide'),
+    };
   }
 
   private playCelebrationFanfare(): void {
@@ -2916,26 +2997,31 @@ export class AppComponent implements OnInit, OnDestroy {
       if (!AudioContextConstructor) return;
       const context = new AudioContextConstructor();
       const masterGain = context.createGain();
+      const variant = this.nextCelebrationFanfareIndex();
       const now = context.currentTime;
       masterGain.gain.setValueAtTime(0.0001, now);
-      masterGain.gain.exponentialRampToValueAtTime(0.11, now + 0.03);
-      masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62);
+      masterGain.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
+      masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.74);
       masterGain.connect(context.destination);
-      [523.25, 659.25, 783.99].forEach((frequency, index) => {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        const start = now + index * 0.11;
-        const stop = start + 0.25;
-        oscillator.type = 'triangle';
-        oscillator.frequency.setValueAtTime(frequency, start);
-        gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(0.8, start + 0.025);
-        gain.gain.exponentialRampToValueAtTime(0.0001, stop);
-        oscillator.connect(gain);
-        gain.connect(masterGain);
-        oscillator.start(start);
-        oscillator.stop(stop + 0.02);
-      });
+      if (variant === 0) {
+        [523.25, 659.25, 783.99].forEach((frequency, index) => {
+          this.scheduleCelebrationTone(context, masterGain, frequency, index * 0.11, 0.25);
+        });
+      } else if (variant === 1) {
+        [659.25, 783.99, 659.25, 880, 987.77].forEach((frequency, index) => {
+          this.scheduleCelebrationTone(context, masterGain, frequency, index * 0.07, 0.14, 'sine', 0.58);
+        });
+      } else if (variant === 2) {
+        [392, 523.25, 659.25].forEach((frequency, index) => {
+          this.scheduleCelebrationTone(context, masterGain, frequency, index * 0.045, 0.18, 'triangle', 0.56);
+        });
+        [523.25, 659.25, 783.99].forEach((frequency, index) => {
+          this.scheduleCelebrationTone(context, masterGain, frequency, 0.25 + index * 0.045, 0.28, 'triangle', 0.72);
+        });
+      } else {
+        this.scheduleCelebrationTone(context, masterGain, 392, 0, 0.42, 'sawtooth', 0.34, 783.99);
+        this.scheduleCelebrationTone(context, masterGain, 987.77, 0.24, 0.22, 'triangle', 0.58);
+      }
       if (context.state === 'suspended') {
         void context.resume();
       }
@@ -2945,6 +3031,45 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       // Celebration tap animation should still run if Web Audio is unavailable.
     }
+  }
+
+  private nextCelebrationFanfareIndex(): number {
+    const variantCount = 4;
+    if (variantCount <= 1) return 0;
+    let next = Math.floor(Math.random() * variantCount);
+    if (next === this.lastCelebrationFanfareIndex) {
+      next = (next + 1 + Math.floor(Math.random() * (variantCount - 1))) % variantCount;
+    }
+    this.lastCelebrationFanfareIndex = next;
+    return next;
+  }
+
+  private scheduleCelebrationTone(
+    context: AudioContext,
+    masterGain: GainNode,
+    frequency: number,
+    startOffset: number,
+    duration: number,
+    type: OscillatorType = 'triangle',
+    peakGain = 0.8,
+    endFrequency: number | null = null,
+  ): void {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const start = context.currentTime + startOffset;
+    const stop = start + duration;
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, start);
+    if (endFrequency !== null) {
+      oscillator.frequency.exponentialRampToValueAtTime(endFrequency, stop);
+    }
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(peakGain, start + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0001, stop);
+    oscillator.connect(gain);
+    gain.connect(masterGain);
+    oscillator.start(start);
+    oscillator.stop(stop + 0.02);
   }
 
   private async apiGet<T>(path: string, redirectOnUnauthorized = true): Promise<T> {
@@ -3008,6 +3133,13 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.celebrationTapTimerId !== null) {
       window.clearTimeout(this.celebrationTapTimerId);
       this.celebrationTapTimerId = null;
+    }
+  }
+
+  private clearSpellingAnswerWordTimer(): void {
+    if (this.spellingAnswerWordTimerId !== null) {
+      window.clearTimeout(this.spellingAnswerWordTimerId);
+      this.spellingAnswerWordTimerId = null;
     }
   }
 
@@ -3685,6 +3817,10 @@ class TeslaMp3AudioController {
     if (!AudioContextConstructor) throw new Error('Web Audio API is unavailable.');
     return AudioContextConstructor;
   }
+}
+
+function randomItem<T>(items: readonly T[], fallback: T): T {
+  return items[Math.floor(Math.random() * items.length)] ?? fallback;
 }
 
 function answerCountLabel(count: number): string {

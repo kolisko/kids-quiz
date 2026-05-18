@@ -514,14 +514,16 @@
           <lucide-icon [img]="playIcon" [size]="26"></lucide-icon>
         </button>
         <span class="label">{{ answerVisible ? 'Odpověď' : 'Otázka' }}</span>
-        <h1>{{ answerVisible ? currentAnswerText : currentQuestionText }}</h1>
-        <button
-          class="spelling-word-audio-button"
-          type="button"
-          *ngIf="activeGame === 'spelling' && answerVisible && currentSpellingWord"
-          (click)="replaySpellingAudio()">
-          {{ currentSpellingWord.text }}
-        </button>
+        <h1
+          [class.spelling-answer-clickable]="spellingAnswerTextClickable"
+          [class.spelling-answer-audio-active]="spellingAnswerWordActive"
+          [attr.role]="spellingAnswerTextClickable ? 'button' : null"
+          [attr.tabindex]="spellingAnswerTextClickable ? '0' : null"
+          (click)="playSpellingAnswerWordFromText()"
+          (keydown.enter)="playSpellingAnswerWordFromText()"
+          (keydown.space)="playSpellingAnswerWordFromText(); $event.preventDefault()">
+          {{ answerVisible ? currentAnswerText : currentQuestionText }}
+        </h1>
         <p class="answer-hint" *ngIf="!answerVisible && currentAnswerHint">{{ currentAnswerHint }}</p>
         <p class="timeout-note" *ngIf="timedOut">Čas vypršel, bod je odečtený.</p>
       </div>
@@ -582,7 +584,7 @@
     <div class="confetti">*  +  *  +  *</div>
     <div
       class="animal-frame"
-      [ngClass]="[surprise.animationClass, celebrationTapActive ? 'celebration-tap' : '']"
+      [ngClass]="celebrationTapClasses()"
       (click)="playCelebrationTap()"
       role="button"
       tabindex="0"

@@ -446,16 +446,21 @@ lucide-icon {
   line-height: 1.1;
 }
 
-.spelling-word-audio-button {
-  margin-top: 1rem;
-  border: 0;
-  border-radius: 0.5rem;
-  padding: 0.55rem 1rem;
-  color: #0f766e;
-  background: rgba(204, 251, 241, 0.72);
+.spelling-answer-clickable {
   cursor: pointer;
-  font-size: clamp(1.25rem, 3.5vw, 2rem);
-  font-weight: 950;
+  transition: color 160ms ease, text-shadow 160ms ease, transform 160ms ease;
+}
+
+.spelling-answer-clickable:focus-visible {
+  outline: 0.18rem solid rgba(15, 118, 110, 0.36);
+  outline-offset: 0.35rem;
+  border-radius: 0.4rem;
+}
+
+.spelling-answer-audio-active {
+  color: #0f766e !important;
+  text-shadow: 0 0.16rem 0 rgba(94, 234, 212, 0.24);
+  transform: scale(1.025);
 }
 
 .wide-action {
@@ -1142,10 +1147,6 @@ textarea:disabled {
   filter: drop-shadow(0 24px 30px rgba(15, 23, 42, 0.18));
 }
 
-.celebration-tap .animal-image {
-  animation: celebrationPop 680ms cubic-bezier(.2,.9,.25,1.3);
-}
-
 .celebration-burst {
   position: absolute;
   z-index: 0;
@@ -1159,16 +1160,51 @@ textarea:disabled {
 .celebration-burst-one {
   background: rgba(94, 234, 212, 0.64);
   transform: translate(-68%, -44%) scale(0.3);
+  --burst-start-x: -32%;
+  --burst-start-y: -18%;
+  --burst-end-x: -104%;
+  --burst-end-y: -76%;
+  --burst-end-scale: 1.18;
 }
 
 .celebration-burst-two {
   background: rgba(251, 191, 36, 0.66);
   transform: translate(72%, -18%) scale(0.3);
+  --burst-start-x: 30%;
+  --burst-start-y: -10%;
+  --burst-end-x: 104%;
+  --burst-end-y: -34%;
+  --burst-end-scale: 1.14;
 }
 
 .celebration-burst-three {
   background: rgba(244, 114, 182, 0.58);
   transform: translate(8%, 68%) scale(0.3);
+  --burst-start-x: 0;
+  --burst-start-y: 30%;
+  --burst-end-x: 12%;
+  --burst-end-y: 110%;
+  --burst-end-scale: 1.16;
+}
+
+.celebration-pop .animal-image {
+  animation: celebrationPop 680ms cubic-bezier(.2,.9,.25,1.3);
+}
+
+.celebration-spin.celebration-right .animal-image {
+  animation: celebrationSpinRight 700ms cubic-bezier(.2,.82,.24,1.18);
+}
+
+.celebration-spin.celebration-left .animal-image {
+  animation: celebrationSpinLeft 700ms cubic-bezier(.2,.82,.24,1.18);
+}
+
+.celebration-squash .animal-image {
+  animation: celebrationSquash 660ms cubic-bezier(.2,.9,.25,1.22);
+}
+
+.celebration-bounce .animal-image {
+  animation: celebrationBounce 680ms cubic-bezier(.2,.9,.25,1.2);
 }
 
 .celebration-tap .celebration-burst-one {
@@ -1181,6 +1217,54 @@ textarea:disabled {
 
 .celebration-tap .celebration-burst-three {
   animation: celebrationBurstThree 680ms ease-out 110ms;
+}
+
+.celebration-burst-high .celebration-burst-one {
+  transform: translate(-18%, -82%) scale(0.28);
+  --burst-start-x: -10%;
+  --burst-start-y: -42%;
+  --burst-end-x: -38%;
+  --burst-end-y: -122%;
+}
+
+.celebration-burst-high .celebration-burst-two {
+  transform: translate(54%, -70%) scale(0.28);
+  --burst-start-x: 26%;
+  --burst-start-y: -36%;
+  --burst-end-x: 82%;
+  --burst-end-y: -108%;
+}
+
+.celebration-burst-high .celebration-burst-three {
+  transform: translate(-62%, -54%) scale(0.28);
+  --burst-start-x: -28%;
+  --burst-start-y: -28%;
+  --burst-end-x: -96%;
+  --burst-end-y: -88%;
+}
+
+.celebration-burst-low .celebration-burst-one {
+  transform: translate(-76%, 40%) scale(0.28);
+  --burst-start-x: -38%;
+  --burst-start-y: 18%;
+  --burst-end-x: -112%;
+  --burst-end-y: 54%;
+}
+
+.celebration-burst-low .celebration-burst-two {
+  transform: translate(74%, 34%) scale(0.28);
+  --burst-start-x: 36%;
+  --burst-start-y: 16%;
+  --burst-end-x: 112%;
+  --burst-end-y: 44%;
+}
+
+.celebration-burst-low .celebration-burst-three {
+  transform: translate(4%, 82%) scale(0.28);
+  --burst-start-x: 2%;
+  --burst-start-y: 38%;
+  --burst-end-x: 8%;
+  --burst-end-y: 124%;
 }
 
 .confetti {
@@ -1251,19 +1335,46 @@ textarea:disabled {
   100% { transform: scale(1) rotate(0); }
 }
 
+@keyframes celebrationSpinRight {
+  0% { transform: rotate(0) scale(1); }
+  45% { transform: rotate(210deg) scale(1.18); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+@keyframes celebrationSpinLeft {
+  0% { transform: rotate(0) scale(1); }
+  45% { transform: rotate(-210deg) scale(1.18); }
+  100% { transform: rotate(-360deg) scale(1); }
+}
+
+@keyframes celebrationSquash {
+  0% { transform: scale(1); }
+  24% { transform: scale(1.24, 0.78); }
+  54% { transform: scale(0.86, 1.18); }
+  78% { transform: scale(1.08, 0.94); }
+  100% { transform: scale(1); }
+}
+
+@keyframes celebrationBounce {
+  0% { transform: translateY(0) scale(1); }
+  28% { transform: translateY(-1.35rem) scale(1.08); }
+  58% { transform: translateY(0.35rem) scale(1.12, 0.88); }
+  100% { transform: translateY(0) scale(1); }
+}
+
 @keyframes celebrationBurstOne {
-  0% { opacity: 0.9; transform: translate(-32%, -18%) scale(0.22); }
-  100% { opacity: 0; transform: translate(-104%, -76%) scale(1.18); }
+  0% { opacity: 0.9; transform: translate(var(--burst-start-x), var(--burst-start-y)) scale(0.22); }
+  100% { opacity: 0; transform: translate(var(--burst-end-x), var(--burst-end-y)) scale(var(--burst-end-scale)); }
 }
 
 @keyframes celebrationBurstTwo {
-  0% { opacity: 0.86; transform: translate(30%, -10%) scale(0.22); }
-  100% { opacity: 0; transform: translate(104%, -34%) scale(1.14); }
+  0% { opacity: 0.86; transform: translate(var(--burst-start-x), var(--burst-start-y)) scale(0.22); }
+  100% { opacity: 0; transform: translate(var(--burst-end-x), var(--burst-end-y)) scale(var(--burst-end-scale)); }
 }
 
 @keyframes celebrationBurstThree {
-  0% { opacity: 0.8; transform: translate(0, 30%) scale(0.22); }
-  100% { opacity: 0; transform: translate(12%, 110%) scale(1.16); }
+  0% { opacity: 0.8; transform: translate(var(--burst-start-x), var(--burst-start-y)) scale(0.22); }
+  100% { opacity: 0; transform: translate(var(--burst-end-x), var(--burst-end-y)) scale(var(--burst-end-scale)); }
 }
 
 @keyframes audioPulse {
