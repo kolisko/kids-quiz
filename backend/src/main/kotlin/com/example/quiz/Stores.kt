@@ -42,18 +42,11 @@ object TrophyStore {
         }
     }
 
-    fun award(animalKey: String): List<TrophyItem> = synchronized(lock) {
-        Database.useConnection { connection ->
-            connection.awardTrophy(animalKey)
-            connection.readTrophies()
-        }
-    }
-
     fun awardNext(): TrophyAwardResponse = synchronized(lock) {
         Database.useConnection { connection ->
             val animalKey = TrophyAnimalService.nextUnwonAnimalKey(connection.readTrophyKeys())
                 ?: throw IllegalStateException("trophy_pool_exhausted")
-            connection.awardTrophy(animalKey)
+            connection.insertTrophy(animalKey)
             val trophies = connection.readTrophies()
             val awarded = trophies.firstOrNull { it.animalKey == animalKey }
                 ?: throw IllegalStateException("awarded_trophy_missing")

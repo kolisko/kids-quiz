@@ -311,9 +311,7 @@ interface AnimalSurprise {
 interface TrophyItem {
   animalKey: string;
   imagePath: string;
-  wonCount: number;
-  firstWonAt: string;
-  lastWonAt: string;
+  wonAt: string;
 }
 
 interface TrophyAwardResponse {
@@ -425,7 +423,6 @@ export class AppComponent implements OnInit, OnDestroy {
   secondsLeft = this.settings.secondsLimit;
   flash: string | null = null;
   surprise = surprises[0];
-  surpriseAlreadyAwarded = false;
   ttsStatus: TtsStatus = 'checking';
   ttsDiagnostics: TtsDiagnostics = createTtsDiagnostics('Kontrola TTS jeste neprobehla.', null);
   ttsDetailsVisible = false;
@@ -1149,7 +1146,7 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       this.trophies = await this.apiGet<TrophyItem[]>('trophies');
     } catch {
-      this.trophiesError = 'Sbírku trofejí se nepodařilo načíst.';
+      this.trophiesError = 'Sbírku fufínků se nepodařilo načíst.';
     } finally {
       this.trophiesLoading = false;
       this.render();
@@ -2452,12 +2449,10 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       // The child already completed the test; a transient save failure should not trap them on the last card.
     }
-    this.surpriseAlreadyAwarded = false;
     try {
       const response = await this.apiPost<TrophyAwardResponse>('trophies/award-next', {});
       this.trophies = response.trophies;
       this.surprise = this.trophyToSurprise(response.awarded);
-      this.surpriseAlreadyAwarded = true;
     } catch {
       // Trophy selection is celebratory only; keep the congratulations screen available even if saving fails.
       this.surprise = this.nextFallbackSurprise();
@@ -3124,9 +3119,6 @@ export class AppComponent implements OnInit, OnDestroy {
       this.celebrationTapTimerId = window.setTimeout(() => {
         this.celebrationTap = null;
         this.celebrationTapTimerId = null;
-        if (isFinalTap) {
-          void this.awardCurrentTrophy();
-        }
         this.render();
       }, 720);
       this.render();
@@ -3188,16 +3180,6 @@ export class AppComponent implements OnInit, OnDestroy {
       offsetY: escapeY,
       escaping: true,
     };
-  }
-
-  private async awardCurrentTrophy(): Promise<void> {
-    if (this.surpriseAlreadyAwarded) return;
-    try {
-      this.trophies = await this.apiPost<TrophyItem[]>('trophies', { animalKey: this.surprise.animalKey });
-      this.surpriseAlreadyAwarded = true;
-    } catch {
-      // Trophy awarding is celebratory only; gameplay should not be interrupted by a transient save failure.
-    }
   }
 
   private trophyToSurprise(trophy: TrophyItem): AnimalSurprise {

@@ -137,16 +137,6 @@ fun Application.module() {
                     if (!Auth.requireAuthenticated(call)) return@get
                     call.respond(TrophyStore.readAll())
                 }
-                post {
-                    if (!Auth.requireAuthenticated(call)) return@post
-                    val request = runCatching { call.receive<TrophyAwardRequest>() }.getOrNull()
-                    val animalKey = request?.animalKey?.let { TrophyAnimalService.normalizedAnimalKey(it) }
-                    if (animalKey == null) {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_trophy"))
-                        return@post
-                    }
-                    call.respond(TrophyStore.award(animalKey))
-                }
                 post("/award-next") {
                     if (!Auth.requireAuthenticated(call)) return@post
                     val response = runCatching { TrophyStore.awardNext() }.getOrElse { error ->

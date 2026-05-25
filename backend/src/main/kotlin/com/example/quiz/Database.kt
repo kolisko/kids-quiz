@@ -53,6 +53,12 @@ private data class ExistingStatsRow(
     val updatedAt: String,
 )
 
+private data class LegacyTrophyRow(
+    val animalKey: String,
+    val wonCount: Int,
+    val lastWonAt: String,
+)
+
 private data class MigratedQuestion(
     val id: Long,
     val testId: Long,
@@ -235,6 +241,12 @@ object DatabaseMigrator {
                 connection.transaction {
                     mergeTimeoutStatsIntoWrong()
                     recordMigration(19, "merge_timeout_stats_into_wrong")
+                }
+            }
+            if (20 !in applied) {
+                connection.transaction {
+                    migrateTrophiesToUniqueAwards()
+                    recordMigration(20, "migrate_trophies_to_unique_awards")
                 }
             }
         }
@@ -702,13 +714,107 @@ object DatabaseMigrator {
                 """
                 CREATE TABLE IF NOT EXISTS trophies (
                     animal_key TEXT PRIMARY KEY,
-                    won_count INTEGER NOT NULL DEFAULT 1 CHECK(won_count >= 1),
-                    first_won_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    last_won_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    won_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """.trimIndent(),
             )
-            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_trophies_last_won_at ON trophies(last_won_at DESC)")
+            val columns = statement.executeQuery("PRAGMA table_info(trophies)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            if ("won_at" in columns) {
+                statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_trophies_won_at ON trophies(won_at DESC)")
+            }
+        }
+    }
+
+    private fun Connection.migrateTrophiesToUniqueAwards() {
+        val columns = createStatement().use { statement ->
+            statement.executeQuery("PRAGMA table_info(trophies)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+        }
+        if ("won_count" !in columns) {
+            if ("won_at" in columns) {
+                createStatement().use { statement ->
+                    statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_trophies_won_at ON trophies(won_at DESC)")
+                }
+            }
+            return
+        }
+
+        val legacyRows = prepareStatement(
+            """
+            SELECT animal_key, won_count, last_won_at
+            FROM trophies
+            ORDER BY last_won_at, animal_key
+            """.trimIndent(),
+        ).use { statement ->
+            statement.executeQuery().use { rows ->
+                buildList {
+                    while (rows.next()) {
+                        add(
+                            LegacyTrophyRow(
+                                animalKey = rows.getString("animal_key"),
+                                wonCount = rows.getInt("won_count").coerceAtLeast(1),
+                                lastWonAt = rows.getString("last_won_at"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        val usedKeys = mutableSetOf<String>()
+        val migratedRows = mutableListOf<Pair<String, String>>()
+        for (legacyRow in legacyRows) {
+            val normalizedKey = TrophyAnimalService.normalizedAnimalKey(legacyRow.animalKey) ?: legacyRow.animalKey
+            var replacementCount = legacyRow.wonCount - 1
+            if (normalizedKey !in usedKeys) {
+                migratedRows += normalizedKey to legacyRow.lastWonAt
+                usedKeys += normalizedKey
+            } else {
+                replacementCount += 1
+            }
+            repeat(replacementCount) {
+                val replacementKey = TrophyAnimalService.nextUnwonAnimalKey(usedKeys)
+                    ?: throw IllegalStateException("trophy_pool_exhausted")
+                migratedRows += replacementKey to legacyRow.lastWonAt
+                usedKeys += replacementKey
+            }
+        }
+
+        createStatement().use { statement ->
+            statement.executeUpdate("DROP TABLE IF EXISTS trophies_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE trophies_new (
+                    animal_key TEXT PRIMARY KEY,
+                    won_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+        }
+        prepareStatement(
+            """
+            INSERT INTO trophies_new(animal_key, won_at)
+            VALUES(?, ?)
+            """.trimIndent(),
+        ).use { statement ->
+            for ((animalKey, wonAt) in migratedRows) {
+                statement.setString(1, animalKey)
+                statement.setString(2, wonAt)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+        createStatement().use { statement ->
+            statement.executeUpdate("DROP TABLE trophies")
+            statement.executeUpdate("ALTER TABLE trophies_new RENAME TO trophies")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_trophies_won_at ON trophies(won_at DESC)")
         }
     }
 
@@ -1479,9 +1585,9 @@ fun Connection.replaceAppSettings(settings: AppSettings) {
 fun Connection.readTrophies(): List<TrophyItem> {
     return prepareStatement(
         """
-        SELECT animal_key, won_count, first_won_at, last_won_at
+        SELECT animal_key, won_at
         FROM trophies
-        ORDER BY last_won_at DESC, animal_key
+        ORDER BY won_at DESC, animal_key
         """.trimIndent(),
     ).use { statement ->
         statement.executeQuery().use { rows ->
@@ -1492,9 +1598,7 @@ fun Connection.readTrophies(): List<TrophyItem> {
                         TrophyItem(
                             animalKey = animalKey,
                             imagePath = TrophyAnimalService.imagePathForAnimalKey(animalKey) ?: "/assets/animals/$animalKey.svg",
-                            wonCount = rows.getInt("won_count"),
-                            firstWonAt = rows.getString("first_won_at"),
-                            lastWonAt = rows.getString("last_won_at"),
+                            wonAt = rows.getString("won_at"),
                         ),
                     )
                 }
@@ -1513,14 +1617,11 @@ fun Connection.readTrophyKeys(): Set<String> {
     }
 }
 
-fun Connection.awardTrophy(animalKey: String) {
+fun Connection.insertTrophy(animalKey: String) {
     prepareStatement(
         """
-        INSERT INTO trophies(animal_key, won_count, first_won_at, last_won_at)
-        VALUES(?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT(animal_key) DO UPDATE SET
-            won_count = trophies.won_count + 1,
-            last_won_at = CURRENT_TIMESTAMP
+        INSERT INTO trophies(animal_key, won_at)
+        VALUES(?, CURRENT_TIMESTAMP)
         """.trimIndent(),
     ).use { statement ->
         statement.setString(1, animalKey)

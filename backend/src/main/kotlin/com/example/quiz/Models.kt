@@ -112,14 +112,7 @@ data class AppSettings(
 data class TrophyItem(
     val animalKey: String,
     val imagePath: String,
-    val wonCount: Int = 1,
-    val firstWonAt: String,
-    val lastWonAt: String,
-)
-
-@Serializable
-data class TrophyAwardRequest(
-    val animalKey: String,
+    val wonAt: String,
 )
 
 @Serializable
