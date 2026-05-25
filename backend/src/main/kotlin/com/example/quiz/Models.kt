@@ -80,9 +80,8 @@ data class QuizTest(
 data class QuestionStats(
     val correct: Int = 0,
     val wrong: Int = 0,
-    val timeout: Int = 0,
 ) {
-    val mistakes: Int get() = wrong + timeout
+    val mistakes: Int get() = wrong
 }
 
 @Serializable
@@ -135,6 +134,18 @@ data class AnswerResultRequest(
 data class AnswerResultResponse(
     val questionId: Long,
     val stats: QuestionStats,
+)
+
+@Serializable
+data class AnswerSessionResult(
+    val questionId: Long,
+    val correct: Boolean,
+    val direction: PracticeDirection = PracticeDirection.product_to_factors,
+)
+
+@Serializable
+data class AnswerSessionRequest(
+    val results: List<AnswerSessionResult> = emptyList(),
 )
 
 @Serializable
@@ -192,6 +203,17 @@ data class SpellingAnswerResultRequest(
 data class SpellingAnswerResultResponse(
     val word: String,
     val stats: QuestionStats,
+)
+
+@Serializable
+data class WordSessionResult(
+    val word: String,
+    val correct: Boolean,
+)
+
+@Serializable
+data class WordSessionRequest(
+    val results: List<WordSessionResult> = emptyList(),
 )
 
 @Serializable

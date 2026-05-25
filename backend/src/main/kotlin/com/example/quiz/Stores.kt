@@ -80,6 +80,12 @@ object StatsStore {
             connection.recordStats(testId, questionId, correct, timedOut, direction)
         }
     }
+
+    fun recordSession(testId: Long, results: List<AnswerSessionResult>): Map<PracticeDirection, QuestionStatsSnapshot> = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.recordStatsSession(testId, results)
+        }
+    }
 }
 
 object SpellingStore {
@@ -113,6 +119,12 @@ object SpellingStore {
     fun record(word: String, correct: Boolean, timedOut: Boolean, language: LearningLanguage): Pair<String, QuestionStats>? = synchronized(lock) {
         Database.useConnection { connection ->
             connection.recordSpellingStats(word, correct, timedOut, language)
+        }
+    }
+
+    fun recordSession(results: List<WordSessionResult>, language: LearningLanguage): SpellingStatsSnapshot = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.recordSpellingStatsSession(results, language)
         }
     }
 }
@@ -249,6 +261,12 @@ object FlipcardStore {
     fun record(word: String, correct: Boolean, timedOut: Boolean, language: LearningLanguage): Pair<String, QuestionStats>? = synchronized(lock) {
         Database.useConnection { connection ->
             connection.recordFlipcardStats(word, correct, timedOut, language)
+        }
+    }
+
+    fun recordSession(results: List<WordSessionResult>, language: LearningLanguage): FlipcardStatsSnapshot = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.recordFlipcardStatsSession(results, language)
         }
     }
 

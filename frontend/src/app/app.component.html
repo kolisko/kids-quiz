@@ -553,7 +553,7 @@
           {{ answerVisible ? currentAnswerText : currentQuestionText }}
         </h1>
         <p class="answer-hint" *ngIf="!answerVisible && currentAnswerHint">{{ currentAnswerHint }}</p>
-        <p class="timeout-note" *ngIf="timedOut">Čas vypršel, bod je odečtený.</p>
+        <p class="timeout-note" *ngIf="timedOut">Čas vypršel, počítá se jako chyba.</p>
       </div>
       <ng-template #flipcardCard>
         <div class="question-card flipcard-card">

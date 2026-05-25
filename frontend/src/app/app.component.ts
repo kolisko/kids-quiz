@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ArrowLeft, CarFront, Info, ListRestart, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings, Trophy } from 'lucide-angular';
+import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
 
 type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
 type QuizTestType = 'multiplication' | 'english';
@@ -131,7 +132,6 @@ interface QuizTest {
 interface QuestionStats {
   correct: number;
   wrong: number;
-  timeout: number;
 }
 
 interface QuestionStatsSnapshot {
@@ -276,6 +276,30 @@ interface FlipcardOption {
   word: FlipcardWord;
   disabled: boolean;
   wrongFeedback?: boolean;
+}
+
+interface MathSessionItem {
+  index: number;
+  direction: PracticeDirection;
+}
+
+interface MathSessionSaveResult {
+  questionId: number;
+  correct: boolean;
+  direction: PracticeDirection;
+}
+
+interface MathSessionSaveRequest {
+  results: MathSessionSaveResult[];
+}
+
+interface WordSessionSaveResult {
+  word: string;
+  correct: boolean;
+}
+
+interface WordSessionSaveRequest {
+  results: WordSessionSaveResult[];
 }
 
 interface AnimalSurprise {
@@ -435,10 +459,9 @@ export class AppComponent implements OnInit, OnDestroy {
   celebrationTapCount = 0;
   spellingAnswerWordActive = false;
 
-  private readonly mistakeWeights: Record<PracticeDirection, Map<number, number>> = {
-    product_to_factors: new Map<number, number>(),
-    factors_to_product: new Map<number, number>(),
-  };
+  private readonly mathSession = new TestSessionEngine<MathSessionItem>();
+  private readonly spellingSession = new TestSessionEngine<number>();
+  private readonly flipcardSession = new TestSessionEngine<number>();
   private timerId: number | null = null;
   private flashTimerId: number | null = null;
   private ttsVoicesTimerId: number | null = null;
@@ -453,6 +476,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private celebrationTapTimerId: number | null = null;
   private spellingAnswerWordTimerId: number | null = null;
   private lastCelebrationFanfareIndex = -1;
+  private finishingSession = false;
   private assetLibraryPollToken: AssetLibraryPollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
   private translationBackfillPollTokens: Partial<Record<LearningLanguage, PollToken>> = {};
@@ -555,9 +579,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get scoreGoal(): number {
-    if (this.activeGame === 'spelling') return this.spellingWords.length;
-    if (this.activeGame === 'flipcards') return this.flipcardWords.length;
-    return this.settings.targetScore;
+    if (this.activeGame === 'spelling') return this.spellingSession.selectedCount;
+    if (this.activeGame === 'flipcards') return this.flipcardSession.selectedCount;
+    return this.mathSession.selectedCount || this.settings.targetScore;
   }
 
   get spellingSetsConfigured(): boolean {
@@ -807,13 +831,10 @@ export class AppComponent implements OnInit, OnDestroy {
       ]);
       this.applySettings(settings);
       this.flipcardStats = stats.statsByWord ?? {};
-      const [session, answerPool] = await Promise.all([
-        this.apiGet<FlipcardSession>(`flipcards/session?language=${this.selectedLanguage}&limit=${this.settings.targetScore}`),
-        this.loadFlipcardAnswerPool(),
-      ]);
-      this.flipcardWords = session.words;
+      const answerPool = await this.loadFlipcardAnswerPool();
+      this.flipcardWords = answerPool;
       this.flipcardAnswerPool = answerPool;
-      this.flipcardQueue = this.flipcardWords.map((_, index) => index);
+      this.startFlipcardSession();
       this.flipcardOptionsByIndex = this.flipcardWords.map((_, index) => this.buildFlipcardOptions(index));
       if (this.flipcardWords.length < 1 || this.flipcardAnswerPool.length < 3 || this.flipcardOptionsByIndex.some((options) => options.length < 3)) {
         if (this.settings.flipcardSource === 'ready_only') {
@@ -856,7 +877,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.applySettings(settings);
       this.spellingStats = stats.statsByWord ?? {};
       this.spellingWords = session.words;
-      this.spellingPendingIndices = this.spellingWords.map((_, index) => index);
+      this.startSpellingSession();
       if (this.settings.audioSource === 'backend_mp3') {
         await this.prepareBackendAudio();
         return;
@@ -891,6 +912,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.selectedMode = mode;
     this.resetRoundState();
     void this.startTeslaMp3AudioForTest();
+    this.startMathSession();
     this.setScreen('play');
     this.pickQuestion();
     this.render();
@@ -1037,12 +1059,8 @@ export class AppComponent implements OnInit, OnDestroy {
   markWrong(): void {
     const index = this.activeGame === 'spelling' ? this.spellingWordIndex : this.currentIndex;
     if (index === null) return;
-    this.score -= 1;
-    this.incrementMistakeWeight(index);
-    void this.recordAnswer(index, false, false);
-    if (this.activeGame === 'spelling') {
-      this.advanceSpellingQueue(false);
-    }
+    this.recordSessionOutcome('wrong');
+    this.score = this.currentSessionCompletedCount();
     this.showPenalty();
     this.pickQuestion();
   }
@@ -1050,21 +1068,16 @@ export class AppComponent implements OnInit, OnDestroy {
   markCorrect(): void {
     const index = this.activeGame === 'spelling' ? this.spellingWordIndex : this.currentIndex;
     if (index === null) return;
-    const nextScore = this.score + 1;
-    this.score = nextScore;
-    this.decrementMistakeWeight(index);
-    void this.recordAnswer(index, true, false);
-    if (this.activeGame === 'spelling') {
-      this.advanceSpellingQueue(true);
+    this.recordSessionOutcome('correct');
+    this.score = this.currentSessionCompletedCount();
+    if (this.currentSessionFinished()) {
+      void this.finishSession();
+      return;
     }
-    if (this.finishIfNeeded(nextScore)) return;
     this.pickQuestion();
   }
 
   nextAfterTimeout(): void {
-    if (this.activeGame === 'spelling') {
-      this.advanceSpellingQueue(false);
-    }
     this.pickQuestion();
   }
 
@@ -1678,6 +1691,43 @@ export class AppComponent implements OnInit, OnDestroy {
     this.pickQuestion();
   }
 
+  private startMathSession(): void {
+    const candidates = this.questions.map((question, index) => {
+      const direction = this.pickDirection();
+      return {
+        key: `${direction}:${question.id}`,
+        value: { index, direction },
+        weight: statsWeight(this.serverStats[direction][String(question.id)]),
+      };
+    });
+    this.mathSession.start(candidates, this.settings.targetScore);
+    this.score = this.mathSession.completedCount;
+  }
+
+  private startSpellingSession(): void {
+    this.spellingSession.start(
+      this.spellingWords.map((word, index) => ({
+        key: word.normalized,
+        value: index,
+        weight: statsWeight(this.spellingStats[word.normalized]),
+      })),
+      this.settings.targetScore,
+    );
+    this.score = this.spellingSession.completedCount;
+  }
+
+  private startFlipcardSession(): void {
+    this.flipcardSession.start(
+      this.flipcardWords.map((word, index) => ({
+        key: word.normalized,
+        value: index,
+        weight: statsWeight(this.flipcardStats[word.normalized]),
+      })),
+      this.settings.targetScore,
+    );
+    this.score = this.flipcardSession.completedCount;
+  }
+
   private startFlipcardGame(): void {
     this.setScreen('play');
     if (this.settings.audioSource === 'browser_tts') {
@@ -1695,7 +1745,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.backendAudioUrls = {};
     this.backendSpellingAudioUrls = {};
     try {
-      this.audioPrepItems = this.spellingWords.flatMap((word) => [
+      const selectedWords = this.spellingSession.selectedValues()
+        .map((index) => this.spellingWords[index])
+        .filter((word): word is SpellingWord => Boolean(word));
+      this.audioPrepItems = selectedWords.flatMap((word) => [
         {
           audioWord: word.text,
           normalized: word.normalized,
@@ -1752,7 +1805,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.backendAudioUrls = {};
     this.flipcardImageUrls = {};
     try {
-      const imageItems: AudioPrepItem[] = this.flipcardWords.map((word) => ({
+      const selectedWords = this.flipcardSession.selectedValues()
+        .map((index) => this.flipcardWords[index])
+        .filter((word): word is FlipcardWord => Boolean(word));
+      const imageItems: AudioPrepItem[] = selectedWords.map((word) => ({
             audioWord: word.conceptKey,
             normalized: word.conceptKey,
             word: word.text,
@@ -2121,22 +2177,14 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const direction = this.pickDirection();
-    const weightedIndices: number[] = [];
-    for (let index = 0; index < this.questions.length; index += 1) {
-      const question = this.questions[index];
-      const stats = this.serverStats[direction][String(question.id)];
-      const mistakes = stats ? stats.wrong + stats.timeout : 0;
-      const longTermDifficulty = stats ? Math.max(0, mistakes * 2 - stats.correct) : 0;
-      const sessionDifficulty = this.mistakeWeights[direction].get(index) ?? 0;
-      const weight = 1 + longTermDifficulty * 2 + sessionDifficulty * 3;
-      for (let copy = 0; copy < weight; copy += 1) {
-        weightedIndices.push(index);
-      }
+    const nextItem = this.mathSession.next();
+    if (!nextItem) {
+      void this.finishSession();
+      return;
     }
 
-    this.currentIndex = weightedIndices[Math.floor(Math.random() * weightedIndices.length)] ?? 0;
-    this.currentDirection = direction;
+    this.currentIndex = nextItem.index;
+    this.currentDirection = nextItem.direction;
     this.currentFactorQuestion = this.pickFactorQuestion(this.questions[this.currentIndex]);
     this.answerVisible = false;
     this.timedOut = false;
@@ -2149,11 +2197,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.spellingWordIndex = null;
       return;
     }
-    const nextIndex = this.spellingPendingIndices[0];
-    if (nextIndex === undefined) {
-      this.clearTimer();
-      this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
-      this.setScreen('finished');
+    const nextIndex = this.spellingSession.next();
+    if (nextIndex === null) {
+      void this.finishSession();
       return;
     }
     this.spellingWordIndex = nextIndex;
@@ -2164,25 +2210,14 @@ export class AppComponent implements OnInit, OnDestroy {
     window.setTimeout(() => this.playCurrentSpellingAudio(), 120);
   }
 
-  private advanceSpellingQueue(correct: boolean): void {
-    const currentIndex = this.spellingWordIndex;
-    if (currentIndex === null || this.spellingPendingIndices.length === 0) return;
-    this.spellingPendingIndices = this.spellingPendingIndices.filter((index) => index !== currentIndex);
-    if (!correct) {
-      this.spellingPendingIndices = [...this.spellingPendingIndices, currentIndex];
-    }
-  }
-
   private pickFlipcardWord(): void {
     if (this.flipcardWords.length < 3) {
       this.flipcardWordIndex = null;
       return;
     }
-    const nextIndex = this.flipcardQueue[0];
-    if (nextIndex === undefined) {
-      this.clearTimer();
-      this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
-      this.setScreen('finished');
+    const nextIndex = this.flipcardSession.next();
+    if (nextIndex === null) {
+      void this.finishSession();
       return;
     }
     this.flipcardWordIndex = nextIndex;
@@ -2213,9 +2248,12 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private flipcardAudioWordsForSession(): FlipcardWord[] {
     const words = new Map<string, FlipcardWord>();
-    this.flipcardOptionsByIndex.flat().forEach((option) => {
-      words.set(option.word.normalized, option.word);
-    });
+    this.flipcardSession.selectedValues()
+      .map((index) => this.flipcardOptionsByIndex[index] ?? [])
+      .flat()
+      .forEach((option) => {
+        words.set(option.word.normalized, option.word);
+      });
     return Array.from(words.values());
   }
 
@@ -2228,22 +2266,21 @@ export class AppComponent implements OnInit, OnDestroy {
     if (option.word.normalized !== current.normalized) {
       this.disableFlipcardOption(option.word.normalized);
       await this.playFlipcardWordAudio(option.word);
+      this.flipcardSession.record('wrong');
+      this.score = this.flipcardSession.completedCount;
       this.flipcardAdvancing = false;
-      if (!this.flipcardAttemptFailed) {
-        this.flipcardAttemptFailed = true;
-        void this.recordFlipcardAnswer(currentIndex, false, false);
-      }
-      this.render();
+      this.showPenalty();
+      this.pickQuestion();
       return;
     }
 
     await this.playFlipcardWordAudio(option.word);
-    this.flipcardQueue = this.flipcardQueue.filter((index) => index !== currentIndex);
-    if (this.flipcardAttemptFailed) {
-      this.flipcardQueue = [...this.flipcardQueue, currentIndex];
-    } else {
-      this.score += 1;
-      void this.recordFlipcardAnswer(currentIndex, true, false);
+    this.flipcardSession.record('correct');
+    this.score = this.flipcardSession.completedCount;
+    if (this.flipcardSession.finished) {
+      this.flipcardAdvancing = false;
+      await this.finishSession();
+      return;
     }
     this.flipcardAdvancing = false;
     this.pickQuestion();
@@ -2350,9 +2387,8 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     this.timedOut = true;
     this.revealAnswer();
-    this.score -= 1;
-    this.incrementMistakeWeight(index);
-    void this.recordAnswer(index, false, true);
+    this.recordSessionOutcome('wrong');
+    this.score = this.currentSessionCompletedCount();
     this.showPenalty();
     this.render();
   }
@@ -2360,10 +2396,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private async handleFlipcardTimeout(index: number): Promise<void> {
     this.timedOut = true;
     this.flipcardAdvancing = true;
-    this.score -= 1;
-    void this.recordFlipcardAnswer(index, false, true);
-    this.flipcardQueue = this.flipcardQueue.filter((candidate) => candidate !== index);
-    this.flipcardQueue = [...this.flipcardQueue, index];
+    this.flipcardSession.record('wrong');
+    this.score = this.flipcardSession.completedCount;
     this.showPenalty();
     this.render();
     await this.playFlipcardWordAudio(this.flipcardWords[index]);
@@ -2379,68 +2413,104 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  private finishIfNeeded(nextScore: number): boolean {
-    if (this.activeGame === 'spelling') return false;
-    if (nextScore < this.settings.targetScore) return false;
-    this.clearTimer();
-    this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
-    this.setScreen('finished');
-    return true;
-  }
-
-  private async recordAnswer(index: number, correct: boolean, timedOut: boolean): Promise<void> {
+  private recordSessionOutcome(outcome: TestSessionOutcome): void {
     if (this.activeGame === 'spelling') {
-      await this.recordSpellingAnswer(index, correct, timedOut);
+      this.spellingSession.record(outcome);
       return;
     }
-    const question = this.questions[index];
+    if (this.activeGame === 'flipcards') {
+      this.flipcardSession.record(outcome);
+      return;
+    }
+    this.mathSession.record(outcome);
+  }
+
+  private currentSessionCompletedCount(): number {
+    if (this.activeGame === 'spelling') return this.spellingSession.completedCount;
+    if (this.activeGame === 'flipcards') return this.flipcardSession.completedCount;
+    return this.mathSession.completedCount;
+  }
+
+  private currentSessionFinished(): boolean {
+    if (this.activeGame === 'spelling') return this.spellingSession.finished;
+    if (this.activeGame === 'flipcards') return this.flipcardSession.finished;
+    return this.mathSession.finished;
+  }
+
+  private async finishSession(): Promise<void> {
+    if (this.finishingSession) return;
+    this.finishingSession = true;
+    this.clearTimer();
+    try {
+      await this.saveCurrentSessionResults();
+    } catch {
+      // The child already completed the test; a transient save failure should not trap them on the last card.
+    }
+    this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
+    this.setScreen('finished');
+    this.render();
+  }
+
+  private async saveCurrentSessionResults(): Promise<void> {
+    if (this.activeGame === 'spelling') {
+      await this.saveSpellingSessionResults();
+      return;
+    }
+    if (this.activeGame === 'flipcards') {
+      await this.saveFlipcardSessionResults();
+      return;
+    }
+    await this.saveMathSessionResults();
+  }
+
+  private async saveMathSessionResults(): Promise<void> {
     const test = this.selectedTest;
-    if (!question || !test) return;
-    const direction = this.currentDirection;
-    const response = await this.apiPost<AnswerResultResponse>(`tests/${test.id}/stats/answer`, {
-      questionId: question.id,
-      correct,
-      timedOut,
-      direction,
+    if (!test) return;
+    const results: MathSessionSaveResult[] = this.mathSession.results().flatMap((result) => {
+      const [direction, rawQuestionId] = result.key.split(':');
+      const questionId = Number(rawQuestionId);
+      if (!Number.isFinite(questionId)) return [];
+      return [{
+        questionId,
+        direction: direction === 'factors_to_product' ? 'factors_to_product' : 'product_to_factors',
+        correct: !result.hadMistake,
+      }];
     });
+    if (results.length === 0) return;
+    const byDirection = await this.apiPost<Record<PracticeDirection, QuestionStatsSnapshot>>(
+      `tests/${test.id}/stats/session`,
+      { results } satisfies MathSessionSaveRequest,
+    );
     this.serverStats = {
-      ...this.serverStats,
-      [direction]: {
-        ...this.serverStats[direction],
-        [String(response.questionId)]: response.stats,
-      },
+      product_to_factors: byDirection.product_to_factors?.statsByQuestionId ?? this.serverStats.product_to_factors,
+      factors_to_product: byDirection.factors_to_product?.statsByQuestionId ?? this.serverStats.factors_to_product,
     };
-    this.render();
   }
 
-  private async recordSpellingAnswer(index: number, correct: boolean, timedOut: boolean): Promise<void> {
-    const word = this.spellingWords[index];
-    if (!word) return;
-    const response = await this.apiPost<SpellingAnswerResultResponse>(`spelling/stats/answer?language=${this.selectedLanguage}`, {
-      word: word.normalized,
-      correct,
-      timedOut,
-    });
-    this.spellingStats = {
-      ...this.spellingStats,
-      [response.word]: response.stats,
-    };
-    this.render();
+  private async saveSpellingSessionResults(): Promise<void> {
+    const results: WordSessionSaveResult[] = this.spellingSession.results().map((result) => ({
+      word: result.key,
+      correct: !result.hadMistake,
+    }));
+    if (results.length === 0) return;
+    const response = await this.apiPost<SpellingStatsSnapshot>(
+      `spelling/stats/session?language=${this.selectedLanguage}`,
+      { results } satisfies WordSessionSaveRequest,
+    );
+    this.spellingStats = response.statsByWord ?? this.spellingStats;
   }
 
-  private async recordFlipcardAnswer(index: number, correct: boolean, timedOut: boolean): Promise<void> {
-    const word = this.flipcardWords[index];
-    if (!word) return;
-    const response = await this.apiPost<FlipcardAnswerResultResponse>(`flipcards/stats/answer?language=${this.selectedLanguage}`, {
-      word: word.normalized,
-      correct,
-      timedOut,
-    });
-    this.flipcardStats = {
-      ...this.flipcardStats,
-      [response.word]: response.stats,
-    };
-    this.render();
+  private async saveFlipcardSessionResults(): Promise<void> {
+    const results: WordSessionSaveResult[] = this.flipcardSession.results().map((result) => ({
+      word: result.key,
+      correct: !result.hadMistake,
+    }));
+    if (results.length === 0) return;
+    const response = await this.apiPost<FlipcardStatsSnapshot>(
+      `flipcards/stats/session?language=${this.selectedLanguage}`,
+      { results } satisfies WordSessionSaveRequest,
+    );
+    this.flipcardStats = response.statsByWord ?? this.flipcardStats;
   }
 
   private resetRoundState(): void {
@@ -2479,8 +2549,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.timedOut = false;
     this.flash = null;
     this.secondsLeft = this.settings.secondsLimit;
-    this.mistakeWeights.product_to_factors.clear();
-    this.mistakeWeights.factors_to_product.clear();
+    this.finishingSession = false;
+    this.mathSession.clear();
+    this.spellingSession.clear();
+    this.flipcardSession.clear();
   }
 
   private pickDirection(): PracticeDirection {
@@ -2494,18 +2566,6 @@ export class AppComponent implements OnInit, OnDestroy {
   private pickFactorQuestion(question: Question | undefined): string | null {
     if (!question || question.answers.length === 0) return null;
     return question.answers[Math.floor(Math.random() * question.answers.length)] ?? question.answers[0];
-  }
-
-  private incrementMistakeWeight(index: number): void {
-    if (this.activeGame === 'spelling') return;
-    const weights = this.mistakeWeights[this.currentDirection];
-    weights.set(index, (weights.get(index) ?? 0) + 1);
-  }
-
-  private decrementMistakeWeight(index: number): void {
-    if (this.activeGame === 'spelling') return;
-    const weights = this.mistakeWeights[this.currentDirection];
-    weights.set(index, Math.max(0, (weights.get(index) ?? 0) - 1));
   }
 
   private async loadAllLanguageSettings(): Promise<void> {
@@ -2735,7 +2795,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private nextFlipcardQueueIndex(): number | null {
     if (this.flipcardWordIndex === null) return null;
-    return this.flipcardQueue.find((index) => index !== this.flipcardWordIndex) ?? null;
+    return this.flipcardSession.selectedValues().find((index) => index !== this.flipcardWordIndex) ?? null;
   }
 
   private clearFlipcardPreloads(): void {
@@ -4212,6 +4272,10 @@ function shuffled<T>(items: T[]): T[] {
     [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
   }
   return copy;
+}
+
+function statsWeight(stats: QuestionStats | undefined): number {
+  return Math.max(1, 1 + (stats?.wrong ?? 0) - (stats?.correct ?? 0));
 }
 
 function createTtsDiagnostics(reason: string, lastError: string | null, voiceCount?: number): TtsDiagnostics {

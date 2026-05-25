@@ -231,6 +231,12 @@ object DatabaseMigrator {
                     recordMigration(18, "add_trophies")
                 }
             }
+            if (19 !in applied) {
+                connection.transaction {
+                    mergeTimeoutStatsIntoWrong()
+                    recordMigration(19, "merge_timeout_stats_into_wrong")
+                }
+            }
         }
         migrated = true
     }
@@ -706,6 +712,80 @@ object DatabaseMigrator {
         }
     }
 
+    private fun Connection.mergeTimeoutStatsIntoWrong() {
+        createStatement().use { statement ->
+            statement.executeUpdate("DROP TABLE IF EXISTS question_stats_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE question_stats_new (
+                    question_id INTEGER NOT NULL,
+                    direction TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(question_id) REFERENCES questions(id) ON DELETE CASCADE,
+                    PRIMARY KEY(question_id, direction)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO question_stats_new(question_id, direction, correct, wrong, updated_at)
+                SELECT question_id, direction, correct, wrong + timeout, updated_at
+                FROM question_stats
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE question_stats")
+            statement.executeUpdate("ALTER TABLE question_stats_new RENAME TO question_stats")
+
+            statement.executeUpdate("DROP TABLE IF EXISTS spelling_word_stats_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE spelling_word_stats_new (
+                    language TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(language, normalized_word)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO spelling_word_stats_new(language, normalized_word, correct, wrong, updated_at)
+                SELECT language, normalized_word, correct, wrong + timeout, updated_at
+                FROM spelling_word_stats
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE spelling_word_stats")
+            statement.executeUpdate("ALTER TABLE spelling_word_stats_new RENAME TO spelling_word_stats")
+
+            statement.executeUpdate("DROP TABLE IF EXISTS flipcard_word_stats_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE flipcard_word_stats_new (
+                    language TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY(language, normalized_word)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO flipcard_word_stats_new(language, normalized_word, correct, wrong, updated_at)
+                SELECT language, normalized_word, correct, wrong + timeout, updated_at
+                FROM flipcard_word_stats
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE flipcard_word_stats")
+            statement.executeUpdate("ALTER TABLE flipcard_word_stats_new RENAME TO flipcard_word_stats")
+        }
+    }
+
     private fun Connection.addEnglishFlipcards() {
         createStatement().use { statement ->
             statement.executeUpdate(
@@ -1119,7 +1199,7 @@ object DatabaseMigrator {
             val correct = parts[1].toIntOrNull() ?: return@mapNotNull null
             val wrong = parts[2].toIntOrNull() ?: return@mapNotNull null
             val timeout = parts[3].toIntOrNull() ?: return@mapNotNull null
-            key to QuestionStats(correct = correct, wrong = wrong, timeout = timeout)
+            key to QuestionStats(correct = correct, wrong = wrong + timeout)
         }.toMap()
     }
 
@@ -1558,7 +1638,7 @@ fun Connection.readSpellingSession(
 fun Connection.readSpellingStats(language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
     return prepareStatement(
         """
-        SELECT normalized_word, correct, wrong, timeout
+        SELECT normalized_word, correct, wrong
         FROM spelling_word_stats
         WHERE language = ?
         ORDER BY normalized_word
@@ -1573,7 +1653,6 @@ fun Connection.readSpellingStats(language: LearningLanguage = LearningLanguage.e
                         QuestionStats(
                             correct = rows.getInt("correct"),
                             wrong = rows.getInt("wrong"),
-                            timeout = rows.getInt("timeout"),
                         ),
                     )
                 }
@@ -1594,23 +1673,33 @@ fun Connection.recordSpellingStats(
     }
     prepareStatement(
         """
-        INSERT INTO spelling_word_stats(language, normalized_word, correct, wrong, timeout, updated_at)
-        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO spelling_word_stats(language, normalized_word, correct, wrong, updated_at)
+        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(language, normalized_word) DO UPDATE SET
             correct = spelling_word_stats.correct + excluded.correct,
             wrong = spelling_word_stats.wrong + excluded.wrong,
-            timeout = spelling_word_stats.timeout + excluded.timeout,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
         statement.setString(1, language.name)
         statement.setString(2, normalized)
         statement.setInt(3, if (correct) 1 else 0)
-        statement.setInt(4, if (!correct && !timedOut) 1 else 0)
-        statement.setInt(5, if (timedOut) 1 else 0)
+        statement.setInt(4, if (correct) 0 else 1)
         statement.executeUpdate()
     }
     return normalized to readSpellingStat(normalized, language)
+}
+
+fun Connection.recordSpellingStatsSession(
+    results: List<WordSessionResult>,
+    language: LearningLanguage = LearningLanguage.en,
+): SpellingStatsSnapshot {
+    transaction {
+        results.forEach { result ->
+            recordSpellingStats(result.word, result.correct, timedOut = false, language)
+        }
+    }
+    return SpellingStatsSnapshot(statsByWord = readSpellingStats(language))
 }
 
 fun Connection.readFlipcardWordsResponse(language: LearningLanguage = LearningLanguage.en): FlipcardWordsResponse {
@@ -1859,7 +1948,7 @@ fun Connection.readFlipcardSession(limit: Int, language: LearningLanguage = Lear
 fun Connection.readFlipcardStats(language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
     return prepareStatement(
         """
-        SELECT normalized_word, correct, wrong, timeout
+        SELECT normalized_word, correct, wrong
         FROM flipcard_word_stats
         WHERE language = ?
         ORDER BY normalized_word
@@ -1874,7 +1963,6 @@ fun Connection.readFlipcardStats(language: LearningLanguage = LearningLanguage.e
                         QuestionStats(
                             correct = rows.getInt("correct"),
                             wrong = rows.getInt("wrong"),
-                            timeout = rows.getInt("timeout"),
                         ),
                     )
                 }
@@ -1895,23 +1983,33 @@ fun Connection.recordFlipcardStats(
     }
     prepareStatement(
         """
-        INSERT INTO flipcard_word_stats(language, normalized_word, correct, wrong, timeout, updated_at)
-        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO flipcard_word_stats(language, normalized_word, correct, wrong, updated_at)
+        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(language, normalized_word) DO UPDATE SET
             correct = flipcard_word_stats.correct + excluded.correct,
             wrong = flipcard_word_stats.wrong + excluded.wrong,
-            timeout = flipcard_word_stats.timeout + excluded.timeout,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
         statement.setString(1, language.name)
         statement.setString(2, normalized)
         statement.setInt(3, if (correct) 1 else 0)
-        statement.setInt(4, if (!correct && !timedOut) 1 else 0)
-        statement.setInt(5, if (timedOut) 1 else 0)
+        statement.setInt(4, if (correct) 0 else 1)
         statement.executeUpdate()
     }
     return normalized to readFlipcardStat(normalized, language)
+}
+
+fun Connection.recordFlipcardStatsSession(
+    results: List<WordSessionResult>,
+    language: LearningLanguage = LearningLanguage.en,
+): FlipcardStatsSnapshot {
+    transaction {
+        results.forEach { result ->
+            recordFlipcardStats(result.word, result.correct, timedOut = false, language)
+        }
+    }
+    return FlipcardStatsSnapshot(statsByWord = readFlipcardStats(language))
 }
 
 fun Connection.testExists(testId: Long): Boolean {
@@ -1969,7 +2067,7 @@ private fun Connection.replaceLegacyQuestions(questions: List<LegacyQuestion>) {
 fun Connection.readStats(testId: Long, direction: PracticeDirection): Map<Long, QuestionStats> {
     return prepareStatement(
         """
-        SELECT question_stats.question_id, question_stats.correct, question_stats.wrong, question_stats.timeout
+        SELECT question_stats.question_id, question_stats.correct, question_stats.wrong
         FROM question_stats
         INNER JOIN questions ON questions.id = question_stats.question_id
         WHERE questions.test_id = ? AND question_stats.direction = ?
@@ -1985,7 +2083,6 @@ fun Connection.readStats(testId: Long, direction: PracticeDirection): Map<Long, 
                         QuestionStats(
                             correct = rows.getInt("correct"),
                             wrong = rows.getInt("wrong"),
-                            timeout = rows.getInt("timeout"),
                         ),
                     )
                 }
@@ -2006,23 +2103,35 @@ fun Connection.recordStats(
     }
     prepareStatement(
         """
-        INSERT INTO question_stats(question_id, direction, correct, wrong, timeout, updated_at)
-        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO question_stats(question_id, direction, correct, wrong, updated_at)
+        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(question_id, direction) DO UPDATE SET
             correct = question_stats.correct + excluded.correct,
             wrong = question_stats.wrong + excluded.wrong,
-            timeout = question_stats.timeout + excluded.timeout,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
         statement.setLong(1, questionId)
         statement.setString(2, direction.name)
         statement.setInt(3, if (correct) 1 else 0)
-        statement.setInt(4, if (!correct && !timedOut) 1 else 0)
-        statement.setInt(5, if (timedOut) 1 else 0)
+        statement.setInt(4, if (correct) 0 else 1)
         statement.executeUpdate()
     }
     return questionId to readStat(testId, questionId, direction)
+}
+
+fun Connection.recordStatsSession(
+    testId: Long,
+    results: List<AnswerSessionResult>,
+): Map<PracticeDirection, QuestionStatsSnapshot> {
+    transaction {
+        results.forEach { result ->
+            recordStats(testId, result.questionId, result.correct, timedOut = false, result.direction)
+        }
+    }
+    return PracticeDirection.entries.associateWith { direction ->
+        QuestionStatsSnapshot(statsByQuestionId = readStats(testId, direction))
+    }
 }
 
 fun Connection.setStats(statsByKey: Map<String, QuestionStats>) {
@@ -2046,7 +2155,7 @@ fun Connection.setStats(statsByKey: Map<String, QuestionStats>) {
             statement.setString(3, a)
             statement.setInt(4, stats.correct)
             statement.setInt(5, stats.wrong)
-            statement.setInt(6, stats.timeout)
+            statement.setInt(6, 0)
             statement.addBatch()
         }
         statement.executeBatch()
@@ -2144,7 +2253,7 @@ private fun Connection.spellingWordExists(normalizedWord: String, language: Lear
 private fun Connection.readSpellingStat(normalizedWord: String, language: LearningLanguage): QuestionStats {
     return prepareStatement(
         """
-        SELECT correct, wrong, timeout
+        SELECT correct, wrong
         FROM spelling_word_stats
         WHERE language = ? AND normalized_word = ?
         """.trimIndent(),
@@ -2156,7 +2265,6 @@ private fun Connection.readSpellingStat(normalizedWord: String, language: Learni
             QuestionStats(
                 correct = rows.getInt("correct"),
                 wrong = rows.getInt("wrong"),
-                timeout = rows.getInt("timeout"),
             )
         }
     }
@@ -2200,7 +2308,7 @@ private fun Connection.flipcardWordExists(normalizedWord: String, language: Lear
 private fun Connection.readFlipcardStat(normalizedWord: String, language: LearningLanguage): QuestionStats {
     return prepareStatement(
         """
-        SELECT correct, wrong, timeout
+        SELECT correct, wrong
         FROM flipcard_word_stats
         WHERE language = ? AND normalized_word = ?
         """.trimIndent(),
@@ -2212,7 +2320,6 @@ private fun Connection.readFlipcardStat(normalizedWord: String, language: Learni
             QuestionStats(
                 correct = rows.getInt("correct"),
                 wrong = rows.getInt("wrong"),
-                timeout = rows.getInt("timeout"),
             )
         }
     }
@@ -2229,7 +2336,7 @@ private fun Connection.questionBelongsToTest(testId: Long, questionId: Long): Bo
 private fun Connection.readStat(testId: Long, questionId: Long, direction: PracticeDirection): QuestionStats {
     return prepareStatement(
         """
-        SELECT question_stats.correct, question_stats.wrong, question_stats.timeout
+        SELECT question_stats.correct, question_stats.wrong
         FROM question_stats
         INNER JOIN questions ON questions.id = question_stats.question_id
         WHERE questions.test_id = ? AND question_stats.question_id = ? AND question_stats.direction = ?
@@ -2243,7 +2350,6 @@ private fun Connection.readStat(testId: Long, questionId: Long, direction: Pract
             QuestionStats(
                 correct = rows.getInt("correct"),
                 wrong = rows.getInt("wrong"),
-                timeout = rows.getInt("timeout"),
             )
         }
     }

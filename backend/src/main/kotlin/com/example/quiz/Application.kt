@@ -174,6 +174,16 @@ fun Application.module() {
                     }
                     call.respond(SpellingAnswerResultResponse(word = word, stats = stats))
                 }
+                post("/stats/session") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
+                    val request = runCatching { call.receive<WordSessionRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@post
+                    }
+                    call.respond(SpellingStore.recordSession(request.results, language))
+                }
                 get("/audio/words/{word}.mp3") {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val word = call.requireSpellingAudioWord() ?: return@get
@@ -315,8 +325,18 @@ fun Application.module() {
                         ?: run {
                             call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
                             return@post
-                        }
+                    }
                     call.respond(FlipcardAnswerResultResponse(word = word, stats = stats))
+                }
+                post("/stats/session") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
+                    val request = runCatching { call.receive<WordSessionRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@post
+                    }
+                    call.respond(FlipcardStore.recordSession(request.results, language))
                 }
                 get("/images/{word}") {
                     if (!Auth.requireAuthenticated(call)) return@get
@@ -447,8 +467,18 @@ fun Application.module() {
                         ?: run {
                             call.respond(HttpStatusCode.NotFound, mapOf("error" to "question_not_found"))
                             return@post
-                        }
+                    }
                     call.respond(AnswerResultResponse(questionId = questionId, stats = stats))
+                }
+                post("/stats/session") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val testId = call.requireQuizTestId() ?: return@post
+                    val request = runCatching { call.receive<AnswerSessionRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@post
+                    }
+                    call.respond(StatsStore.recordSession(testId, request.results))
                 }
             }
         }
