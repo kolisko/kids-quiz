@@ -2,96 +2,69 @@
 
 ## Technology Stack
 
-- Angular frontend built with npm and served as static files.
-- Kotlin/JVM backend built with Gradle.
+- Angular standalone frontend with Angular Router.
+- Kotlin/JVM backend built with Gradle submodules.
 - Ktor HTTP server for API routes and static SPA fallback.
-- Kotlin serialization for backend request/response models.
-- SQLite persistence for server-side questions and stats.
-- Docker image containing only the backend jar, Angular static files, and runtime entrypoint.
+- SQLite persistence for production data.
+- Docker image containing the server fat jar, Angular static files, and runtime entrypoint.
 
-## Module Layout
+## Backend Hexagon
 
 ```text
-frontend/
-  src/app/
-    app.component.ts
-    app.component.html
-  src/assets/animals/*.svg
-  src/styles.css
-
 backend/
-  src/main/kotlin/com/example/quiz/
-    Application.kt
-    Auth.kt
-    Database.kt
-    Models.kt
-    RuntimePaths.kt
-    Stores.kt
-    Migrate.kt
-
-deploy/
-  Dockerfile.runtime
-  docker-compose.yml
-  docker-entrypoint.sh
+  domain/        Pure domain models and rules.
+  application/   Use cases and ports.
+  adapters/      SQLite, runtime paths, artifact jobs, filesystem/OpenAI integrations.
+  server/        Ktor composition root, auth, HTTP routes, static serving.
 ```
+
+Dependency direction:
+
+```text
+server -> adapters -> application -> domain
+server -> application -> domain
+adapters -> domain
+```
+
+The server module is the only executable module. It wires `SqliteKidsQuizAdapter` into application use cases and exposes `/api/v2/*`.
+
+## Frontend Layout
+
+```text
+frontend/src/app/
+  domain/          TypeScript domain types and pure practice rules.
+  application/     Practice facade and timer orchestration.
+  infrastructure/  HTTP client, browser audio, local preferences.
+  features/        Login, home, mode picker, practice, settings, assets, trophies, celebration.
+  app.routes.ts    Router flow.
+```
+
+The primary flow is:
+
+```text
+login -> home/activity picker -> mode picker -> practice -> celebration
+```
+
+Settings, asset library, and trophies are first-class routes from the shell navigation.
 
 ## Runtime Components
 
 Frontend:
-- Loads questions and settings.
-- Displays game UI.
-- Maintains current game score and current round state.
-- Calls backend APIs to load/save questions and to load/update long-term stats.
-- Does not store app settings in `localStorage`; global settings are loaded from SQLite through the backend.
+- Calls `/api/v2/session` before entering the app.
+- Loads activities from `/api/v2/activities`.
+- Uses `/api/v2/practice/deck` to start a practice session.
+- Records answers through `/api/v2/practice/answers`.
+- Keeps current score, timer, revealed-answer state, and current-session adaptive weights locally.
 
 Backend:
-- Serves `/api` endpoints.
+- Runs migrations before serving traffic.
+- Serves `/api/v2` use-case endpoints.
+- Keeps legacy `/api` endpoints available during transition for static asset URLs returned by existing artifact services.
 - Serves Angular static files and returns `index.html` for SPA routes.
-- Loads and writes active questions through SQLite.
-- Loads and writes long-term answer stats through SQLite.
-- Runs idempotent DB migrations before serving production traffic.
-
-Static resources:
-- Angular output is staged under `/app/public` in the Docker image.
-- Animal SVGs are served under `/assets/animals/`.
-
-## Data Flow
-
-Startup:
-1. Browser opens `/`.
-2. Frontend checks `/api/auth/status`.
-3. Frontend requests `/api/settings` and `/api/tests`.
-4. Frontend renders a start screen with test-name buttons from SQLite.
-5. After a test is selected, frontend requests `/api/tests/{testId}/questions` and `/api/tests/{testId}/stats`.
-6. Frontend enters the game when SQLite returns questions.
-
-Answer result:
-1. User answers correctly, wrongly, or times out.
-2. Frontend updates score immediately.
-3. Frontend sends `POST /api/tests/{testId}/stats/answer` with `questionId`.
-4. Backend updates SQLite stats.
-5. Frontend merges returned question stats into local `serverStats`.
-
-Question selection:
-1. Frontend calculates weights from `serverStats` and session mistakes.
-2. Frontend randomly picks from weighted question indices.
-
-## State Ownership
-
-Client-owned:
-- Current screen.
-- Current score.
-- Current question index.
-- Timer state.
-- Settings form state.
+- Injects route-specific bootstrap data into `index.html` from the same v2 application use cases, so direct route loads render from server-owned data before any client-side API call.
 
 Server-owned:
-- Active question set.
-- Aggregated question performance history.
-- Authentication cookie/session state.
+- SQLite data, global settings, long-term stats, auth cookie/session, artifact jobs, generated asset cache metadata, trophies.
 
-Shared contract:
-- Question shape.
-- Stats shape.
-- API request/response shape.
-- Question id based stats identity.
+Client-owned:
+- Current route, selected mode, current round, timer state, current game score, current-session adaptive weights.

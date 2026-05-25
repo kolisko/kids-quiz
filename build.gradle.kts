@@ -5,6 +5,8 @@ import java.time.format.DateTimeFormatter
 
 plugins {
     base
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
 }
 
 val kidsQuizImage = providers.gradleProperty("kidsQuizImage").orElse("kids-quiz:latest")
@@ -43,7 +45,7 @@ tasks.register<Sync>("stageDockerImageContext") {
     group = "deployment"
     description = "Stages the Kotlin backend jar and Angular static files for the runtime Docker image."
 
-    dependsOn("frontendBuild", ":backend:jar")
+    dependsOn("frontendBuild", ":backend:server:jar")
 
     into(imageContextDir)
 
@@ -51,7 +53,7 @@ tasks.register<Sync>("stageDockerImageContext") {
         rename { "Dockerfile" }
     }
     from("deploy/docker-entrypoint.sh")
-    from(layout.projectDirectory.file("backend/build/libs/kids-quiz-backend.jar")) {
+    from(layout.projectDirectory.file("backend/server/build/libs/kids-quiz-backend.jar")) {
         rename { "app.jar" }
     }
     from(frontendDistDir) {

@@ -33,36 +33,39 @@ Acceptance:
 
 ## API Verification
 
-Authenticate first when auth is enabled, then read test-scoped data:
+Authenticate first when auth is enabled, then read activities:
 
 ```bash
-curl -s http://127.0.0.1:8080/api/tests
+curl -s http://127.0.0.1:8080/api/v2/activities
 ```
 
-Read questions:
+Start a practice deck:
 
 ```bash
-curl -s http://127.0.0.1:8080/api/tests/1/questions
-```
-
-Read stats:
-
-```bash
-curl -s http://127.0.0.1:8080/api/tests/1/stats
+curl -s -X POST http://127.0.0.1:8080/api/v2/practice/deck \
+  -H 'Content-Type: application/json' \
+  --data '{"activityId":"multiplication:1","mode":"product_to_factors"}'
 ```
 
 Record answer:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8080/api/tests/1/stats/answer \
+curl -s -X POST http://127.0.0.1:8080/api/v2/practice/answers \
   -H 'Content-Type: application/json' \
-  --data '{"questionId":13,"correct":false,"timedOut":false}'
+  --data '{"activityId":"multiplication:1","itemId":"13","result":"wrong","direction":"product_to_factors"}'
+```
+
+Run backend module tests:
+
+```bash
+./gradlew :backend:test
 ```
 
 Acceptance:
-- `GET /api/tests/{testId}/questions` returns questions with `answers`.
-- `GET /api/tests/{testId}/stats` returns valid JSON keyed by question id.
-- `POST /api/tests/{testId}/stats/answer` increments the expected counter.
+- `GET /api/v2/activities` returns playable activities.
+- `POST /api/v2/practice/deck` returns questions or words plus settings and stats.
+- `POST /api/v2/practice/answers` increments the expected counter.
+- Domain and application use-case tests pass without server, SQLite, or browser dependencies.
 - After stopping and restarting the server, stats remain available.
 
 ## Manual UI Scenarios

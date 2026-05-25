@@ -1,58 +1,15 @@
-import org.gradle.api.file.DuplicatesStrategy
-import org.gradle.jvm.tasks.Jar
-import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
-    alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.kotlin.serialization)
-    application
+    base
 }
 
-group = "com.example.quiz"
-version = "1.0-SNAPSHOT"
-
-application {
-    mainClass.set("com.example.quiz.ApplicationKt")
+tasks.register("test") {
+    group = "verification"
+    description = "Runs all backend module tests."
+    dependsOn(":backend:domain:test", ":backend:application:test", ":backend:adapters:test", ":backend:server:test")
 }
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
-    }
-}
-
-kotlin {
-    jvmToolchain(21)
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_21)
-    }
-}
-
-dependencies {
-    implementation(libs.ktor.server.core)
-    implementation(libs.ktor.server.netty)
-    implementation(libs.ktor.server.content.negotiation)
-    implementation(libs.ktor.server.cors)
-    implementation(libs.ktor.server.status.pages)
-    implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.sqlite.jdbc)
-    runtimeOnly(libs.logback.classic)
-}
-
-tasks.named<Jar>("jar") {
-    archiveFileName.set("kids-quiz-backend.jar")
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest {
-        attributes["Main-Class"] = application.mainClass.get()
-    }
-    exclude("META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.SF")
-    from(
-        configurations.runtimeClasspath.map { runtimeClasspath ->
-            runtimeClasspath
-                .filter { it.name.endsWith(".jar") }
-                .map { zipTree(it) }
-        },
-    )
+tasks.register("jar") {
+    group = "build"
+    description = "Builds the backend server runtime jar."
+    dependsOn(":backend:server:jar")
 }

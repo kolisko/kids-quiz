@@ -15,6 +15,13 @@ enum class QuizTestType {
 }
 
 @Serializable
+enum class ActivityKind {
+    multiplication,
+    spelling,
+    flipcards,
+}
+
+@Serializable
 enum class LearningLanguage {
     en,
     de,
@@ -50,6 +57,13 @@ enum class SpellingAudioStatus {
 enum class SpellingAudioKind {
     word,
     spelling,
+}
+
+@Serializable
+enum class PracticeAnswerKind {
+    correct,
+    wrong,
+    timeout,
 }
 
 @Serializable
@@ -280,4 +294,61 @@ data class FlipcardTranslationBackfillStatusResponse(
     val totalCount: Int,
     val error: String? = null,
     val updatedAt: String? = null,
+)
+
+@Serializable
+data class ActivitySummary(
+    val id: String,
+    val kind: ActivityKind,
+    val label: String,
+    val language: LearningLanguage? = null,
+    val testId: Long? = null,
+    val questionCount: Int = 0,
+)
+
+@Serializable
+data class ActivityCatalog(
+    val activities: List<ActivitySummary>,
+    val languages: List<LearningLanguage> = LearningLanguage.entries,
+)
+
+@Serializable
+data class PracticeDeckRequest(
+    val activityId: String,
+    val mode: String? = null,
+    val limit: Int = 10,
+)
+
+@Serializable
+data class PracticeDeck(
+    val activity: ActivitySummary,
+    val mode: String? = null,
+    val settings: AppSettings,
+    val questions: List<Question> = emptyList(),
+    val spellingWords: List<SpellingWord> = emptyList(),
+    val flipcardWords: List<FlipcardWord> = emptyList(),
+    val flipcardAssets: List<FlipcardAsset> = emptyList(),
+    val questionStats: Map<Long, QuestionStats> = emptyMap(),
+    val wordStats: Map<String, QuestionStats> = emptyMap(),
+)
+
+@Serializable
+data class PracticeAnswerRequestV2(
+    val activityId: String,
+    val itemId: String,
+    val result: PracticeAnswerKind,
+    val direction: PracticeDirection = PracticeDirection.product_to_factors,
+)
+
+@Serializable
+data class PracticeAnswerResponseV2(
+    val itemId: String,
+    val stats: QuestionStats,
+)
+
+@Serializable
+data class AssetStatusRequest(
+    val word: String,
+    val language: LearningLanguage = LearningLanguage.en,
+    val kind: SpellingAudioKind = SpellingAudioKind.word,
 )

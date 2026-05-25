@@ -231,6 +231,12 @@ object DatabaseMigrator {
                     recordMigration(18, "add_trophies")
                 }
             }
+            if (19 !in applied) {
+                connection.transaction {
+                    seedDefaultEnglishSpellingSets()
+                    recordMigration(19, "seed_default_english_spelling_sets")
+                }
+            }
         }
         migrated = true
     }
@@ -928,6 +934,12 @@ object DatabaseMigrator {
         }
         if (readSpellingSets(LearningLanguage.es).isEmpty()) {
             replaceSpellingSets(listOf(defaultSpanishSpellingWords.joinToString(", ")), 0, LearningLanguage.es)
+        }
+    }
+
+    private fun Connection.seedDefaultEnglishSpellingSets() {
+        if (readSpellingSets(LearningLanguage.en).isEmpty()) {
+            replaceSpellingSets(defaultEnglishSpellingSets, 0, LearningLanguage.en)
         }
     }
 
@@ -2320,6 +2332,11 @@ private val defaultGermanSpellingWords = listOf(
 
 private val defaultSpanishSpellingWords = listOf(
     "gato", "perro", "manzana", "sol", "luna", "casa", "libro", "pelota", "coche", "arbol",
+)
+
+private val defaultEnglishSpellingSets = listOf(
+    "buses, boxes, foxes, roses, dishes, dresses, pages, glasses, braces, laces",
+    "cats, cups, ducks, maps, hats, dogs, beds, drums, bugs, pens",
 )
 
 private val defaultGermanFlipcardTranslations = mapOf(

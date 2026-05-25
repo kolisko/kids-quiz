@@ -16,3 +16,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "kids-quiz"
 include(":backend")
+include(":backend:domain")
+include(":backend:application")
+include(":backend:adapters")
+include(":backend:server")

@@ -5,6 +5,44 @@
     <title>Kids Quiz</title>
     <base href="/">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#131512">
+    <style>
+      :root {
+        color: #f4f7ef;
+        background: #131512;
+        color-scheme: dark;
+      }
+
+      :root[data-theme="light"] {
+        color: #172033;
+        background: #f7f8ef;
+        color-scheme: light;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #131512;
+      }
+
+      :root[data-theme="light"] body {
+        background: #f7f8ef;
+      }
+
+      app-root:empty {
+        display: block;
+        min-height: 100vh;
+        background: inherit;
+      }
+    </style>
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem('kids-quiz-theme') || 'dark';
+      } catch {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
   </head>
   <body>
     <app-root></app-root>

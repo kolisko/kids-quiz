@@ -7,6 +7,7 @@ frontend/dist/
 frontend/.angular/
 frontend/node_modules/
 backend/build/
+.local-data/
 .quiz-stats.json
 .quiz-stats.tsv
 .quiz-questions.json

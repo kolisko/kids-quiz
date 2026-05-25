@@ -1,216 +1,159 @@
 # Data And API Contracts
 
-## SQLite Storage
+## Persistence
 
-Production DB path:
+Production SQLite data remains at:
 
 ```text
 /opt/kids-quiz/data/kids-quiz.sqlite
 ```
 
-Tables:
-- `tests`: playable test names and ordering.
-- `questions`: one row per question, unique by `test_id + q`.
-- `question_answers`: ordered answer list for each question.
-- `question_stats`: aggregate performance counters by `question_id + direction`.
-- `app_settings`: one global settings row for timer and target score.
-- `spelling_sets`: user-maintained spelling word lists.
-- `spelling_words`: normalized words parsed from each spelling set.
-- `spelling_word_stats`: aggregate spelling counters by normalized word.
+The redesign keeps existing tables and migrations. The new hexagonal backend wraps the current schema behind repository ports before introducing any future additive schema changes.
 
-Questions are not edited or stored through a raw JSON textarea. JSON remains the HTTP transport format only.
+Persisted data:
+- Tests and multiplication questions.
+- Question, spelling, and flipcard stats.
+- Global settings.
+- Spelling sets and flipcard words/translations.
+- Artifact jobs and generated asset status.
+- Trophies.
 
-## Settings Storage
+## API Versioning
 
-Settings are stored globally in SQLite and are shared by every browser.
+The redesigned frontend uses `/api/v2/*`. Legacy `/api/*` remains available for transition and for existing generated asset URLs.
 
-Defaults:
+All v2 endpoints require authentication unless auth is disabled by configuration, except health and session status.
 
-| Field | Type | Default |
-| --- | --- | --- |
-| `secondsLimit` | integer | `30` |
-| `targetScore` | integer | `10` |
+## Session
 
-No application settings are stored in browser `localStorage`.
-Spelling sets are also stored in SQLite through the authenticated API.
+`GET /api/v2/session`
 
-## GET /api/settings
+```json
+{ "authenticated": true }
+```
 
-Returns global game settings.
+`POST /api/v2/session/login`
+
+```json
+{ "password": "secret" }
+```
+
+## Settings
+
+`GET /api/v2/settings`
+
+Returns:
 
 ```json
 {
   "secondsLimit": 30,
-  "targetScore": 10
+  "targetScore": 10,
+  "celebrationTapLimit": 100,
+  "audioSource": "browser_tts",
+  "flipcardSource": "all_words"
 }
 ```
 
-## PUT /api/settings
+`PUT /api/v2/settings` replaces settings. `secondsLimit` and `targetScore` are clamped to at least `1`; `celebrationTapLimit` is clamped to at least `0`.
 
-Replaces global game settings. Values below `1` are clamped to `1`.
+## Activities
 
-```json
-{
-  "secondsLimit": 30,
-  "targetScore": 10
-}
-```
+`GET /api/v2/activities`
 
-## GET /api/tests
-
-Returns playable tests ordered by `sort_order`.
+Returns multiplication tests plus spelling and flipcard activities for each learning language.
 
 ```json
 {
-  "id": 1,
-  "name": "Malá násobilka",
-  "type": "multiplication",
-  "questionCount": 37
-}
-```
-
-`type` is either `multiplication` or `english`.
-
-## GET /api/tests/{testId}/questions
-
-Returns questions from SQLite ordered by `sort_order`.
-
-```json
-[
-  {
-    "id": 13,
-    "q": "24",
-    "answers": ["6 * 4", "8 * 3"]
-  }
-]
-```
-
-## GET /api/tests/{testId}/stats
-
-Returns aggregate stats for one test keyed by question id.
-
-Optional query parameters:
-- `direction`: `product_to_factors` or `factors_to_product`; defaults to `product_to_factors`.
-
-```json
-{
-  "statsByQuestionId": {
-    "13": {
-      "correct": 0,
-      "wrong": 2,
-      "timeout": 1
+  "activities": [
+    {
+      "id": "multiplication:1",
+      "kind": "multiplication",
+      "label": "Malá násobilka",
+      "language": null,
+      "testId": 1,
+      "questionCount": 37
+    },
+    {
+      "id": "spelling:en",
+      "kind": "spelling",
+      "label": "Angličtina spelling",
+      "language": "en",
+      "testId": null,
+      "questionCount": 0
     }
-  }
+  ],
+  "languages": ["en", "de", "es"]
 }
 ```
 
-## POST /api/tests/{testId}/stats/answer
+## Practice
 
-Records one answer result for one question.
+`POST /api/v2/practice/deck`
 
 ```json
 {
-  "questionId": 13,
-  "correct": false,
-  "timedOut": false,
-  "direction": "factors_to_product"
+  "activityId": "multiplication:1",
+  "mode": "product_to_factors",
+  "limit": 10
 }
 ```
 
-## GET /api/spelling/sets
-
-Returns spelling lists ordered by `sort_order`. Exactly one non-empty configured list can be marked as the latest list.
-
-```json
-[
-  {
-    "id": 1,
-    "rawWords": "cat, dog",
-    "isLatest": true,
-    "words": [
-      { "id": 1, "text": "cat", "normalized": "cat" },
-      { "id": 2, "text": "dog", "normalized": "dog" }
-    ]
-  }
-]
-```
-
-## PUT /api/spelling/sets
-
-Replaces all spelling lists. Empty strings and empty comma entries are ignored. `latestSetIndex` points to the selected item in the submitted `sets` array; when it is missing or points at an empty list, the last non-empty list is used.
+Returns a unified deck:
 
 ```json
 {
-  "sets": ["cat, dog", "red, blue"],
-  "latestSetIndex": 1
+  "activity": { "id": "multiplication:1", "kind": "multiplication", "label": "Malá násobilka" },
+  "mode": "product_to_factors",
+  "settings": { "secondsLimit": 30, "targetScore": 10 },
+  "questions": [{ "id": 13, "q": "24", "answers": ["6 * 4", "8 * 3"] }],
+  "spellingWords": [],
+  "flipcardWords": [],
+  "questionStats": { "13": { "correct": 0, "wrong": 2, "timeout": 1 } },
+  "wordStats": {}
 }
 ```
 
-## GET /api/spelling/session
-
-Returns a non-empty spelling set with words in saved order. Without `mode`, this behaves as `mode=latest`.
-
-- `mode=latest` returns the latest spelling set.
-- `mode=older` returns one random non-latest spelling set.
-- Returns `404` with `no_spelling_sets` when the latest mode has no words.
-- Returns `404` with `no_older_spelling_sets` when older mode has no older words.
+`POST /api/v2/practice/answers`
 
 ```json
 {
-  "setId": 1,
-  "words": [
-    { "id": 1, "text": "cat", "normalized": "cat" }
-  ]
+  "activityId": "multiplication:1",
+  "itemId": "13",
+  "result": "timeout",
+  "direction": "product_to_factors"
 }
 ```
 
-## GET /api/spelling/stats
+`result` is `correct`, `wrong`, or `timeout`.
 
-Returns aggregate spelling stats keyed by normalized word.
+## Content
+
+- `GET /api/v2/content/spelling/sets?language=en`
+- `PUT /api/v2/content/spelling/sets?language=en`
+- `GET /api/v2/content/flipcards/words?language=en`
+- `PUT /api/v2/content/flipcards/words?language=en`
+
+Request and response bodies keep the existing spelling and flipcard shapes.
+
+## Assets
+
+- `GET /api/v2/assets/flipcards?language=en`
+- `POST /api/v2/assets/flipcards/images/missing?language=en`
+- `POST /api/v2/assets/flipcards/audio/missing?language=en`
+- `GET /api/v2/assets/images/{word}`
+- `POST /api/v2/assets/images/{word}?force=true`
+- `GET /api/v2/assets/audio/{word}?language=en&kind=word`
+- `POST /api/v2/assets/audio/{word}?language=en&kind=word&force=true&forFlipcard=true`
+- `GET /api/v2/assets/translations?language=de`
+- `POST /api/v2/assets/translations?language=de`
+
+## Trophies
+
+- `GET /api/v2/trophies`
+- `POST /api/v2/trophies`
+
+Award request:
 
 ```json
-{
-  "statsByWord": {
-    "cat": {
-      "correct": 1,
-      "wrong": 0,
-      "timeout": 0
-    }
-  }
-}
+{ "animalKey": "animal-01" }
 ```
-
-## POST /api/spelling/stats/answer
-
-Records one spelling answer result.
-
-```json
-{
-  "word": "cat",
-  "correct": true,
-  "timedOut": false
-}
-```
-
-Response:
-
-```json
-{
-  "questionId": 13,
-  "stats": {
-    "correct": 0,
-    "wrong": 1,
-    "timeout": 0
-  }
-}
-```
-
-Rules:
-- If `correct` is `true`, increment `correct`.
-- Else if `timedOut` is `true`, increment `timeout`.
-- Else increment `wrong`.
-- Invalid JSON-like body or missing required fields returns HTTP 400.
-
-## Server Persistence
-
-All production question and stats data is stored in SQLite and survives container restart/recreate.

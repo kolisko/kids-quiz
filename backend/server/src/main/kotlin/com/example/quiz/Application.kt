@@ -1,9 +1,12 @@
+@file:Suppress("OPT_IN_USAGE")
+
 package com.example.quiz
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.openapi.OpenApiInfo
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
@@ -12,18 +15,24 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.routing.openapi.OpenApiDocSource
+import io.ktor.server.routing.openapi.hide
 import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.plugins.swagger.swaggerUI
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondFile
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
+import io.ktor.server.routing.routingRoot
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -74,8 +83,23 @@ fun Application.module() {
         FlipcardTranslationService.enqueueBackfillIfConfigured(LearningLanguage.es)
     }
 
+    val services = buildApplicationServices()
     val staticDir = runtimeStaticDir().toFile()
     routing {
+        swaggerUI(path = "swagger-ui") {
+            info = OpenApiInfo("Kids Quiz API", "2.0.0")
+            source = OpenApiDocSource.Routing(
+                contentType = ContentType.Application.Json,
+                routes = {
+                    routingRoot.descendants().filter { route -> route.toString().contains("/api/v2") }
+                },
+            )
+        }
+
+        route("/api/v2") {
+            v2Routes(services)
+        }
+
         route("/api") {
             get("/health") {
                 call.respond(mapOf("ok" to true))
@@ -451,14 +475,14 @@ fun Application.module() {
                     call.respond(AnswerResultResponse(questionId = questionId, stats = stats))
                 }
             }
-        }
+        }.hide()
 
         get("/") {
-            call.respondStaticOrIndex(staticDir)
-        }
+            call.respondStaticOrIndex(staticDir, services)
+        }.hide()
         get("{...}") {
-            call.respondStaticOrIndex(staticDir)
-        }
+            call.respondStaticOrIndex(staticDir, services)
+        }.hide()
     }
 }
 
@@ -544,7 +568,15 @@ private fun String.flipcardAssetWordOrNull(): String? {
     return substringBeforeLast('.').takeIf { it.isNotBlank() }
 }
 
-private suspend fun io.ktor.server.application.ApplicationCall.respondStaticOrIndex(staticDir: File) {
+private suspend fun io.ktor.server.application.ApplicationCall.respondStaticOrIndex(
+    staticDir: File,
+    services: ApplicationServices,
+) {
+    if (request.path().startsWith("/api/")) {
+        respond(HttpStatusCode.NotFound, mapOf("error" to "not_found"))
+        return
+    }
+
     val root = staticDir.canonicalFile
     val requestedPath = request.path().trimStart('/').ifBlank { "index.html" }
     val requestedFile = root.resolve(requestedPath).canonicalFile
@@ -555,8 +587,44 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondStaticOrIn
 
     val indexFile = root.resolve("index.html")
     if (indexFile.isFile) {
-        respondFile(indexFile)
+        val html = indexFile.readText()
+        val bootstrap = bootstrapScript(services)
+        respondText(html.replace("</head>", "$bootstrap</head>"), ContentType.Text.Html)
     } else {
         respond(HttpStatusCode.NotFound)
     }
+}
+
+private fun ApplicationCall.bootstrapScript(services: ApplicationServices): String {
+    val path = request.path().trim('/').substringBefore('/').ifBlank { "home" }
+    val language = request.queryParameters["language"]?.toLearningLanguageOrNull() ?: LearningLanguage.en
+    val payload = runCatching {
+        when (path) {
+            "home",
+            "mode" -> """{"catalog":${appJson.encodeToString(services.activities.catalog())}}"""
+            "assets" -> {
+                val assets = appJson.encodeToString(services.assets.flipcardAssets(language))
+                val translation = appJson.encodeToString(services.assets.translationStatus(language))
+                """{"assets":$assets,"translation":$translation,"language":"${language.name}"}"""
+            }
+            "settings" -> {
+                val settings = appJson.encodeToString(services.settings.read())
+                val spellingSets = appJson.encodeToString(services.content.spellingSets(language))
+                val flipcardWords = appJson.encodeToString(services.content.flipcardWords(language))
+                """{"settings":$settings,"spellingSets":$spellingSets,"flipcardWords":$flipcardWords,"language":"${language.name}"}"""
+            }
+            "practice" -> {
+                val activityId = request.queryParameters["activityId"] ?: return@runCatching "{}"
+                val mode = request.queryParameters["mode"]
+                val limit = request.queryParameters["limit"]?.toIntOrNull() ?: 10
+                val deck = services.practice.deck(PracticeDeckRequest(activityId = activityId, mode = mode, limit = limit))
+                    ?: return@runCatching """{"practiceError":"practice_deck_not_found"}"""
+                """{"deck":${appJson.encodeToString(deck)}}"""
+            }
+            "trophies" -> """{"trophies":${appJson.encodeToString(services.trophies.read())}}"""
+            else -> "{}"
+        }
+    }.getOrDefault("{}")
+    val safePayload = payload.replace("</", "<\\/")
+    return """<script>window.__KIDS_BOOTSTRAP__=$safePayload;</script>"""
 }
