@@ -123,6 +123,12 @@ data class TrophyAwardRequest(
 )
 
 @Serializable
+data class TrophyAwardResponse(
+    val awarded: TrophyItem,
+    val trophies: List<TrophyItem>,
+)
+
+@Serializable
 data class AnswerResultRequest(
     val questionId: Long,
     val correct: Boolean,

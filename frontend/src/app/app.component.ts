@@ -316,6 +316,11 @@ interface TrophyItem {
   lastWonAt: string;
 }
 
+interface TrophyAwardResponse {
+  awarded: TrophyItem;
+  trophies: TrophyItem[];
+}
+
 type CelebrationEffect = 'pop' | 'spin' | 'squash' | 'bounce';
 type CelebrationDirection = 'left' | 'right';
 type CelebrationBurst = 'wide' | 'high' | 'low';
@@ -420,6 +425,7 @@ export class AppComponent implements OnInit, OnDestroy {
   secondsLeft = this.settings.secondsLimit;
   flash: string | null = null;
   surprise = surprises[0];
+  surpriseAlreadyAwarded = false;
   ttsStatus: TtsStatus = 'checking';
   ttsDiagnostics: TtsDiagnostics = createTtsDiagnostics('Kontrola TTS jeste neprobehla.', null);
   ttsDetailsVisible = false;
@@ -2446,7 +2452,16 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       // The child already completed the test; a transient save failure should not trap them on the last card.
     }
-    this.surprise = surprises[Math.floor(Math.random() * surprises.length)] ?? surprises[0];
+    this.surpriseAlreadyAwarded = false;
+    try {
+      const response = await this.apiPost<TrophyAwardResponse>('trophies/award-next', {});
+      this.trophies = response.trophies;
+      this.surprise = this.trophyToSurprise(response.awarded);
+      this.surpriseAlreadyAwarded = true;
+    } catch {
+      // Trophy selection is celebratory only; keep the congratulations screen available even if saving fails.
+      this.surprise = this.nextFallbackSurprise();
+    }
     this.setScreen('finished');
     this.render();
   }
@@ -3176,11 +3191,36 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async awardCurrentTrophy(): Promise<void> {
+    if (this.surpriseAlreadyAwarded) return;
     try {
       this.trophies = await this.apiPost<TrophyItem[]>('trophies', { animalKey: this.surprise.animalKey });
+      this.surpriseAlreadyAwarded = true;
     } catch {
       // Trophy awarding is celebratory only; gameplay should not be interrupted by a transient save failure.
     }
+  }
+
+  private trophyToSurprise(trophy: TrophyItem): AnimalSurprise {
+    return {
+      animalKey: trophy.animalKey,
+      imagePath: trophy.imagePath,
+      animationClass: this.animationClassForAnimalKey(trophy.animalKey),
+    };
+  }
+
+  private nextFallbackSurprise(): AnimalSurprise {
+    const wonKeys = new Set(this.trophies.map((trophy) => trophy.animalKey));
+    const available = surprises.filter((surprise) => !wonKeys.has(surprise.animalKey));
+    return randomItem(available.length > 0 ? available : surprises, surprises[0]);
+  }
+
+  private animationClassForAnimalKey(animalKey: string): string {
+    const animationClasses = ['pop', 'floaty', 'wiggle', 'spinny', 'bounce'];
+    let hash = 0;
+    for (let index = 0; index < animalKey.length; index += 1) {
+      hash = (hash * 31 + animalKey.charCodeAt(index)) >>> 0;
+    }
+    return animationClasses[hash % animationClasses.length] ?? animationClasses[0];
   }
 
   private playCelebrationFanfare(): void {

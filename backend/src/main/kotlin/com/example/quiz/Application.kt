@@ -4,6 +4,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.withCharset
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
@@ -33,7 +34,6 @@ private val appJson = Json {
     encodeDefaults = true
     prettyPrint = false
 }
-private val validTrophyAnimalKeys = (1..40).map { "animal-${it.toString().padStart(2, '0')}" }.toSet()
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
@@ -80,6 +80,27 @@ fun Application.module() {
             get("/health") {
                 call.respond(mapOf("ok" to true))
             }
+            get("/trophy-animals/generated.svg") {
+                if (!Auth.requireAuthenticated(call)) return@get
+                when (val result = TrophyAnimalService.parse(call.request.queryParameters)) {
+                    is TrophyAnimalSpecResult.Valid -> {
+                        call.response.headers.append(
+                            HttpHeaders.CacheControl,
+                            if (result.random) "no-store" else "public, max-age=31536000, immutable",
+                        )
+                        call.respondBytes(
+                            bytes = TrophyAnimalService.renderSvg(result.spec).toByteArray(Charsets.UTF_8),
+                            contentType = ContentType.Image.SVG.withCharset(Charsets.UTF_8),
+                        )
+                    }
+                    is TrophyAnimalSpecResult.Invalid -> {
+                        call.respond(
+                            HttpStatusCode.BadRequest,
+                            TrophyAnimalErrorResponse(error = result.code, fields = result.fields),
+                        )
+                    }
+                }
+            }
             get("/auth/status") {
                 call.respond(AuthStatusResponse(authenticated = Auth.isAuthenticated(call)))
             }
@@ -119,11 +140,25 @@ fun Application.module() {
                 post {
                     if (!Auth.requireAuthenticated(call)) return@post
                     val request = runCatching { call.receive<TrophyAwardRequest>() }.getOrNull()
-                    if (request == null || request.animalKey !in validTrophyAnimalKeys) {
+                    val animalKey = request?.animalKey?.let { TrophyAnimalService.normalizedAnimalKey(it) }
+                    if (animalKey == null) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_trophy"))
                         return@post
                     }
-                    call.respond(TrophyStore.award(request.animalKey))
+                    call.respond(TrophyStore.award(animalKey))
+                }
+                post("/award-next") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val response = runCatching { TrophyStore.awardNext() }.getOrElse { error ->
+                        val status = if (error.message == "trophy_pool_exhausted") {
+                            HttpStatusCode.Conflict
+                        } else {
+                            HttpStatusCode.InternalServerError
+                        }
+                        call.respond(status, mapOf("error" to (error.message ?: "trophy_award_failed")))
+                        return@post
+                    }
+                    call.respond(response)
                 }
             }
             route("/spelling") {

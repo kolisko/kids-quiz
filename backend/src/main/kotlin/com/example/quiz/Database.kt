@@ -1491,13 +1491,23 @@ fun Connection.readTrophies(): List<TrophyItem> {
                     add(
                         TrophyItem(
                             animalKey = animalKey,
-                            imagePath = "/assets/animals/$animalKey.svg",
+                            imagePath = TrophyAnimalService.imagePathForAnimalKey(animalKey) ?: "/assets/animals/$animalKey.svg",
                             wonCount = rows.getInt("won_count"),
                             firstWonAt = rows.getString("first_won_at"),
                             lastWonAt = rows.getString("last_won_at"),
                         ),
                     )
                 }
+            }
+        }
+    }
+}
+
+fun Connection.readTrophyKeys(): Set<String> {
+    return prepareStatement("SELECT animal_key FROM trophies").use { statement ->
+        statement.executeQuery().use { rows ->
+            buildSet {
+                while (rows.next()) add(rows.getString("animal_key"))
             }
         }
     }

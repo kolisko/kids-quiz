@@ -48,6 +48,18 @@ object TrophyStore {
             connection.readTrophies()
         }
     }
+
+    fun awardNext(): TrophyAwardResponse = synchronized(lock) {
+        Database.useConnection { connection ->
+            val animalKey = TrophyAnimalService.nextUnwonAnimalKey(connection.readTrophyKeys())
+                ?: throw IllegalStateException("trophy_pool_exhausted")
+            connection.awardTrophy(animalKey)
+            val trophies = connection.readTrophies()
+            val awarded = trophies.firstOrNull { it.animalKey == animalKey }
+                ?: throw IllegalStateException("awarded_trophy_missing")
+            TrophyAwardResponse(awarded = awarded, trophies = trophies)
+        }
+    }
 }
 
 object QuestionsStore {
