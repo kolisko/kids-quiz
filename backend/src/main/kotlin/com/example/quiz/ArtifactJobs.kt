@@ -193,7 +193,7 @@ object ArtifactJobRunner {
             ArtifactJobKind.spelling_audio_word,
             ArtifactJobKind.spelling_audio_spelling -> {
                 val payload = artifactJobJson.decodeFromString<AudioJobPayload>(job.payloadJson)
-                SpellingAudioService.runQueuedGeneration(payload.word, payload.kind, payload.language, payload.force)
+                SpellingAudioService.runQueuedGeneration(payload.word, payload.kind, payload.language, job.kind, payload.force)
             }
             ArtifactJobKind.flipcard_translation -> {
                 val payload = artifactJobJson.decodeFromString<TranslationJobPayload>(job.payloadJson)

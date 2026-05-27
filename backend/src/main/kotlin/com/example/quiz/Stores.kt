@@ -180,6 +180,21 @@ object FlipcardStore {
         }
     }
 
+    fun readAudioTtsSettings(language: LearningLanguage): AudioTtsSettingsResponse = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.readAudioTtsSettings(language)
+        }
+    }
+
+    fun replaceAudioTtsSettings(
+        language: LearningLanguage,
+        request: AudioTtsSettingsRequest,
+    ): AudioTtsSettingsResponse = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.replaceAudioTtsSettings(language, request)
+        }
+    }
+
     fun enqueueMissingImages(language: LearningLanguage): FlipcardAssetBulkEnqueueResponse {
         val words = synchronized(lock) {
             Database.useConnection { connection -> connection.readFlipcardWords(language) }
@@ -223,7 +238,12 @@ object FlipcardStore {
         var alreadyReady = 0
         var alreadyActive = 0
         words.forEach { word ->
-            val status = SpellingAudioService.status(word.text, SpellingAudioKind.word, language)?.status ?: SpellingAudioStatus.missing
+            val status = SpellingAudioService.status(
+                rawWord = word.text,
+                kind = SpellingAudioKind.word,
+                language = language,
+                useFlipcardSettings = true,
+            )?.status ?: SpellingAudioStatus.missing
             when (status) {
                 SpellingAudioStatus.ready -> alreadyReady += 1
                 SpellingAudioStatus.queued,
@@ -283,7 +303,12 @@ object FlipcardStore {
 
     private fun flipcardAsset(word: FlipcardWord, language: LearningLanguage): FlipcardAsset {
         val image = FlipcardImageService.status(word.conceptKey)
-        val audio = SpellingAudioService.status(word.text, SpellingAudioKind.word, language)
+        val audio = SpellingAudioService.status(
+            rawWord = word.text,
+            kind = SpellingAudioKind.word,
+            language = language,
+            useFlipcardSettings = true,
+        )
         return FlipcardAsset(
             word = word.text,
             normalized = word.normalized,

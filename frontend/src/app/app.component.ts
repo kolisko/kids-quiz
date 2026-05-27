@@ -17,6 +17,7 @@ type ArtifactStatus = 'ready' | 'missing' | 'queued' | 'generating' | 'error';
 type AudioPrepStatus = 'pending' | ArtifactStatus;
 type FlipcardSource = 'all_words' | 'ready_only';
 type AssetLibraryTab = 'images' | 'audio';
+type AudioTtsPreviewStatus = 'idle' | 'generating' | 'playing' | 'error';
 type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error';
 type TeslaMp3LoopMode = 'webaudio_tone_220_zero' | 'webaudio_tone_220_micro' | 'webaudio_tone_220_quiet' | 'dual_html_220_quiet';
 type PollToken = { cancelled: boolean };
@@ -29,6 +30,33 @@ const TESLA_MP3_AUDIO_STORAGE_KEY = 'kidsQuizTeslaMp3AudioEnabled';
 const TESLA_MP3_LOOP_MODE_STORAGE_KEY = 'kidsQuizTeslaMp3LoopMode';
 const DEFAULT_TESLA_MP3_LOOP_MODE: TeslaMp3LoopMode = 'webaudio_tone_220_micro';
 const TESLA_MP3_TEST_POLL_TIMEOUT_MS = 180000;
+const OPENAI_TTS_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse', 'marin', 'cedar'];
+const DEFAULT_AUDIO_TTS_DRAFTS: Record<LearningLanguage, AudioTtsSettingsDraft> = {
+  en: {
+    voice: 'marin',
+    instructions: 'Pronounce this single English spelling word clearly in American English. Say only the word.',
+    testWord: 'test',
+    voices: OPENAI_TTS_VOICES,
+  },
+  de: {
+    voice: 'marin',
+    instructions: 'Pronounce this as a single German word in standard German phonology. Say only the word. Do not use English pronunciation, even if the spelling is identical or similar to English.',
+    testWord: 'test',
+    voices: OPENAI_TTS_VOICES,
+  },
+  es: {
+    voice: 'marin',
+    instructions: 'Pronounce this as a single Spanish word in neutral Spanish phonology. Say only the word. Do not use English pronunciation, even if the spelling is identical or similar to English, for example tractor, hotel, radio, animal.',
+    testWord: 'test',
+    voices: OPENAI_TTS_VOICES,
+  },
+  cs: {
+    voice: 'marin',
+    instructions: 'Mluv česky jako rodilý mluvčí. Vyslov vstup přirozeně česky, s českým přízvukem, českými samohláskami a přízvukem na první slabice. Řekni pouze dané české slovo nebo krátkou frázi. Nepoužívej anglickou výslovnost ani anglický přízvuk.',
+    testWord: 'test',
+    voices: OPENAI_TTS_VOICES,
+  },
+};
 
 interface TeslaMp3LoopOption {
   mode: TeslaMp3LoopMode;
@@ -246,6 +274,21 @@ interface FlipcardImageReportResponse {
   imageReported: boolean;
 }
 
+interface AudioTtsSettingsResponse {
+  language: LearningLanguage;
+  voice: string;
+  instructions: string;
+  testWord: string;
+  voices: string[];
+}
+
+interface AudioTtsSettingsDraft {
+  voice: string;
+  instructions: string;
+  testWord: string;
+  voices: string[];
+}
+
 interface AssetLanguageVariant {
   language: LearningLanguage;
   label: string;
@@ -454,6 +497,13 @@ export class AppComponent implements OnInit, OnDestroy {
   assetImageErrors: Record<string, string> = {};
   assetAudioErrors: Record<string, string> = {};
   imageReportSaving: Record<string, boolean> = {};
+  audioTtsDraftsByLanguage: Record<LearningLanguage, AudioTtsSettingsDraft> = structuredClone(DEFAULT_AUDIO_TTS_DRAFTS);
+  audioTtsSettingsLoading = false;
+  audioTtsSettingsSaving = false;
+  audioTtsPreviewStatus: AudioTtsPreviewStatus = 'idle';
+  audioTtsSettingsSaved = false;
+  audioTtsSettingsError: string | null = null;
+  audioTtsSettingsExpanded = false;
   assetTranslationInfoKey: string | null = null;
   trophies: TrophyItem[] = [];
   trophiesLoading = false;
@@ -710,6 +760,21 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get readyAudioAssetsCount(): number {
     return this.flipcardAssets.filter((asset) => asset.audioStatus === 'ready').length;
+  }
+
+  get currentAudioTtsDraft(): AudioTtsSettingsDraft {
+    return this.audioTtsDraftsByLanguage[this.assetLibraryLanguage];
+  }
+
+  get audioTtsPreviewIcon() {
+    return this.audioTtsPreviewStatus === 'generating' ? this.refreshIcon : this.playIcon;
+  }
+
+  get audioTtsPreviewTitle(): string {
+    if (this.audioTtsPreviewStatus === 'generating') return 'Generuji testovací audio';
+    if (this.audioTtsPreviewStatus === 'playing') return 'Přehrávám testovací audio';
+    if (this.audioTtsPreviewStatus === 'error') return 'Testovací audio selhalo';
+    return 'Otestovat prompt a hlas';
   }
 
   get bulkImageGenerationActive(): boolean {
@@ -1171,12 +1236,19 @@ export class AppComponent implements OnInit, OnDestroy {
     this.assetImageErrors = {};
     this.assetAudioErrors = {};
     this.imageReportSaving = {};
+    this.audioTtsSettingsError = null;
+    this.audioTtsSettingsSaved = false;
+    this.audioTtsPreviewStatus = 'idle';
+    this.audioTtsSettingsExpanded = false;
     this.assetTranslationInfoKey = null;
     this.assetLibraryLoading = true;
     this.setScreen('assetLibrary');
     this.render();
     try {
-      await this.loadFlipcardAssets(language);
+      await Promise.all([
+        this.loadFlipcardAssets(language),
+        this.loadAudioTtsSettings(language),
+      ]);
       this.startAssetLibraryPolling(language);
     } catch {
       if (this.assetLibraryLanguage === language) {
@@ -1210,6 +1282,12 @@ export class AppComponent implements OnInit, OnDestroy {
   setAssetLibraryTab(tab: AssetLibraryTab): void {
     this.assetLibraryTab = tab;
     this.assetTranslationInfoKey = null;
+    this.audioTtsSettingsError = null;
+    this.audioTtsSettingsSaved = false;
+  }
+
+  toggleAudioTtsSettingsExpanded(): void {
+    this.audioTtsSettingsExpanded = !this.audioTtsSettingsExpanded;
   }
 
   toggleAssetLibraryReportedFilter(): void {
@@ -1249,6 +1327,78 @@ export class AppComponent implements OnInit, OnDestroy {
   playAssetAudio(asset: FlipcardAsset): void {
     if (!asset.audioUrl) return;
     void this.playBackendAudioUrl(asset.audioUrl);
+  }
+
+  async saveAudioTtsSettings(): Promise<void> {
+    if (this.audioTtsSettingsSaving) return;
+    const language = this.assetLibraryLanguage;
+    const draft = this.currentAudioTtsDraft;
+    this.audioTtsSettingsSaving = true;
+    this.audioTtsSettingsSaved = false;
+    this.audioTtsSettingsError = null;
+    this.render();
+    try {
+      const response = await this.apiPut<AudioTtsSettingsResponse>(
+        `flipcards/audio-settings?language=${language}`,
+        {
+          voice: draft.voice,
+          instructions: draft.instructions,
+          testWord: draft.testWord,
+        },
+      );
+      this.applyAudioTtsSettings(response);
+      this.audioTtsSettingsSaved = true;
+      await this.loadFlipcardAssets(language);
+    } catch (error) {
+      this.audioTtsSettingsError = error instanceof Error ? error.message : 'TTS nastavení se nepodařilo uložit.';
+    } finally {
+      this.audioTtsSettingsSaving = false;
+      this.render();
+    }
+  }
+
+  async testAudioTtsSettings(): Promise<void> {
+    if (this.audioTtsPreviewStatus === 'generating' || this.audioTtsPreviewStatus === 'playing') return;
+    const language = this.assetLibraryLanguage;
+    const draft = this.currentAudioTtsDraft;
+    this.audioTtsPreviewStatus = 'generating';
+    this.audioTtsSettingsSaved = false;
+    this.audioTtsSettingsError = null;
+    this.render();
+    try {
+      const response = await fetch(`/api/flipcards/audio-settings/test?language=${language}`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice: draft.voice,
+          instructions: draft.instructions,
+          testWord: draft.testWord,
+        }),
+      });
+      if (response.status === 401) {
+        this.audioTtsPreviewStatus = 'idle';
+        this.setScreen('login');
+        return;
+      }
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(parseApiError(body) ?? `API ${response.status}`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      this.audioTtsPreviewStatus = 'playing';
+      this.render();
+      await this.playBlobAudio(url);
+      URL.revokeObjectURL(url);
+      this.audioTtsPreviewStatus = 'idle';
+    } catch (error) {
+      this.audioTtsPreviewStatus = 'error';
+      this.audioTtsSettingsError = error instanceof Error ? error.message : 'Testovací audio se nepodařilo přehrát.';
+    } finally {
+      this.render();
+    }
   }
 
   async toggleAssetImageReport(asset: FlipcardAsset): Promise<void> {
@@ -2873,6 +3023,36 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardAssets = response.items ?? [];
   }
 
+  private async loadAudioTtsSettings(language: LearningLanguage = this.assetLibraryLanguage): Promise<void> {
+    this.audioTtsSettingsLoading = true;
+    this.audioTtsSettingsError = null;
+    try {
+      const response = await this.apiGet<AudioTtsSettingsResponse>(`flipcards/audio-settings?language=${language}`);
+      if (this.screen === 'assetLibrary' && this.assetLibraryLanguage !== language) return;
+      this.applyAudioTtsSettings(response);
+    } catch (error) {
+      if (this.screen === 'assetLibrary' && this.assetLibraryLanguage === language) {
+        this.audioTtsSettingsError = error instanceof Error ? error.message : 'TTS nastavení se nepodařilo načíst.';
+      }
+    } finally {
+      if (this.screen === 'assetLibrary' && this.assetLibraryLanguage === language) {
+        this.audioTtsSettingsLoading = false;
+      }
+    }
+  }
+
+  private applyAudioTtsSettings(response: AudioTtsSettingsResponse): void {
+    this.audioTtsDraftsByLanguage = {
+      ...this.audioTtsDraftsByLanguage,
+      [response.language]: {
+        voice: response.voice,
+        instructions: response.instructions,
+        testWord: response.testWord || 'test',
+        voices: response.voices.length > 0 ? response.voices : OPENAI_TTS_VOICES,
+      },
+    };
+  }
+
   private lastConfiguredSpellingSetIndex(language: LearningLanguage = this.settingsLanguage): number {
     const inputs = this.spellingSetInputsByLanguage[language];
     for (let index = inputs.length - 1; index >= 0; index -= 1) {
@@ -3200,6 +3380,17 @@ export class AppComponent implements OnInit, OnDestroy {
     this.backendAudio = audio;
     await this.playAudioElement(audio);
     if (this.backendPlaybackToken === playbackToken && this.backendAudio === audio) {
+      this.backendAudio = null;
+    }
+  }
+
+  private async playBlobAudio(audioUrl: string): Promise<void> {
+    this.stopBackendAudio();
+    const audio = new Audio(audioUrl);
+    audio.preload = 'auto';
+    this.backendAudio = audio;
+    await this.playAudioElement(audio);
+    if (this.backendAudio === audio) {
       this.backendAudio = null;
     }
   }

@@ -268,6 +268,12 @@ object DatabaseMigrator {
                     recordMigration(23, "add_flipcard_image_reported_flag")
                 }
             }
+            if (24 !in applied) {
+                connection.transaction {
+                    addAudioTtsSettings()
+                    recordMigration(24, "add_audio_tts_settings")
+                }
+            }
         }
         migrated = true
     }
@@ -745,6 +751,23 @@ object DatabaseMigrator {
                 UPDATE flipcard_concepts
                 SET image_reported = 0
                 WHERE image_reported IS NULL OR image_reported NOT IN (0, 1)
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addAudioTtsSettings() {
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS audio_tts_settings (
+                    language TEXT PRIMARY KEY,
+                    voice TEXT NOT NULL,
+                    instructions TEXT NOT NULL,
+                    test_word TEXT NOT NULL DEFAULT 'test',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
                 """.trimIndent(),
             )
         }
@@ -1704,6 +1727,59 @@ fun Connection.replaceAppSettings(settings: AppSettings) {
         statement.setString(6, settings.flipcardPromptLanguage.name)
         statement.executeUpdate()
     }
+}
+
+fun Connection.readAudioTtsSettings(language: LearningLanguage): AudioTtsSettingsResponse {
+    return prepareStatement(
+        """
+        SELECT voice, instructions, test_word
+        FROM audio_tts_settings
+        WHERE language = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, language.name)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return defaultAudioTtsSettings(language)
+            runCatching {
+                sanitizedAudioTtsSettings(
+                    language = language,
+                    voice = rows.getString("voice"),
+                    instructions = rows.getString("instructions"),
+                    testWord = rows.getString("test_word"),
+                )
+            }.getOrElse { defaultAudioTtsSettings(language) }
+        }
+    }
+}
+
+fun Connection.replaceAudioTtsSettings(
+    language: LearningLanguage,
+    request: AudioTtsSettingsRequest,
+): AudioTtsSettingsResponse {
+    val settings = sanitizedAudioTtsSettings(
+        language = language,
+        voice = request.voice,
+        instructions = request.instructions,
+        testWord = request.testWord,
+    )
+    prepareStatement(
+        """
+        INSERT INTO audio_tts_settings(language, voice, instructions, test_word, updated_at)
+        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(language) DO UPDATE SET
+            voice = excluded.voice,
+            instructions = excluded.instructions,
+            test_word = excluded.test_word,
+            updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, language.name)
+        statement.setString(2, settings.voice)
+        statement.setString(3, settings.instructions)
+        statement.setString(4, settings.testWord)
+        statement.executeUpdate()
+    }
+    return settings
 }
 
 fun Connection.readTrophies(): List<TrophyItem> {

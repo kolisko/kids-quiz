@@ -329,6 +329,53 @@ fun Application.module() {
                         call.respond(status, mapOf("error" to (error.message ?: "tts_generation_failed")))
                     }
                 }
+                get("/audio-settings") {
+                    if (!Auth.requireAuthenticated(call)) return@get
+                    val language = call.requireLearningLanguage() ?: return@get
+                    call.respond(FlipcardStore.readAudioTtsSettings(language))
+                }
+                put("/audio-settings") {
+                    if (!Auth.requireAuthenticated(call)) return@put
+                    val language = call.requireLearningLanguage() ?: return@put
+                    val request = runCatching { call.receive<AudioTtsSettingsRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_audio_tts_settings"))
+                        return@put
+                    }
+                    try {
+                        call.respond(FlipcardStore.replaceAudioTtsSettings(language, request))
+                    } catch (error: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to (error.message ?: "invalid_audio_tts_settings")))
+                    }
+                }
+                post("/audio-settings/test") {
+                    if (!Auth.requireAuthenticated(call)) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
+                    val request = runCatching { call.receive<AudioTtsPreviewRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_audio_tts_preview"))
+                        return@post
+                    }
+                    try {
+                        val bytes = SpellingAudioService.generatePreview(
+                            rawWord = request.testWord,
+                            language = language,
+                            voice = request.voice,
+                            instructions = request.instructions,
+                        )
+                        call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+                        call.respondBytes(bytes = bytes, contentType = ContentType.Audio.MPEG)
+                    } catch (error: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to (error.message ?: "invalid_audio_tts_preview")))
+                    } catch (error: SpellingAudioException) {
+                        val status = if (error.message == "tts_not_configured") {
+                            HttpStatusCode.ServiceUnavailable
+                        } else {
+                            HttpStatusCode.BadGateway
+                        }
+                        call.respond(status, mapOf("error" to (error.message ?: "tts_generation_failed")))
+                    }
+                }
                 get("/translations/status") {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val language = call.requireLearningLanguage() ?: return@get
@@ -427,7 +474,12 @@ fun Application.module() {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val language = call.requirePathLearningLanguage() ?: return@get
                     val word = call.requireSpellingAudioWord() ?: return@get
-                    val audioFile = SpellingAudioService.audioFile(word, SpellingAudioKind.word, language)
+                    val audioFile = SpellingAudioService.audioFile(
+                        rawWord = word,
+                        kind = SpellingAudioKind.word,
+                        language = language,
+                        useFlipcardSettings = true,
+                    )
                     if (audioFile == null) {
                         call.respond(HttpStatusCode.NotFound, mapOf("error" to "audio_not_found"))
                         return@get
@@ -442,7 +494,12 @@ fun Application.module() {
                     if (!Auth.requireAuthenticated(call)) return@get
                     val language = call.requirePathLearningLanguage() ?: return@get
                     val word = call.requireSpellingAudioWord() ?: return@get
-                    val response = SpellingAudioService.status(word, SpellingAudioKind.word, language)
+                    val response = SpellingAudioService.status(
+                        rawWord = word,
+                        kind = SpellingAudioKind.word,
+                        language = language,
+                        useFlipcardSettings = true,
+                    )
                         ?: run {
                             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                             return@get

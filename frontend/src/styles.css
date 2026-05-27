@@ -1017,6 +1017,74 @@ textarea:disabled {
   font-weight: 900;
 }
 
+.audio-tts-settings {
+  display: grid;
+  gap: 0.9rem;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 14px 36px rgba(31, 41, 55, 0.08);
+}
+
+.audio-tts-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.audio-tts-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.audio-tts-header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.audio-tts-settings textarea {
+  min-height: 8rem;
+}
+
+.audio-tts-controls {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.5fr) minmax(10rem, 1fr);
+  gap: 0.8rem;
+}
+
+.audio-tts-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.audio-tts-preview-button {
+  width: 3.15rem;
+  height: 3.15rem;
+}
+
+.audio-tts-preview-generating lucide-icon {
+  animation: spinny 900ms linear infinite;
+}
+
+.audio-tts-preview-playing {
+  color: #fff;
+  border-color: rgba(5, 150, 105, 0.34);
+  background: #059669;
+}
+
+.audio-tts-preview-error {
+  color: #fff;
+  border-color: rgba(220, 38, 38, 0.34);
+  background: #dc2626;
+}
+
 .asset-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));

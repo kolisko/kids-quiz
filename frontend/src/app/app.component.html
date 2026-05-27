@@ -479,6 +479,78 @@
       Žádné nahlášené obrázky.
     </p>
 
+    <div class="audio-tts-settings" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">
+      <div class="audio-tts-header">
+        <div>
+          <h2>Generování audia</h2>
+          <p class="settings-note" *ngIf="audioTtsSettingsExpanded">
+            Play jen otestuje aktuální prompt a hlas. Pro běžné generování se použije až nastavení uložené pro {{ assetLibraryLanguageLabel }}.
+          </p>
+        </div>
+        <div class="audio-tts-header-actions">
+          <span class="asset-ready" *ngIf="audioTtsSettingsSaved">Uloženo</span>
+          <button
+            class="secondary-button compact-button"
+            type="button"
+            (click)="toggleAudioTtsSettingsExpanded()"
+            [attr.aria-expanded]="audioTtsSettingsExpanded">
+            {{ audioTtsSettingsExpanded ? 'Sbalit' : 'Rozbalit' }}
+          </button>
+        </div>
+      </div>
+      <ng-container *ngIf="audioTtsSettingsExpanded">
+        <label>
+          Prompt / instrukce
+          <textarea
+            rows="5"
+            [(ngModel)]="audioTtsDraftsByLanguage[assetLibraryLanguage].instructions"
+            [name]="'audioTtsInstructions' + assetLibraryLanguage"
+            [disabled]="audioTtsSettingsLoading || audioTtsSettingsSaving"></textarea>
+        </label>
+        <div class="audio-tts-controls">
+          <label>
+            Voice
+            <select
+              [(ngModel)]="audioTtsDraftsByLanguage[assetLibraryLanguage].voice"
+              [name]="'audioTtsVoice' + assetLibraryLanguage"
+              [disabled]="audioTtsSettingsLoading || audioTtsSettingsSaving">
+              <option *ngFor="let voice of currentAudioTtsDraft.voices" [value]="voice">{{ voice }}</option>
+            </select>
+          </label>
+          <label>
+            Testovací slovo
+            <input
+              type="text"
+              [(ngModel)]="audioTtsDraftsByLanguage[assetLibraryLanguage].testWord"
+              [name]="'audioTtsTestWord' + assetLibraryLanguage"
+              [disabled]="audioTtsSettingsLoading || audioTtsSettingsSaving">
+          </label>
+        </div>
+        <div class="audio-tts-actions">
+          <button
+            class="icon-button audio-tts-preview-button"
+            type="button"
+            (click)="testAudioTtsSettings()"
+            [disabled]="audioTtsSettingsLoading || audioTtsPreviewStatus === 'generating' || audioTtsPreviewStatus === 'playing'"
+            [ngClass]="'audio-tts-preview-' + audioTtsPreviewStatus"
+            [title]="audioTtsPreviewTitle"
+            [attr.aria-label]="audioTtsPreviewTitle">
+            <lucide-icon [img]="audioTtsPreviewIcon" [size]="24"></lucide-icon>
+          </button>
+          <button
+            class="secondary-button compact-button"
+            type="button"
+            (click)="saveAudioTtsSettings()"
+            [disabled]="audioTtsSettingsLoading || audioTtsSettingsSaving">
+            {{ audioTtsSettingsSaving ? 'Ukládám...' : 'Uložit pro tento jazyk' }}
+          </button>
+        </div>
+        <p class="settings-note" *ngIf="audioTtsPreviewStatus === 'generating'">Generuji testovací audio...</p>
+        <p class="settings-note" *ngIf="audioTtsPreviewStatus === 'playing'">Přehrávám testovací audio...</p>
+        <p class="error settings-error" *ngIf="audioTtsSettingsError">{{ audioTtsSettingsError }}</p>
+      </ng-container>
+    </div>
+
     <div class="asset-toolbar" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">
       <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetAudio()" [disabled]="missingAudioAssetsCount === 0 || bulkAudioGenerationActive">
         {{ assetAudioBulkEnqueueLoading ? 'Přidávám do fronty...' : 'Stáhnout všechna chybějící audia' }}

@@ -111,6 +111,29 @@ data class AppSettings(
 )
 
 @Serializable
+data class AudioTtsSettingsResponse(
+    val language: LearningLanguage,
+    val voice: String,
+    val instructions: String,
+    val testWord: String,
+    val voices: List<String>,
+)
+
+@Serializable
+data class AudioTtsSettingsRequest(
+    val voice: String,
+    val instructions: String,
+    val testWord: String = "test",
+)
+
+@Serializable
+data class AudioTtsPreviewRequest(
+    val voice: String,
+    val instructions: String,
+    val testWord: String = "test",
+)
+
+@Serializable
 data class TrophyItem(
     val animalKey: String,
     val imagePath: String,
