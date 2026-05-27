@@ -414,6 +414,7 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardAttemptFailed = false;
   flipcardImageLoaded = false;
   flipcardImageError: string | null = null;
+  flipcardPromptAudioToken = 0;
   spellingWordIndex: number | null = null;
   spellingPendingIndices: number[] = [];
   startingSpellingMode: SpellingSessionMode | null = null;
@@ -1600,6 +1601,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardOptionsByIndex = [];
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;
+    this.flipcardPromptAudioToken += 1;
     this.spellingPendingIndices = [];
     this.startingSpellingMode = null;
     this.spellingStats = {};
@@ -2286,6 +2288,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardAttemptFailed = false;
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;
+    this.flipcardPromptAudioToken += 1;
     this.flipcardOptions = this.flipcardOptionsForIndex(nextIndex);
     this.answerVisible = false;
     this.timedOut = false;
@@ -2385,6 +2388,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardImageError = null;
     this.startTimer();
     this.render();
+    const promptAudioToken = this.flipcardPromptAudioToken;
+    window.setTimeout(() => {
+      if (this.flipcardPromptAudioToken !== promptAudioToken) return;
+      void this.playCurrentFlipcardPromptAudio();
+    }, 120);
   }
 
   onFlipcardImageError(): void {
@@ -2620,6 +2628,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardAttemptFailed = false;
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;
+    this.flipcardPromptAudioToken += 1;
     this.startingSpellingMode = null;
     this.currentDirection = 'product_to_factors';
     this.currentFactorQuestion = null;
