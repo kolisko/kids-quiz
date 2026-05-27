@@ -1146,7 +1146,7 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       this.trophies = await this.apiGet<TrophyItem[]>('trophies');
     } catch {
-      this.trophiesError = 'Sbírku fufínků se nepodařilo načíst.';
+      this.trophiesError = 'Sbírku fumfíků se nepodařilo načíst.';
     } finally {
       this.trophiesLoading = false;
       this.render();

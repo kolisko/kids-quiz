@@ -70,7 +70,7 @@
   </form>
 
   <section class="start-screen" *ngIf="screen === 'start'">
-    <button class="trophy-entry-button" type="button" (click)="openTrophies()" title="Sbírka fufínků" aria-label="Sbírka fufínků">
+    <button class="trophy-entry-button" type="button" (click)="openTrophies()" title="Sbírka fumfíků" aria-label="Sbírka fumfíků">
       <lucide-icon [img]="trophyIcon" [size]="38"></lucide-icon>
     </button>
     <h1>Kids Quiz</h1>
@@ -99,13 +99,13 @@
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
-      <h1>Sbírka fufínků</h1>
+      <h1>Sbírka fumfíků</h1>
       <span class="header-spacer" aria-hidden="true"></span>
     </div>
-    <p class="settings-note" *ngIf="trophiesLoading">Načítám fufínky...</p>
+    <p class="settings-note" *ngIf="trophiesLoading">Načítám fumfíky...</p>
     <p class="error settings-error" *ngIf="trophiesError">{{ trophiesError }}</p>
     <div class="trophy-empty" *ngIf="!trophiesLoading && !trophiesError && trophies.length === 0">
-      <h2>Zatím žádní fufínci</h2>
+      <h2>Zatím žádní fumfíci</h2>
     </div>
     <div class="trophy-grid" *ngIf="!trophiesLoading && trophies.length > 0">
       <div class="trophy-card" *ngFor="let trophy of trophies">
