@@ -143,9 +143,9 @@ object FlipcardStore {
         }
     }
 
-    fun replaceWords(words: String, language: LearningLanguage): FlipcardWordsResponse = synchronized(lock) {
+    fun replaceWords(request: FlipcardWordsRequest, language: LearningLanguage): FlipcardWordsResponse = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.replaceFlipcardWords(words, language)
+            connection.replaceFlipcardWords(request.words, request.items, language)
             connection.readFlipcardWordsResponse(language)
         }
     }

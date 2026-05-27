@@ -251,6 +251,13 @@ data class FlipcardWord(
 @Serializable
 data class FlipcardWordsRequest(
     val words: String = "",
+    val items: List<FlipcardWordUpdate> = emptyList(),
+)
+
+@Serializable
+data class FlipcardWordUpdate(
+    val conceptKey: String,
+    val word: String,
 )
 
 @Serializable
@@ -338,5 +345,7 @@ data class FlipcardTranslationBackfillStatusResponse(
     val readyCount: Int,
     val totalCount: Int,
     val error: String? = null,
+    val warning: String? = null,
     val updatedAt: String? = null,
+    val storedCount: Int = readyCount,
 )

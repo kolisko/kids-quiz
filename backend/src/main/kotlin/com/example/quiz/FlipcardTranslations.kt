@@ -74,6 +74,9 @@ object FlipcardTranslationService {
             null,
             ArtifactJobStatus.ready -> storedProgress.readyCount
         }
+        val storedCountMismatch = activeJobStatus == null &&
+            storedProgress.updatedAt != null &&
+            storedProgress.storedCount != storedProgress.readyCount
         return FlipcardTranslationBackfillStatusResponse(
             language = language,
             status = when {
@@ -84,7 +87,9 @@ object FlipcardTranslationService {
             readyCount = readyCount,
             totalCount = storedProgress.totalCount,
             error = job?.error,
+            warning = if (storedCountMismatch) "translation_count_mismatch" else null,
             updatedAt = if (activeJobStatus == null) storedProgress.updatedAt else null,
+            storedCount = storedProgress.storedCount,
         )
     }
 

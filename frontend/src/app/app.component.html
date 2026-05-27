@@ -302,6 +302,11 @@
       <button class="primary-button compact-button" type="button" (click)="addSpellingSet()">
         Přidat seznam
       </button>
+      <button class="secondary-button compact-button" type="button" (click)="saveCurrentSpellingSets()" [disabled]="loading">
+        Uložit spelling seznamy
+      </button>
+      <p class="settings-note" *ngIf="spellingSetsSaved">Spelling seznamy jsou uložené.</p>
+      <p class="error settings-error" *ngIf="spellingSetsError">{{ spellingSetsError }}</p>
     </section>
 
     <section class="settings-section">
@@ -338,6 +343,7 @@
         <p class="settings-note translation-updated-at" *ngIf="translationBackfillUpdatedAtText">
           Aktualizováno {{ translationBackfillUpdatedAtText }}
         </p>
+        <p class="error settings-error" *ngIf="translationBackfillWarning">{{ translationBackfillWarning }}</p>
         <p class="settings-note">
           Doplnění překladů přepíše slovíčka pro {{ settingsLanguageLabel }} bez anglických fallbacků. Němčina dostane členy der/die/das.
         </p>
@@ -355,12 +361,21 @@
           [disabled]="translationBackfillActive"
           [name]="'flipcardWords' + settingsLanguage"></textarea>
       </label>
+      <button
+        class="secondary-button compact-button"
+        type="button"
+        (click)="saveCurrentFlipcardWords()"
+        [disabled]="loading || translationBackfillActive">
+        Uložit flipcards slovíčka
+      </button>
+      <p class="settings-note" *ngIf="flipcardWordsSaved">Flipcards slovíčka jsou uložená.</p>
+      <p class="error settings-error" *ngIf="flipcardWordsError">{{ flipcardWordsError }}</p>
     </section>
 
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>
     <p class="error settings-error" *ngIf="settingsError">{{ settingsError }}</p>
     <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading">
-      Uložit
+      Uložit nastavení
     </button>
   </section>
 

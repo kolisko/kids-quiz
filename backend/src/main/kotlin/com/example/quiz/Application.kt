@@ -273,7 +273,11 @@ fun Application.module() {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@put
                     }
-                    call.respond(FlipcardStore.replaceWords(request.words, language))
+                    try {
+                        call.respond(FlipcardStore.replaceWords(request, language))
+                    } catch (error: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to (error.message ?: "invalid_flipcard_words")))
+                    }
                 }
                 get("/session") {
                     if (!Auth.requireAuthenticated(call)) return@get

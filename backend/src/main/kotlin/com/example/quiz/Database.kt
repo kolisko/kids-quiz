@@ -2021,11 +2021,19 @@ fun Connection.readFlipcardWordsResponse(language: LearningLanguage = LearningLa
     )
 }
 
-fun Connection.replaceFlipcardWords(rawWords: String, language: LearningLanguage = LearningLanguage.en) {
+fun Connection.replaceFlipcardWords(
+    rawWords: String,
+    items: List<FlipcardWordUpdate> = emptyList(),
+    language: LearningLanguage = LearningLanguage.en,
+) {
+    if (language != LearningLanguage.en && items.isNotEmpty()) {
+        replaceFlipcardTranslationsByConcept(language, items)
+        return
+    }
     val words = parseFlipcardWords(rawWords)
         .distinctBy { normalizeFlipcardWord(it) }
+    require(language == LearningLanguage.en) { "flipcard_translation_items_required" }
     transaction {
-        val existingConceptKeys = readFlipcardConceptKeys()
         prepareStatement(
             """
             INSERT INTO flipcard_concepts(concept_key, sort_order, updated_at)
@@ -2047,10 +2055,7 @@ fun Connection.replaceFlipcardWords(rawWords: String, language: LearningLanguage
             ).use { translationStatement ->
                 words.forEachIndexed { index, word ->
                     val normalized = normalizeFlipcardWord(word)
-                    val conceptKey = when (language) {
-                        LearningLanguage.en -> normalized
-                        else -> existingConceptKeys.getOrNull(index) ?: normalized
-                    }
+                    val conceptKey = normalized
                     conceptStatement.setString(1, conceptKey)
                     conceptStatement.setInt(2, index)
                     conceptStatement.executeUpdate()
@@ -2065,6 +2070,49 @@ fun Connection.replaceFlipcardWords(rawWords: String, language: LearningLanguage
                 }
                 translationStatement.executeBatch()
             }
+        }
+    }
+}
+
+private fun Connection.replaceFlipcardTranslationsByConcept(
+    language: LearningLanguage,
+    items: List<FlipcardWordUpdate>,
+) {
+    require(language != LearningLanguage.en) { "flipcard_translation_items_not_supported_for_english" }
+    val existingConceptKeys = readFlipcardConceptKeys()
+    val cleanedItems = items.map { item ->
+        item.conceptKey.trim() to item.word.trim()
+    }
+    require(cleanedItems.size == existingConceptKeys.size) { "flipcard_translation_count_mismatch" }
+    require(cleanedItems.all { (conceptKey, word) -> conceptKey.isNotBlank() && word.isNotBlank() }) {
+        "flipcard_translation_blank_item"
+    }
+    val wordsByConceptKey = cleanedItems.toMap()
+    require(wordsByConceptKey.size == cleanedItems.size) { "flipcard_translation_duplicate_concept" }
+    require(wordsByConceptKey.keys == existingConceptKeys.toSet()) { "flipcard_translation_concept_mismatch" }
+
+    transaction {
+        prepareStatement("DELETE FROM flipcard_translations WHERE language = ?").use {
+            it.setString(1, language.name)
+            it.executeUpdate()
+        }
+        prepareStatement(
+            """
+            INSERT INTO flipcard_translations(concept_id, language, word, normalized_word, sort_order, updated_at)
+            VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).use { statement ->
+            existingConceptKeys.forEachIndexed { index, conceptKey ->
+                val word = wordsByConceptKey.getValue(conceptKey)
+                val conceptId = requireFlipcardConceptId(conceptKey)
+                statement.setLong(1, conceptId)
+                statement.setString(2, language.name)
+                statement.setString(3, word)
+                statement.setString(4, normalizeFlipcardWord(word))
+                statement.setInt(5, index)
+                statement.addBatch()
+            }
+            statement.executeBatch()
         }
     }
 }
@@ -2094,6 +2142,12 @@ fun Connection.readFlipcardTranslationBackfillProgress(language: LearningLanguag
             if (!rows.next()) 0 else rows.getInt(1)
         }
     }
+    val readyCount = prepareStatement("SELECT COUNT(*) FROM flipcard_translations WHERE language = ?").use { statement ->
+        statement.setString(1, language.name)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) 0 else rows.getInt(1)
+        }
+    }
     val row = prepareStatement(
         "SELECT concept_count, updated_at FROM flipcard_translation_backfills WHERE language = ?",
     ).use { statement ->
@@ -2107,9 +2161,10 @@ fun Connection.readFlipcardTranslationBackfillProgress(language: LearningLanguag
         }
     }
     return FlipcardTranslationBackfillProgress(
-        readyCount = row.first.coerceAtMost(total),
+        readyCount = readyCount.coerceAtMost(total),
         totalCount = total,
         updatedAt = row.second,
+        storedCount = row.first,
     )
 }
 
@@ -2240,6 +2295,7 @@ data class FlipcardTranslationBackfillProgress(
     val readyCount: Int,
     val totalCount: Int,
     val updatedAt: String?,
+    val storedCount: Int,
 )
 
 fun Connection.readFlipcardSession(limit: Int, language: LearningLanguage = LearningLanguage.en): FlipcardSession {

@@ -237,6 +237,16 @@ interface FlipcardWord {
   imageReported: boolean;
 }
 
+interface FlipcardWordUpdate {
+  conceptKey: string;
+  word: string;
+}
+
+interface FlipcardWordsRequest {
+  words?: string;
+  items?: FlipcardWordUpdate[];
+}
+
 interface FlipcardWordsResponse {
   words: string;
   items: FlipcardWord[];
@@ -312,7 +322,9 @@ interface FlipcardTranslationBackfillStatusResponse {
   readyCount: number;
   totalCount: number;
   error?: string | null;
+  warning?: string | null;
   updatedAt?: string | null;
+  storedCount?: number;
 }
 
 interface FlipcardStatsSnapshot {
@@ -434,6 +446,10 @@ export class AppComponent implements OnInit, OnDestroy {
   authError: string | null = null;
   settingsSaved = false;
   settingsError: string | null = null;
+  spellingSetsSaved = false;
+  spellingSetsError: string | null = null;
+  flipcardWordsSaved = false;
+  flipcardWordsError: string | null = null;
   password = '';
   snapshotNumber = 'dev';
 
@@ -802,6 +818,15 @@ export class AppComponent implements OnInit, OnDestroy {
     const status = this.currentTranslationBackfillStatus;
     if (!status) return 'Stav překladů zatím není načtený.';
     return `Překlady ${status.readyCount} / ${status.totalCount} - ${this.translationBackfillStatusLabel(status.status)}`;
+  }
+
+  get translationBackfillWarning(): string | null {
+    const status = this.currentTranslationBackfillStatus;
+    if (!status?.warning) return null;
+    if (status.warning === 'translation_count_mismatch') {
+      return `Pozor: poslední doplnění hlásilo ${status.storedCount ?? '?'} překladů, ale v databázi je reálně ${status.readyCount}. Spusť Doplnit překlady.`;
+    }
+    return status.warning;
   }
 
   get translationBackfillProgressPercent(): number {
@@ -1297,6 +1322,10 @@ export class AppComponent implements OnInit, OnDestroy {
   selectSettingsLanguage(language: LearningLanguage): void {
     this.settingsLanguage = language;
     this.translationBackfillError = null;
+    this.spellingSetsSaved = false;
+    this.spellingSetsError = null;
+    this.flipcardWordsSaved = false;
+    this.flipcardWordsError = null;
     if (language !== 'en') {
       void this.loadTranslationBackfillStatus(language);
     }
@@ -1790,29 +1819,69 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const savedSettings = await this.apiPut<GameSettings>('settings', this.normalizedSettings());
       this.applySettings(savedSettings);
-
-      const languageSaveResults = await Promise.allSettled([
-        ...this.languageOptions.map((language) => this.apiPut<SpellingSet[]>(`spelling/sets?language=${language.code}`, {
-          sets: this.spellingSetInputsByLanguage[language.code],
-          latestSetIndex: this.latestSpellingSetIndexByLanguage[language.code],
-        })),
-        ...this.languageOptions.map((language) => this.apiPut<FlipcardWordsResponse>(`flipcards/words?language=${language.code}`, {
-          words: this.flipcardWordInputByLanguage[language.code],
-        })),
-      ]);
-      if (languageSaveResults.some((result) => result.status === 'rejected')) {
-        this.settingsError = 'Nastavení aplikace je uložené, ale nepodařilo se uložit některá jazyková data.';
-        return;
-      }
-
-      try {
-        await this.loadAllLanguageSettings();
-        this.settingsSaved = true;
-      } catch {
-        this.settingsError = 'Nastavení je uložené, ale nepodařilo se znovu načíst aktuální hodnoty.';
-      }
+      this.settingsSaved = true;
     } catch {
       this.settingsError = 'Nastavení se nepodařilo uložit.';
+    } finally {
+      this.loading = false;
+      this.render();
+    }
+  }
+
+  async saveCurrentSpellingSets(): Promise<void> {
+    const language = this.settingsLanguage;
+    this.spellingSetsSaved = false;
+    this.spellingSetsError = null;
+    this.loading = true;
+    try {
+      const sets = await this.apiPut<SpellingSet[]>(`spelling/sets?language=${language}`, {
+        sets: this.spellingSetInputsByLanguage[language],
+        latestSetIndex: this.latestSpellingSetIndexByLanguage[language],
+      });
+      this.spellingSetInputsByLanguage = {
+        ...this.spellingSetInputsByLanguage,
+        [language]: sets.length > 0 ? sets.map((set) => set.rawWords) : [''],
+      };
+      const latestIndex = sets.findIndex((set) => set.isLatest);
+      this.latestSpellingSetIndexByLanguage = {
+        ...this.latestSpellingSetIndexByLanguage,
+        [language]: latestIndex >= 0 ? latestIndex : this.lastConfiguredSpellingSetIndex(language),
+      };
+      this.spellingSetsSaved = true;
+    } catch {
+      this.spellingSetsError = 'Spelling seznamy se nepodařilo uložit.';
+    } finally {
+      this.loading = false;
+      this.render();
+    }
+  }
+
+  async saveCurrentFlipcardWords(): Promise<void> {
+    const language = this.settingsLanguage;
+    this.flipcardWordsSaved = false;
+    this.flipcardWordsError = null;
+    this.loading = true;
+    try {
+      const response = await this.apiPut<FlipcardWordsResponse>(
+        `flipcards/words?language=${language}`,
+        this.flipcardWordsRequest(language),
+      );
+      this.flipcardWordInputByLanguage = {
+        ...this.flipcardWordInputByLanguage,
+        [language]: response.words,
+      };
+      this.flipcardWordsByLanguage = {
+        ...this.flipcardWordsByLanguage,
+        [language]: response.items ?? [],
+      };
+      if (language !== 'en') {
+        await this.loadTranslationBackfillStatus(language);
+      }
+      this.flipcardWordsSaved = true;
+    } catch (error) {
+      this.flipcardWordsError = error instanceof Error && error.message === 'flipcard_translation_count_mismatch'
+        ? `Počet slov musí být stejný jako počet anglických konceptů (${this.flipcardWordsByLanguage.en.length}). Uložení zastaveno, aby se překlady neposunuly.`
+        : 'Flipcards slovíčka se nepodařilo uložit.';
     } finally {
       this.loading = false;
       this.render();
@@ -3015,6 +3084,32 @@ export class AppComponent implements OnInit, OnDestroy {
       ...this.flipcardWordsByLanguage,
       [language]: response.items ?? [],
     };
+  }
+
+  private flipcardWordsRequest(language: LearningLanguage): FlipcardWordsRequest {
+    const words = this.flipcardWordInputByLanguage[language] ?? '';
+    if (language === 'en') return { words };
+
+    const conceptItems = this.flipcardWordsByLanguage.en ?? [];
+    if (conceptItems.length === 0) throw new Error('flipcard_translation_concepts_missing');
+
+    const parsedWords = this.parseDelimitedWords(words);
+    if (parsedWords.length !== conceptItems.length) {
+      throw new Error('flipcard_translation_count_mismatch');
+    }
+    return {
+      items: conceptItems.map((item, index) => ({
+        conceptKey: item.conceptKey,
+        word: parsedWords[index] ?? '',
+      })),
+    };
+  }
+
+  private parseDelimitedWords(words: string): string[] {
+    return words
+      .split(',')
+      .map((word) => word.trim())
+      .filter((word) => word.length > 0);
   }
 
   private async loadFlipcardAssets(language: LearningLanguage = this.assetLibraryLanguage): Promise<void> {
