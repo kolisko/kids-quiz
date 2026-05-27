@@ -249,6 +249,12 @@ object DatabaseMigrator {
                     recordMigration(20, "migrate_trophies_to_unique_awards")
                 }
             }
+            if (21 !in applied) {
+                connection.transaction {
+                    addAdditionalEnglishSpellingSets()
+                    recordMigration(21, "add_additional_english_spelling_sets")
+                }
+            }
         }
         migrated = true
     }
@@ -889,6 +895,62 @@ object DatabaseMigrator {
             )
             statement.executeUpdate("DROP TABLE flipcard_word_stats")
             statement.executeUpdate("ALTER TABLE flipcard_word_stats_new RENAME TO flipcard_word_stats")
+        }
+    }
+
+    private fun Connection.addAdditionalEnglishSpellingSets() {
+        val startSortOrder = createStatement().use { statement ->
+            statement.executeQuery(
+                """
+                SELECT COALESCE(MAX(sort_order), -1) + 1
+                FROM spelling_sets
+                WHERE language = '${LearningLanguage.en.name}'
+                """.trimIndent(),
+            ).use { rows ->
+                if (rows.next()) rows.getInt(1) else 0
+            }
+        }
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                UPDATE spelling_sets
+                SET is_latest = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE language = '${LearningLanguage.en.name}'
+                """.trimIndent(),
+            )
+        }
+        prepareStatement(
+            """
+            INSERT INTO spelling_sets(raw_words, sort_order, is_latest, language, updated_at)
+            VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """.trimIndent(),
+        ).use { setStatement ->
+            prepareStatement(
+                """
+                INSERT INTO spelling_words(set_id, word, normalized_word, sort_order, language, updated_at)
+                VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """.trimIndent(),
+            ).use { wordStatement ->
+                additionalEnglishSpellingSets.forEachIndexed { setIndex, rawWords ->
+                    setStatement.setString(1, rawWords)
+                    setStatement.setInt(2, startSortOrder + setIndex)
+                    setStatement.setInt(3, if (setIndex == additionalEnglishSpellingSets.lastIndex) 1 else 0)
+                    setStatement.setString(4, LearningLanguage.en.name)
+                    setStatement.executeUpdate()
+
+                    val setId = lastInsertRowId()
+                    parseSpellingWords(rawWords).forEachIndexed { wordIndex, word ->
+                        wordStatement.setLong(1, setId)
+                        wordStatement.setString(2, word)
+                        wordStatement.setString(3, normalizeSpellingWord(word))
+                        wordStatement.setInt(4, wordIndex)
+                        wordStatement.setString(5, LearningLanguage.en.name)
+                        wordStatement.addBatch()
+                    }
+                }
+                wordStatement.executeBatch()
+            }
         }
     }
 
@@ -2498,6 +2560,25 @@ private fun parseSpellingWords(rawWords: String): List<String> {
 }
 
 private fun normalizeSpellingWord(word: String): String = word.trim().lowercase()
+
+private val additionalEnglishSpellingSets = listOf(
+    "hat, hand, men, six, dog, sun, happy, desk",
+    "rain, day, tail, play, wait, stay, away, chain",
+    "my, try, cry, party, ugly, baby, fly, candy",
+    "coat, show, train, today, sky, windy, daisy, slowly",
+    "Santa, red, gift, wish, star, sled, toy, cookie",
+    "team, teeth, green, sea, feet, clean, three, week",
+    "room, blue, glue, due, moon, food, igloo, school",
+    "high, fries, tie, pie, night, lie, light",
+    "hug, love, pink, red, heart, card, friend, cupid",
+    "noise, point, voice, boy, toy, boil, enjoy, cowboy",
+    "brain, tray, pillow, float, fight, magpie, true, boot, sheep, eat",
+    "face, city, pencil, nice, race, carrot, car, cat, color, cobra",
+    "grape, leg, rug, golf, gum, gym, cage, huge, page, stage",
+    "bunny, Spring, egg, hen, chick, hide, candy, Easter, basket, flower",
+    "look, book, cook, foot, wood, moon, scooter, school, food, boot",
+    "this, that, them, the, these, bath, throw, three, think, math",
+)
 
 private fun parseFlipcardWords(rawWords: String): List<String> {
     return rawWords.split(',')
