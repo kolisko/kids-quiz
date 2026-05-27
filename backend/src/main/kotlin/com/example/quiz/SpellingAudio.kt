@@ -33,6 +33,10 @@ private const val defaultSpanishTtsInstructions =
     "Pronounce this as a single Spanish word in neutral Spanish phonology. Say only the word. Do not use English pronunciation, even if the spelling is identical or similar to English, for example tractor, hotel, radio, animal."
 private const val defaultSpanishSpellingTtsInstructions =
     "Spell this Spanish word clearly one letter at a time using Spanish letter names. Say only the letters in Spanish. Do not pronounce the full word."
+private const val defaultCzechTtsInstructions =
+    "Pronounce this as a single Czech word or short Czech phrase in standard Czech phonology. Say only the word or phrase. Do not use English pronunciation, even if the spelling is identical or similar to English."
+private const val defaultCzechSpellingTtsInstructions =
+    "Spell this Czech word clearly one letter at a time using Czech letter names. Say only the letters in Czech. Do not pronounce the full word."
 private const val previousGermanTtsInstructions =
     "Pronounce this single German word clearly in standard German. Say only the word."
 private const val previousGermanSpellingTtsInstructions =
@@ -312,6 +316,12 @@ object SpellingAudioService {
                 SpellingAudioKind.spelling -> System.getenv("OPENAI_ES_SPELLING_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
                     ?: defaultSpanishSpellingTtsInstructions
             }
+            LearningLanguage.cs -> when (kind) {
+                SpellingAudioKind.word -> System.getenv("OPENAI_CS_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                    ?: defaultCzechTtsInstructions
+                SpellingAudioKind.spelling -> System.getenv("OPENAI_CS_SPELLING_TTS_INSTRUCTIONS")?.takeIf { it.isNotBlank() }
+                    ?: defaultCzechSpellingTtsInstructions
+            }
         }
     }
 
@@ -327,6 +337,7 @@ object SpellingAudioService {
                 SpellingAudioKind.word -> previousSpanishTtsInstructions
                 SpellingAudioKind.spelling -> previousSpanishSpellingTtsInstructions
             }
+            LearningLanguage.cs -> null
         }
         return listOfNotNull(current, previousDefault).distinct()
     }
@@ -416,6 +427,50 @@ object SpellingAudioService {
                 'x' -> "equis"
                 'y' -> "ye"
                 'z' -> "zeta"
+                else -> character.toString()
+            }
+            LearningLanguage.cs -> when (letter) {
+                'a' -> "A"
+                'b' -> "Be"
+                'c' -> "Ce"
+                'd' -> "De"
+                'e' -> "E"
+                'f' -> "Ef"
+                'g' -> "Ge"
+                'h' -> "Ha"
+                'i' -> "I"
+                'j' -> "Jot"
+                'k' -> "Ka"
+                'l' -> "El"
+                'm' -> "Em"
+                'n' -> "En"
+                'o' -> "O"
+                'p' -> "Pe"
+                'q' -> "Kve"
+                'r' -> "Er"
+                's' -> "Es"
+                't' -> "Te"
+                'u' -> "U"
+                'v' -> "Ve"
+                'w' -> "Dvojite ve"
+                'x' -> "Iks"
+                'y' -> "Ypsilon"
+                'z' -> "Zet"
+                'á' -> "Dlouhe A"
+                'č' -> "Ce s hackem"
+                'ď' -> "De s hackem"
+                'é' -> "Dlouhe E"
+                'ě' -> "E s hackem"
+                'í' -> "Dlouhe I"
+                'ň' -> "En s hackem"
+                'ó' -> "Dlouhe O"
+                'ř' -> "Er s hackem"
+                'š' -> "Es s hackem"
+                'ť' -> "Te s hackem"
+                'ú' -> "Dlouhe U"
+                'ů' -> "U s krouzkem"
+                'ý' -> "Dlouhe Y"
+                'ž' -> "Zet s hackem"
                 else -> character.toString()
             }
         }

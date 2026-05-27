@@ -281,6 +281,8 @@ object FlipcardTranslationService {
                 "Translate children's flashcard English words to German. Return displayWord only. For German nouns include the correct article der, die, or das as a prefix, for example der Apfel. Do not include explanations."
             LearningLanguage.es ->
                 "Translate children's flashcard English words to Spanish. Return displayWord only. Do not include articles unless the natural vocabulary item requires one. Do not include explanations."
+            LearningLanguage.cs ->
+                "Translate children's flashcard English words to Czech. Return displayWord only. Use a short common Czech word or phrase suitable for children. Do not include explanations."
             LearningLanguage.en -> "Return the original English words."
         }
     }

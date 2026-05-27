@@ -441,6 +441,7 @@ button,
   width: 100%;
   height: 100%;
   object-fit: contain;
+  cursor: pointer;
 }
 
 .flipcard-image-hidden {
@@ -457,6 +458,27 @@ button,
   font-size: clamp(1rem, 3vw, 1.45rem);
   font-weight: 900;
   text-align: center;
+}
+
+.flipcard-prompt-word {
+  margin-top: 0.9rem;
+  border: 0;
+  border-radius: 0.55rem;
+  padding: 0.35rem 0.8rem;
+  color: #0f172a;
+  background: transparent;
+  cursor: pointer;
+  font-size: clamp(1.25rem, 3vw, 2rem);
+  font-weight: 950;
+  line-height: 1.12;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 160ms ease, transform 160ms ease, text-shadow 160ms ease;
+}
+
+.flipcard-prompt-word:active {
+  color: #0f766e;
+  transform: scale(0.98);
+  text-shadow: 0 0.12rem 0 rgba(94, 234, 212, 0.22);
 }
 
 .flipcard-options {

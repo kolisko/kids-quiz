@@ -19,6 +19,7 @@ enum class LearningLanguage {
     en,
     de,
     es,
+    cs,
 }
 
 enum class SpellingSessionMode {
@@ -106,6 +107,7 @@ data class AppSettings(
     val celebrationTapLimit: Int = 100,
     val audioSource: AudioSource = AudioSource.browser_tts,
     val flipcardSource: FlipcardSource = FlipcardSource.all_words,
+    val flipcardPromptLanguage: LearningLanguage = LearningLanguage.cs,
 )
 
 @Serializable

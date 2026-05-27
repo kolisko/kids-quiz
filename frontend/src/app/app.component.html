@@ -316,6 +316,17 @@
           Pouze připravená slovíčka
         </label>
       </div>
+      <h3>Popisek a audio u obrázku</h3>
+      <div class="audio-source-options">
+        <label class="audio-source-option" *ngFor="let language of languageOptions">
+          <input
+            type="radio"
+            name="flipcardPromptLanguage"
+            [value]="language.code"
+            [(ngModel)]="settings.flipcardPromptLanguage">
+          {{ language.label }}
+        </label>
+      </div>
       <button class="primary-button compact-button" type="button" (click)="openFlipcardAssetLibrary()">
         Flipcards knihovna
       </button>
@@ -566,9 +577,17 @@
               [class.flipcard-image-hidden]="!flipcardImageLoaded"
               [src]="currentFlipcardImageUrl"
               [alt]="currentFlipcardWord?.text ?? 'Flipcard'"
+              (click)="playCurrentFlipcardPromptAudio()"
               (load)="onFlipcardImageLoad()"
               (error)="onFlipcardImageError()">
           </div>
+          <button
+            class="flipcard-prompt-word"
+            type="button"
+            *ngIf="currentFlipcardPromptText"
+            (click)="playCurrentFlipcardPromptAudio()">
+            {{ currentFlipcardPromptText }}
+          </button>
           <div class="flipcard-options">
             <button
               class="primary-button flipcard-option-button"
