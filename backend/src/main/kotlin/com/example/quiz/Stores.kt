@@ -174,6 +174,12 @@ object FlipcardStore {
         }
     }
 
+    fun setImageReported(conceptKey: String, reported: Boolean): FlipcardImageReportResponse? = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.setFlipcardImageReported(conceptKey, reported)
+        }
+    }
+
     fun enqueueMissingImages(language: LearningLanguage): FlipcardAssetBulkEnqueueResponse {
         val words = synchronized(lock) {
             Database.useConnection { connection -> connection.readFlipcardWords(language) }
@@ -286,6 +292,7 @@ object FlipcardStore {
             imageStatus = image?.status ?: FlipcardImageStatus.missing,
             imageUrl = image?.imageUrl,
             imageError = image?.error,
+            imageReported = word.imageReported,
             audioStatus = audio?.status ?: SpellingAudioStatus.missing,
             audioUrl = audio?.audioUrl,
             audioError = audio?.error,

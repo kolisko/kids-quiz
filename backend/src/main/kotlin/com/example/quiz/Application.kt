@@ -286,6 +286,21 @@ fun Application.module() {
                     val language = call.requireLearningLanguage() ?: return@get
                     call.respond(FlipcardStore.readAssets(language))
                 }
+                put("/images/{word}/reported") {
+                    if (!Auth.requireAuthenticated(call)) return@put
+                    val conceptKey = call.requireFlipcardImageWord() ?: return@put
+                    val request = runCatching { call.receive<FlipcardImageReportRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_report_request"))
+                        return@put
+                    }
+                    val response = FlipcardStore.setImageReported(conceptKey, request.reported)
+                    if (response == null) {
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "flipcard_concept_not_found"))
+                        return@put
+                    }
+                    call.respond(response)
+                }
                 post("/images/missing") {
                     if (!Auth.requireAuthenticated(call)) return@post
                     val language = call.requireLearningLanguage() ?: return@post

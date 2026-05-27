@@ -385,17 +385,30 @@
       <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetImages()" [disabled]="missingImageAssetsCount === 0 || bulkImageGenerationActive">
         {{ assetImageBulkEnqueueLoading ? 'Přidávám do fronty...' : 'Stáhnout všechny chybějící obrázky' }}
       </button>
+      <button
+        class="secondary-button compact-button asset-report-filter"
+        type="button"
+        (click)="toggleAssetLibraryReportedFilter()"
+        [class.asset-report-filter-active]="assetLibraryShowReportedOnly">
+        <lucide-icon [img]="flagIcon" [size]="18"></lucide-icon>
+        Jen nahlášené {{ reportedImageAssetsCount }}
+      </button>
       <div class="asset-counts" aria-label="Souhrn obrázků">
-        <span>Celkem {{ flipcardAssets.length }}</span>
+        <span>Celkem {{ visibleFlipcardAssets.length }} / {{ flipcardAssets.length }}</span>
         <span>Hotovo {{ readyImageAssetsCount }}</span>
         <span>Ve frontě {{ queuedImageAssetsCount }}</span>
         <span>Chybí {{ missingImageAssetsCount }}</span>
+        <span>Nahlášeno {{ reportedImageAssetsCount }}</span>
       </div>
     </div>
 
     <div class="asset-grid" *ngIf="!assetLibraryLoading && assetLibraryTab === 'images'">
-      <article class="asset-card" *ngFor="let asset of flipcardAssets">
+      <article class="asset-card" [class.asset-card-reported]="asset.imageReported" *ngFor="let asset of visibleFlipcardAssets">
         <strong>{{ asset.word }}</strong>
+        <span class="asset-report-badge" *ngIf="asset.imageReported">
+          <lucide-icon [img]="flagIcon" [size]="14"></lucide-icon>
+          Nahlášeno
+        </span>
         <span [class.asset-ready]="asset.imageStatus === 'ready'" [class.asset-missing]="asset.imageStatus !== 'ready'">
           {{ assetImageStatusLabel(asset) }}
         </span>
@@ -409,8 +422,9 @@
         >
           {{ assetImageIsGenerating(asset) ? 'Stahuji...' : 'Stáhnout obrázek' }}
         </button>
-        <div class="asset-card-actions" *ngIf="asset.imageUrl">
+        <div class="asset-card-actions">
           <button
+            *ngIf="asset.imageUrl"
             class="icon-button asset-action-button"
             type="button"
             (click)="regenerateAssetImage(asset)"
@@ -419,7 +433,7 @@
             aria-label="Přegenerovat obrázek">
             <lucide-icon [img]="refreshIcon" [size]="20"></lucide-icon>
           </button>
-          <div class="asset-info-action">
+          <div class="asset-info-action" *ngIf="asset.imageUrl">
             <button
               class="icon-button asset-action-button"
               type="button"
@@ -437,6 +451,7 @@
             </div>
           </div>
           <button
+            *ngIf="asset.imageUrl"
             class="icon-button asset-action-button"
             type="button"
             (click)="playAssetAudio(asset)"
@@ -445,10 +460,24 @@
             aria-label="Přehrát audio">
             <lucide-icon [img]="playIcon" [size]="20"></lucide-icon>
           </button>
+          <button
+            class="icon-button asset-action-button asset-report-button"
+            type="button"
+            (click)="toggleAssetImageReport(asset)"
+            [disabled]="assetImageReportSaving(asset)"
+            [class.asset-report-button-active]="asset.imageReported"
+            [title]="assetImageReportTitle(asset)"
+            [attr.aria-label]="assetImageReportTitle(asset)"
+            [attr.aria-pressed]="asset.imageReported">
+            <lucide-icon [img]="flagIcon" [size]="20"></lucide-icon>
+          </button>
         </div>
         <span class="asset-error" *ngIf="assetImageError(asset)">{{ assetImageError(asset) }}</span>
       </article>
     </div>
+    <p class="settings-note" *ngIf="!assetLibraryLoading && assetLibraryTab === 'images' && visibleFlipcardAssets.length === 0">
+      Žádné nahlášené obrázky.
+    </p>
 
     <div class="asset-toolbar" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">
       <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetAudio()" [disabled]="missingAudioAssetsCount === 0 || bulkAudioGenerationActive">
@@ -572,6 +601,18 @@
             <div class="flipcard-image-loader" *ngIf="!flipcardImageLoaded">
               {{ flipcardImageError ?? 'Načítám obrázek...' }}
             </div>
+            <button
+              class="icon-button image-report-button flipcard-image-report-button"
+              type="button"
+              *ngIf="currentFlipcardWord"
+              (click)="toggleCurrentFlipcardImageReport($event)"
+              [disabled]="currentFlipcardImageReportSaving"
+              [class.image-report-button-active]="currentFlipcardImageReported"
+              [title]="currentFlipcardImageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek'"
+              [attr.aria-label]="currentFlipcardImageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek'"
+              [attr.aria-pressed]="currentFlipcardImageReported">
+              <lucide-icon [img]="flagIcon" [size]="22"></lucide-icon>
+            </button>
             <img
               *ngIf="currentFlipcardImageUrl"
               [class.flipcard-image-hidden]="!flipcardImageLoaded"

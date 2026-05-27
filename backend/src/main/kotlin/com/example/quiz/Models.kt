@@ -222,6 +222,7 @@ data class FlipcardWord(
     val text: String,
     val normalized: String,
     val conceptKey: String = normalized,
+    val imageReported: Boolean = false,
 )
 
 @Serializable
@@ -269,6 +270,17 @@ data class FlipcardImageResponse(
 )
 
 @Serializable
+data class FlipcardImageReportRequest(
+    val reported: Boolean,
+)
+
+@Serializable
+data class FlipcardImageReportResponse(
+    val conceptKey: String,
+    val imageReported: Boolean,
+)
+
+@Serializable
 data class FlipcardAsset(
     val word: String,
     val normalized: String,
@@ -277,6 +289,7 @@ data class FlipcardAsset(
     val imageStatus: FlipcardImageStatus,
     val imageUrl: String? = null,
     val imageError: String? = null,
+    val imageReported: Boolean = false,
     val audioStatus: SpellingAudioStatus,
     val audioUrl: String? = null,
     val audioError: String? = null,

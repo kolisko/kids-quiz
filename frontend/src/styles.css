@@ -434,6 +434,28 @@ button,
   box-shadow: 0 20px 46px rgba(31, 41, 55, 0.12);
 }
 
+.image-report-button {
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(255, 251, 235, 0.94);
+  box-shadow: 0 14px 30px rgba(146, 64, 14, 0.14);
+}
+
+.image-report-button-active {
+  color: #fff;
+  border-color: rgba(180, 83, 9, 0.36);
+  background: #d97706;
+}
+
+.flipcard-image-report-button {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 2;
+  width: 3.1rem;
+  height: 3.1rem;
+}
+
 .flipcard-image-frame img {
   position: absolute;
   inset: 0;
@@ -968,6 +990,18 @@ textarea:disabled {
   margin: 0.5rem 0 1rem;
 }
 
+.asset-report-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.asset-report-filter-active {
+  color: #78350f;
+  border-color: rgba(245, 158, 11, 0.34);
+  background: #fde68a;
+}
+
 .asset-counts {
   display: flex;
   flex-wrap: wrap;
@@ -1001,6 +1035,25 @@ textarea:disabled {
   display: grid;
   gap: 0.55rem;
   padding: 0.8rem;
+}
+
+.asset-card-reported {
+  border-color: rgba(245, 158, 11, 0.62);
+  background: rgba(255, 251, 235, 0.86);
+  box-shadow: 0 14px 34px rgba(146, 64, 14, 0.16);
+}
+
+.asset-report-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 0.3rem;
+  padding: 0.24rem 0.48rem;
+  border-radius: 999px;
+  color: #78350f;
+  background: #fde68a;
+  font-size: 0.78rem;
+  font-weight: 950;
 }
 
 .asset-card img {
@@ -1053,6 +1106,18 @@ textarea:disabled {
   color: #1d4ed8;
   border-color: rgba(29, 78, 216, 0.24);
   background: rgba(239, 246, 255, 0.96);
+}
+
+.asset-report-button {
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.26);
+  background: rgba(255, 251, 235, 0.94);
+}
+
+.asset-report-button-active {
+  color: #fff;
+  border-color: rgba(180, 83, 9, 0.36);
+  background: #d97706;
 }
 
 .asset-info-action {

@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, CarFront, Info, ListRestart, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings, Trophy } from 'lucide-angular';
+import { ArrowLeft, CarFront, Flag, Info, ListRestart, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings, Trophy } from 'lucide-angular';
 import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
 
 type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
@@ -206,6 +206,7 @@ interface FlipcardWord {
   text: string;
   normalized: string;
   conceptKey: string;
+  imageReported: boolean;
 }
 
 interface FlipcardWordsResponse {
@@ -234,9 +235,15 @@ interface FlipcardAsset {
   imageStatus: ArtifactStatus;
   imageUrl: string | null;
   imageError?: string | null;
+  imageReported: boolean;
   audioStatus: ArtifactStatus;
   audioUrl: string | null;
   audioError?: string | null;
+}
+
+interface FlipcardImageReportResponse {
+  conceptKey: string;
+  imageReported: boolean;
 }
 
 interface AssetLanguageVariant {
@@ -362,6 +369,7 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly playIcon = Play;
   readonly refreshIcon = RefreshCw;
   readonly infoIcon = Info;
+  readonly flagIcon = Flag;
   readonly teslaAudioIcon = CarFront;
   readonly trophyIcon = Trophy;
   readonly teslaMp3TestVariants = TESLA_MP3_TEST_VARIANTS;
@@ -436,6 +444,7 @@ export class AppComponent implements OnInit, OnDestroy {
   assetLibraryTab: AssetLibraryTab = 'images';
   assetLibraryLanguage: LearningLanguage = 'en';
   flipcardAssets: FlipcardAsset[] = [];
+  assetLibraryShowReportedOnly = false;
   assetLibraryLoading = false;
   assetLibraryError: string | null = null;
   assetImageGenerating: Record<string, boolean> = {};
@@ -444,6 +453,7 @@ export class AppComponent implements OnInit, OnDestroy {
   assetAudioBulkEnqueueLoading = false;
   assetImageErrors: Record<string, string> = {};
   assetAudioErrors: Record<string, string> = {};
+  imageReportSaving: Record<string, boolean> = {};
   assetTranslationInfoKey: string | null = null;
   trophies: TrophyItem[] = [];
   trophiesLoading = false;
@@ -571,6 +581,15 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.currentFlipcardPromptWord?.text ?? '';
   }
 
+  get currentFlipcardImageReported(): boolean {
+    return this.currentFlipcardWord?.imageReported ?? false;
+  }
+
+  get currentFlipcardImageReportSaving(): boolean {
+    const conceptKey = this.currentFlipcardWord?.conceptKey;
+    return conceptKey ? Boolean(this.imageReportSaving[conceptKey]) : false;
+  }
+
   get flipcardAnswersDisabled(): boolean {
     return this.flipcardAdvancing || !this.flipcardImageLoaded || this.flipcardImageError !== null;
   }
@@ -669,6 +688,16 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get readyImageAssetsCount(): number {
     return this.flipcardAssets.filter((asset) => asset.imageStatus === 'ready').length;
+  }
+
+  get reportedImageAssetsCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.imageReported).length;
+  }
+
+  get visibleFlipcardAssets(): FlipcardAsset[] {
+    return this.assetLibraryShowReportedOnly
+      ? this.flipcardAssets.filter((asset) => asset.imageReported)
+      : this.flipcardAssets;
   }
 
   get missingAudioAssetsCount(): number {
@@ -928,7 +957,7 @@ export class AppComponent implements OnInit, OnDestroy {
       );
       return answerAssets.items
         .filter((asset) => asset.imageStatus === 'ready' && asset.audioStatus === 'ready' && readyPromptConcepts.has(asset.conceptKey))
-        .map((asset) => ({ text: asset.word, normalized: asset.normalized, conceptKey: asset.conceptKey }));
+        .map((asset) => ({ text: asset.word, normalized: asset.normalized, conceptKey: asset.conceptKey, imageReported: asset.imageReported }));
     }
     const response = await this.apiGet<FlipcardWordsResponse>(`flipcards/words?language=${this.selectedLanguage}`);
     return response.items;
@@ -1141,6 +1170,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.assetAudioGenerating = {};
     this.assetImageErrors = {};
     this.assetAudioErrors = {};
+    this.imageReportSaving = {};
     this.assetTranslationInfoKey = null;
     this.assetLibraryLoading = true;
     this.setScreen('assetLibrary');
@@ -1182,6 +1212,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.assetTranslationInfoKey = null;
   }
 
+  toggleAssetLibraryReportedFilter(): void {
+    this.assetLibraryShowReportedOnly = !this.assetLibraryShowReportedOnly;
+  }
+
   selectSettingsLanguage(language: LearningLanguage): void {
     this.settingsLanguage = language;
     this.translationBackfillError = null;
@@ -1217,6 +1251,17 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.playBackendAudioUrl(asset.audioUrl);
   }
 
+  async toggleAssetImageReport(asset: FlipcardAsset): Promise<void> {
+    await this.setFlipcardImageReported(asset.conceptKey, !asset.imageReported);
+  }
+
+  async toggleCurrentFlipcardImageReport(event?: Event): Promise<void> {
+    event?.stopPropagation();
+    const word = this.currentFlipcardWord;
+    if (!word) return;
+    await this.setFlipcardImageReported(word.conceptKey, !word.imageReported);
+  }
+
   toggleAssetTranslationInfo(asset: FlipcardAsset): void {
     const key = this.assetTranslationInfoKeyFor(asset);
     this.assetTranslationInfoKey = this.assetTranslationInfoKey === key ? null : key;
@@ -1224,6 +1269,14 @@ export class AppComponent implements OnInit, OnDestroy {
 
   assetTranslationInfoVisible(asset: FlipcardAsset): boolean {
     return this.assetTranslationInfoKey === this.assetTranslationInfoKeyFor(asset);
+  }
+
+  assetImageReportTitle(asset: FlipcardAsset): string {
+    return asset.imageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek';
+  }
+
+  assetImageReportSaving(asset: FlipcardAsset): boolean {
+    return Boolean(this.imageReportSaving[asset.conceptKey]);
   }
 
   assetLanguageVariants(asset: FlipcardAsset): AssetLanguageVariant[] {
@@ -1423,6 +1476,63 @@ export class AppComponent implements OnInit, OnDestroy {
         : item
     ));
     this.render();
+  }
+
+  private async setFlipcardImageReported(conceptKey: string, reported: boolean): Promise<void> {
+    if (this.imageReportSaving[conceptKey]) return;
+    const previous = this.imageReportedForConcept(conceptKey);
+    this.imageReportSaving = { ...this.imageReportSaving, [conceptKey]: true };
+    this.applyFlipcardImageReport({ conceptKey, imageReported: reported });
+    try {
+      const response = await this.apiPut<FlipcardImageReportResponse>(
+        `flipcards/images/${encodeURIComponent(conceptKey)}/reported`,
+        { reported },
+      );
+      this.applyFlipcardImageReport(response);
+    } catch (error) {
+      this.applyFlipcardImageReport({ conceptKey, imageReported: previous });
+      if (this.screen === 'assetLibrary') {
+        this.assetLibraryError = error instanceof Error ? error.message : 'Nahlášení obrázku se nepodařilo uložit.';
+      }
+    } finally {
+      const { [conceptKey]: _removed, ...nextSaving } = this.imageReportSaving;
+      this.imageReportSaving = nextSaving;
+      this.render();
+    }
+  }
+
+  private imageReportedForConcept(conceptKey: string): boolean {
+    const asset = this.flipcardAssets.find((item) => item.conceptKey === conceptKey);
+    if (asset) return asset.imageReported;
+    const current = this.flipcardWords.find((word) => word.conceptKey === conceptKey);
+    if (current) return current.imageReported;
+    return Object.values(this.flipcardWordsByLanguage)
+      .flat()
+      .find((word) => word.conceptKey === conceptKey)
+      ?.imageReported ?? false;
+  }
+
+  private applyFlipcardImageReport(response: FlipcardImageReportResponse): void {
+    const updateWord = (word: FlipcardWord): FlipcardWord => (
+      word.conceptKey === response.conceptKey ? { ...word, imageReported: response.imageReported } : word
+    );
+    const updateOption = (option: FlipcardOption): FlipcardOption => ({
+      ...option,
+      word: updateWord(option.word),
+    });
+    this.flipcardWords = this.flipcardWords.map(updateWord);
+    this.flipcardAnswerPool = this.flipcardAnswerPool.map(updateWord);
+    this.flipcardOptions = this.flipcardOptions.map(updateOption);
+    this.flipcardOptionsByIndex = this.flipcardOptionsByIndex.map((options) => options.map(updateOption));
+    this.flipcardWordsByLanguage = Object.fromEntries(
+      Object.entries(this.flipcardWordsByLanguage).map(([language, words]) => [
+        language,
+        words.map(updateWord),
+      ]),
+    ) as Record<LearningLanguage, FlipcardWord[]>;
+    this.flipcardAssets = this.flipcardAssets.map((asset) => (
+      asset.conceptKey === response.conceptKey ? { ...asset, imageReported: response.imageReported } : asset
+    ));
   }
 
   private startAssetLibraryPolling(language: LearningLanguage = this.assetLibraryLanguage): void {
