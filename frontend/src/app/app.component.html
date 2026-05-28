@@ -11,8 +11,26 @@
     <lucide-icon [img]="teslaAudioIcon" [size]="17"></lucide-icon>
     <span class="tesla-audio-state-dot" aria-hidden="true"></span>
   </span>
+  <ng-template #accountButtons>
+    <div class="account-actions" *ngIf="currentUser">
+      <button class="icon-button account-icon-button" type="button" (click)="openSettings()" title="Nastavení" aria-label="Nastavení">
+        <lucide-icon [img]="settingsIcon" [size]="24"></lucide-icon>
+      </button>
+      <button class="icon-button account-icon-button" type="button" (click)="toggleProfileMenu()" title="Profil" aria-label="Profil">
+        <lucide-icon [img]="profileIcon" [size]="24"></lucide-icon>
+      </button>
+      <button class="icon-button account-icon-button" type="button" (click)="logout()" title="Odhlásit" aria-label="Odhlásit">
+        <lucide-icon [img]="logoutIcon" [size]="24"></lucide-icon>
+      </button>
+      <div class="profile-popover" *ngIf="profileMenuVisible" role="status">
+        <strong>{{ currentUser.displayName || currentUser.email }}</strong>
+        <span>{{ currentUser.email }}</span>
+        <span>{{ currentUser.role === 'admin' ? 'Admin' : 'Uživatel' }}</span>
+      </div>
+    </div>
+  </ng-template>
 
-  <div class="top-bar" *ngIf="screen === 'play'">
+  <div class="top-bar app-header" *ngIf="screen === 'play'">
     <div class="score-pill">
       Skóre {{ score }} / {{ scoreGoal }}
       <span class="flash" *ngIf="flash">{{ flash }}</span>
@@ -37,37 +55,40 @@
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
         <lucide-icon [img]="newTestIcon" [size]="26"></lucide-icon>
       </button>
-      <button class="icon-button" type="button" (click)="openSettings()" title="Nastavení" aria-label="Nastavení">
-        <lucide-icon [img]="settingsIcon" [size]="26"></lucide-icon>
-      </button>
     </div>
   </div>
 
-  <div class="top-bar start-top-bar" *ngIf="screen === 'start'">
+  <div class="top-bar app-header" *ngIf="screen === 'start'">
+    <span class="header-left-slot" aria-hidden="true"></span>
     <span aria-hidden="true"></span>
-    <div class="top-actions">
-      <button class="icon-button" type="button" (click)="openSettings()" title="Nastavení" aria-label="Nastavení">
-        <lucide-icon [img]="settingsIcon" [size]="26"></lucide-icon>
-      </button>
-    </div>
+    <span class="header-left-slot" aria-hidden="true"></span>
   </div>
+  <ng-container *ngTemplateOutlet="accountButtons"></ng-container>
 
-  <form class="login-screen" *ngIf="screen === 'login'" (ngSubmit)="submitLogin()">
+  <section class="login-screen" *ngIf="screen === 'login'">
     <span class="label">Kids Quiz</span>
-    <h1>Heslo</h1>
-    <label class="password-label">
-      <input
-        name="password"
-        type="password"
-        autocomplete="current-password"
-        [(ngModel)]="password"
-        autofocus>
-    </label>
     <p class="error login-error" *ngIf="authError">{{ authError }}</p>
-    <button class="primary-button login-button" type="submit" [disabled]="authLoading || !password.trim()">
-      {{ authLoading ? 'Ověřuji...' : 'Vstoupit' }}
+    <button class="google-login-button" type="button" (click)="startGoogleLogin()" [disabled]="authLoading" *ngIf="googleLoginConfigured">
+      <span class="google-mark" aria-hidden="true">G</span>
+      <span>{{ authLoading ? 'Přesměrovávám...' : 'Přihlásit se přes Google' }}</span>
     </button>
-  </form>
+    <form class="password-fallback-form" (ngSubmit)="submitLogin()" *ngIf="!googleLoginConfigured && passwordLoginConfigured">
+      <label class="password-label">
+        <input
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          [(ngModel)]="password"
+          autofocus>
+      </label>
+      <button class="primary-button login-button" type="submit" [disabled]="authLoading || !password.trim()">
+        {{ authLoading ? 'Ověřuji...' : 'Vstoupit' }}
+      </button>
+    </form>
+    <p class="settings-note" *ngIf="!googleLoginConfigured && !passwordLoginConfigured">
+      Přihlášení není nakonfigurované.
+    </p>
+  </section>
 
   <section class="start-screen" *ngIf="screen === 'start'">
     <button class="trophy-entry-button" type="button" (click)="openTrophies()" title="Sbírka fumfíků" aria-label="Sbírka fumfíků">
@@ -100,7 +121,7 @@
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
       <h1>Sbírka fumfíků</h1>
-      <span class="header-spacer" aria-hidden="true"></span>
+      <span class="header-left-slot" aria-hidden="true"></span>
     </div>
     <p class="settings-note" *ngIf="trophiesLoading">Načítám fumfíky...</p>
     <p class="error settings-error" *ngIf="trophiesError">{{ trophiesError }}</p>
@@ -119,8 +140,8 @@
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
-      <h1>{{ selectedLanguageLabel }}</h1>
-      <span class="header-spacer" aria-hidden="true"></span>
+      <h1>{{ selectedTest?.name }}</h1>
+      <span class="header-left-slot" aria-hidden="true"></span>
     </div>
 
     <div class="mode-list">
@@ -141,7 +162,7 @@
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
       <h1>{{ selectedTest?.name }}</h1>
-      <span class="header-spacer" aria-hidden="true"></span>
+      <span class="header-left-slot" aria-hidden="true"></span>
     </div>
 
     <div class="mode-list">
@@ -160,7 +181,7 @@
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
       <h1>{{ selectedLanguageLabel }} - Spelling</h1>
-      <span class="header-spacer" aria-hidden="true"></span>
+      <span class="header-left-slot" aria-hidden="true"></span>
     </div>
 
     <div class="mode-list">
@@ -179,7 +200,7 @@
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
       <h1>Nastavení</h1>
-      <span class="header-spacer" aria-hidden="true"></span>
+      <span class="header-left-slot" aria-hidden="true"></span>
     </div>
 
     <div class="settings-grid">
@@ -274,7 +295,7 @@
       </div>
     </section>
 
-    <section class="settings-section">
+    <section class="settings-section" *ngIf="isAdmin">
       <h2>{{ settingsLanguageLabel }} - Spelling</h2>
       <div class="spelling-set-list">
         <div class="spelling-set-row" *ngFor="let set of spellingSetInputsByLanguage[settingsLanguage]; let index = index">
@@ -332,10 +353,10 @@
           {{ language.label }}
         </label>
       </div>
-      <button class="primary-button compact-button" type="button" (click)="openFlipcardAssetLibrary()">
+      <button class="primary-button compact-button" type="button" (click)="openFlipcardAssetLibrary()" *ngIf="isAdmin">
         Flipcards knihovna
       </button>
-      <div class="translation-backfill" *ngIf="translationBackfillVisible">
+      <div class="translation-backfill" *ngIf="isAdmin && translationBackfillVisible">
         <strong>{{ translationBackfillSummary }}</strong>
         <div class="translation-progress" *ngIf="currentTranslationBackfillStatus">
           <div class="translation-progress-bar" [class.translation-progress-bar-active]="translationBackfillActive" [style.width.%]="translationBackfillProgressPercent"></div>
@@ -353,7 +374,7 @@
         <p class="error settings-error" *ngIf="translationBackfillError">{{ translationBackfillError }}</p>
         <p class="error settings-error" *ngIf="currentTranslationBackfillStatus?.error">{{ currentTranslationBackfillStatus?.error }}</p>
       </div>
-      <label>
+      <label *ngIf="isAdmin">
         Slovíčka oddělená čárkou
         <textarea
           rows="5"
@@ -362,6 +383,7 @@
           [name]="'flipcardWords' + settingsLanguage"></textarea>
       </label>
       <button
+        *ngIf="isAdmin"
         class="secondary-button compact-button"
         type="button"
         (click)="saveCurrentFlipcardWords()"
@@ -370,6 +392,39 @@
       </button>
       <p class="settings-note" *ngIf="flipcardWordsSaved">Flipcards slovíčka jsou uložená.</p>
       <p class="error settings-error" *ngIf="flipcardWordsError">{{ flipcardWordsError }}</p>
+    </section>
+
+    <section class="settings-section admin-users-section" *ngIf="isAdmin">
+      <h2>Admin - uživatelé</h2>
+      <button class="secondary-button compact-button" type="button" (click)="loadAdminUsers()" [disabled]="adminUsersLoading">
+        {{ adminUsersLoading ? 'Načítám...' : 'Obnovit uživatele' }}
+      </button>
+      <p class="error settings-error" *ngIf="adminUsersError">{{ adminUsersError }}</p>
+      <div class="admin-user-list" *ngIf="!adminUsersLoading">
+        <div class="admin-user-row" *ngFor="let user of adminUsers">
+          <div class="admin-user-main">
+            <strong>{{ user.displayName || user.email }}</strong>
+            <span>{{ user.email }}</span>
+            <span>Role {{ user.role }} · Stav {{ user.status }} · Provider {{ user.providers.join(', ') || 'žádný' }}</span>
+            <span>Registrace {{ user.registeredAt }} · Poslední login {{ user.lastLoginAt || 'nikdy' }}</span>
+            <span>Data: matika {{ user.statsCount }}, spelling {{ user.spellingStatsCount }}, flipcards {{ user.flipcardStatsCount }}, fumfíci {{ user.trophyCount }}</span>
+          </div>
+          <button
+            class="danger-button compact-button"
+            type="button"
+            *ngIf="user.status === 'active'"
+            (click)="setAdminUserStatus(user, 'suspended')">
+            Suspendovat
+          </button>
+          <button
+            class="secondary-button compact-button"
+            type="button"
+            *ngIf="user.status === 'suspended'"
+            (click)="setAdminUserStatus(user, 'active')">
+            Reaktivovat
+          </button>
+        </div>
+      </div>
     </section>
 
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>
@@ -385,7 +440,7 @@
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
       <h1>{{ assetLibraryLanguageLabel }} - Flipcards knihovna</h1>
-      <span class="header-spacer" aria-hidden="true"></span>
+      <span class="header-left-slot" aria-hidden="true"></span>
     </div>
 
     <div class="asset-tabs">

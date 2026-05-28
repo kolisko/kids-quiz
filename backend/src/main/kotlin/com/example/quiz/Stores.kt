@@ -19,35 +19,47 @@ object TestsStore {
 object SettingsStore {
     private val lock = Any()
 
-    fun read(): AppSettings = synchronized(lock) {
+    fun read(userId: Long): AppSettings = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.readAppSettings()
+            connection.readAppSettings(userId)
         }
     }
 
-    fun replace(settings: AppSettings): AppSettings = synchronized(lock) {
+    fun replace(userId: Long, settings: AppSettings): AppSettings = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.replaceAppSettings(settings)
-            connection.readAppSettings()
+            connection.replaceAppSettings(userId, settings)
+            connection.readAppSettings(userId)
         }
+    }
+}
+
+object UserAdminStore {
+    private val lock = Any()
+
+    fun readUsers(): AdminUsersResponse = synchronized(lock) {
+        Database.useConnection { connection -> connection.readAdminUsers() }
+    }
+
+    fun updateStatus(userId: Long, status: UserStatus): AuthUser? = synchronized(lock) {
+        Database.useConnection { connection -> connection.updateUserStatus(userId, status) }
     }
 }
 
 object TrophyStore {
     private val lock = Any()
 
-    fun readAll(): List<TrophyItem> = synchronized(lock) {
+    fun readAll(userId: Long): List<TrophyItem> = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.readTrophies()
+            connection.readTrophies(userId)
         }
     }
 
-    fun awardNext(): TrophyAwardResponse = synchronized(lock) {
+    fun awardNext(userId: Long): TrophyAwardResponse = synchronized(lock) {
         Database.useConnection { connection ->
-            val animalKey = TrophyAnimalService.nextUnwonAnimalKey(connection.readTrophyKeys())
+            val animalKey = TrophyAnimalService.nextUnwonAnimalKey(connection.readTrophyKeys(userId))
                 ?: throw IllegalStateException("trophy_pool_exhausted")
-            connection.insertTrophy(animalKey)
-            val trophies = connection.readTrophies()
+            connection.insertTrophy(userId, animalKey)
+            val trophies = connection.readTrophies(userId)
             val awarded = trophies.firstOrNull { it.animalKey == animalKey }
                 ?: throw IllegalStateException("awarded_trophy_missing")
             TrophyAwardResponse(awarded = awarded, trophies = trophies)
@@ -68,13 +80,14 @@ object QuestionsStore {
 object StatsStore {
     private val lock = Any()
 
-    fun snapshot(testId: Long, direction: PracticeDirection): Map<Long, QuestionStats> = synchronized(lock) {
+    fun snapshot(userId: Long, testId: Long, direction: PracticeDirection): Map<Long, QuestionStats> = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.readStats(testId, direction)
+            connection.readStats(userId, testId, direction)
         }
     }
 
     fun record(
+        userId: Long,
         testId: Long,
         questionId: Long,
         correct: Boolean,
@@ -82,13 +95,13 @@ object StatsStore {
         direction: PracticeDirection,
     ): Pair<Long, QuestionStats>? = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.recordStats(testId, questionId, correct, timedOut, direction)
+            connection.recordStats(userId, testId, questionId, correct, timedOut, direction)
         }
     }
 
-    fun recordSession(testId: Long, results: List<AnswerSessionResult>): Map<PracticeDirection, QuestionStatsSnapshot> = synchronized(lock) {
+    fun recordSession(userId: Long, testId: Long, results: List<AnswerSessionResult>): Map<PracticeDirection, QuestionStatsSnapshot> = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.recordStatsSession(testId, results)
+            connection.recordStatsSession(userId, testId, results)
         }
     }
 }
@@ -115,21 +128,21 @@ object SpellingStore {
         }
     }
 
-    fun snapshot(language: LearningLanguage): Map<String, QuestionStats> = synchronized(lock) {
+    fun snapshot(userId: Long, language: LearningLanguage): Map<String, QuestionStats> = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.readSpellingStats(language)
+            connection.readSpellingStats(userId, language)
         }
     }
 
-    fun record(word: String, correct: Boolean, timedOut: Boolean, language: LearningLanguage): Pair<String, QuestionStats>? = synchronized(lock) {
+    fun record(userId: Long, word: String, correct: Boolean, timedOut: Boolean, language: LearningLanguage): Pair<String, QuestionStats>? = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.recordSpellingStats(word, correct, timedOut, language)
+            connection.recordSpellingStats(userId, word, correct, timedOut, language)
         }
     }
 
-    fun recordSession(results: List<WordSessionResult>, language: LearningLanguage): SpellingStatsSnapshot = synchronized(lock) {
+    fun recordSession(userId: Long, results: List<WordSessionResult>, language: LearningLanguage): SpellingStatsSnapshot = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.recordSpellingStatsSession(results, language)
+            connection.recordSpellingStatsSession(userId, results, language)
         }
     }
 }
@@ -150,9 +163,9 @@ object FlipcardStore {
         }
     }
 
-    fun readSession(limit: Int, language: LearningLanguage): FlipcardSession = synchronized(lock) {
+    fun readSession(userId: Long, limit: Int, language: LearningLanguage): FlipcardSession = synchronized(lock) {
         Database.useConnection { connection ->
-            when (connection.readAppSettings().flipcardSource) {
+            when (connection.readAppSettings(userId).flipcardSource) {
                 FlipcardSource.all_words -> connection.readFlipcardSession(limit, language)
                 FlipcardSource.ready_only -> {
                     val words = connection.readFlipcardWords(language)
@@ -283,21 +296,21 @@ object FlipcardStore {
         return FlipcardTranslationService.enqueueBackfill(language)
     }
 
-    fun snapshot(language: LearningLanguage): Map<String, QuestionStats> = synchronized(lock) {
+    fun snapshot(userId: Long, language: LearningLanguage): Map<String, QuestionStats> = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.readFlipcardStats(language)
+            connection.readFlipcardStats(userId, language)
         }
     }
 
-    fun record(word: String, correct: Boolean, timedOut: Boolean, language: LearningLanguage): Pair<String, QuestionStats>? = synchronized(lock) {
+    fun record(userId: Long, word: String, correct: Boolean, timedOut: Boolean, language: LearningLanguage): Pair<String, QuestionStats>? = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.recordFlipcardStats(word, correct, timedOut, language)
+            connection.recordFlipcardStats(userId, word, correct, timedOut, language)
         }
     }
 
-    fun recordSession(results: List<WordSessionResult>, language: LearningLanguage): FlipcardStatsSnapshot = synchronized(lock) {
+    fun recordSession(userId: Long, results: List<WordSessionResult>, language: LearningLanguage): FlipcardStatsSnapshot = synchronized(lock) {
         Database.useConnection { connection ->
-            connection.recordFlipcardStatsSession(results, language)
+            connection.recordFlipcardStatsSession(userId, results, language)
         }
     }
 

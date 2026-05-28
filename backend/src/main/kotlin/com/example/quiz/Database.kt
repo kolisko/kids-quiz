@@ -9,6 +9,8 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.ResultSet
+import java.sql.Statement
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -84,9 +86,13 @@ private data class LegacyFlipcardRow(
 )
 
 object Database {
+    private val connectionLock = Any()
+
     fun <T> useConnection(block: (Connection) -> T): T {
         DatabaseMigrator.ensureMigrated()
-        return openConnection().use(block)
+        return synchronized(connectionLock) {
+            openConnection().use(block)
+        }
     }
 
     fun openConnection(): Connection {
@@ -272,6 +278,12 @@ object DatabaseMigrator {
                 connection.transaction {
                     addAudioTtsSettings()
                     recordMigration(24, "add_audio_tts_settings")
+                }
+            }
+            if (25 !in applied) {
+                connection.transaction {
+                    addMultiUserOAuth()
+                    recordMigration(25, "add_multi_user_oauth")
                 }
             }
         }
@@ -770,6 +782,233 @@ object DatabaseMigrator {
                 )
                 """.trimIndent(),
             )
+        }
+    }
+
+    private fun Connection.addMultiUserOAuth() {
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL UNIQUE,
+                    email_verified INTEGER NOT NULL DEFAULT 0 CHECK(email_verified IN (0, 1)),
+                    display_name TEXT,
+                    given_name TEXT,
+                    family_name TEXT,
+                    picture_url TEXT,
+                    locale TEXT,
+                    role TEXT NOT NULL DEFAULT '${UserRole.user.name}',
+                    status TEXT NOT NULL DEFAULT '${UserStatus.active.name}',
+                    registered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_login_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS oauth_accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    provider TEXT NOT NULL,
+                    provider_subject TEXT NOT NULL,
+                    provider_email TEXT NOT NULL,
+                    provider_email_verified INTEGER NOT NULL DEFAULT 0 CHECK(provider_email_verified IN (0, 1)),
+                    raw_profile_json TEXT NOT NULL DEFAULT '{}',
+                    linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_login_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE(provider, provider_subject)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS user_sessions (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)")
+            statement.executeUpdate(
+                """
+                INSERT INTO users(email, email_verified, display_name, given_name, family_name, role, status, registered_at, created_at, updated_at)
+                VALUES
+                    ('beata.kolesarova31@gmail.com', 1, 'Beata Kolesarova', 'Beata', 'Kolesarova', '${UserRole.user.name}', '${UserStatus.active.name}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                    ('michal@zeleny-ctverec.cz', 1, 'Michal', 'Michal', NULL, '${UserRole.admin.name}', '${UserStatus.active.name}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(email) DO UPDATE SET
+                    role = CASE WHEN users.email = 'michal@zeleny-ctverec.cz' THEN '${UserRole.admin.name}' ELSE users.role END,
+                    status = CASE WHEN users.status IS NULL OR users.status = '' THEN '${UserStatus.active.name}' ELSE users.status END,
+                    updated_at = CURRENT_TIMESTAMP
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS user_settings (
+                    user_id INTEGER PRIMARY KEY,
+                    seconds_limit INTEGER NOT NULL DEFAULT $defaultSecondsLimit CHECK(seconds_limit >= 1),
+                    target_score INTEGER NOT NULL DEFAULT $defaultTargetScore CHECK(target_score >= 1),
+                    celebration_tap_limit INTEGER NOT NULL DEFAULT $defaultCelebrationTapLimit CHECK(celebration_tap_limit >= 0),
+                    audio_source TEXT NOT NULL DEFAULT '${defaultAudioSource.name}',
+                    flipcard_source TEXT NOT NULL DEFAULT '${defaultFlipcardSource.name}',
+                    flipcard_prompt_language TEXT NOT NULL DEFAULT '${defaultFlipcardPromptLanguage.name}',
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO user_settings(user_id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, updated_at)
+                SELECT users.id, app_settings.seconds_limit, app_settings.target_score, app_settings.celebration_tap_limit,
+                    app_settings.audio_source, app_settings.flipcard_source, app_settings.flipcard_prompt_language, CURRENT_TIMESTAMP
+                FROM users
+                CROSS JOIN app_settings
+                WHERE users.email = 'beata.kolesarova31@gmail.com'
+                ON CONFLICT(user_id) DO NOTHING
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO user_settings(user_id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, updated_at)
+                SELECT id, $defaultSecondsLimit, $defaultTargetScore, $defaultCelebrationTapLimit,
+                    '${defaultAudioSource.name}', '${defaultFlipcardSource.name}', '${defaultFlipcardPromptLanguage.name}', CURRENT_TIMESTAMP
+                FROM users
+                WHERE email = 'michal@zeleny-ctverec.cz'
+                ON CONFLICT(user_id) DO NOTHING
+                """.trimIndent(),
+            )
+            migrateStatsTablesToUsers(statement, "beata.kolesarova31@gmail.com")
+        }
+    }
+
+    private fun migrateStatsTablesToUsers(statement: Statement, ownerEmail: String) {
+        if ("user_id" !in tableColumns(statement, "question_stats")) {
+            statement.executeUpdate("DROP TABLE IF EXISTS question_stats_user_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE question_stats_user_new (
+                    user_id INTEGER NOT NULL,
+                    question_id INTEGER NOT NULL,
+                    direction TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY(question_id) REFERENCES questions(id) ON DELETE CASCADE,
+                    PRIMARY KEY(user_id, question_id, direction)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO question_stats_user_new(user_id, question_id, direction, correct, wrong, updated_at)
+                SELECT users.id, question_stats.question_id, question_stats.direction, question_stats.correct, question_stats.wrong, question_stats.updated_at
+                FROM question_stats
+                CROSS JOIN users
+                WHERE users.email = '$ownerEmail'
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE question_stats")
+            statement.executeUpdate("ALTER TABLE question_stats_user_new RENAME TO question_stats")
+        }
+        if ("user_id" !in tableColumns(statement, "spelling_word_stats")) {
+            statement.executeUpdate("DROP TABLE IF EXISTS spelling_word_stats_user_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE spelling_word_stats_user_new (
+                    user_id INTEGER NOT NULL,
+                    language TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    PRIMARY KEY(user_id, language, normalized_word)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO spelling_word_stats_user_new(user_id, language, normalized_word, correct, wrong, updated_at)
+                SELECT users.id, spelling_word_stats.language, spelling_word_stats.normalized_word, spelling_word_stats.correct, spelling_word_stats.wrong, spelling_word_stats.updated_at
+                FROM spelling_word_stats
+                CROSS JOIN users
+                WHERE users.email = '$ownerEmail'
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE spelling_word_stats")
+            statement.executeUpdate("ALTER TABLE spelling_word_stats_user_new RENAME TO spelling_word_stats")
+        }
+        if ("user_id" !in tableColumns(statement, "flipcard_word_stats")) {
+            statement.executeUpdate("DROP TABLE IF EXISTS flipcard_word_stats_user_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE flipcard_word_stats_user_new (
+                    user_id INTEGER NOT NULL,
+                    language TEXT NOT NULL,
+                    normalized_word TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    PRIMARY KEY(user_id, language, normalized_word)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO flipcard_word_stats_user_new(user_id, language, normalized_word, correct, wrong, updated_at)
+                SELECT users.id, flipcard_word_stats.language, flipcard_word_stats.normalized_word, flipcard_word_stats.correct, flipcard_word_stats.wrong, flipcard_word_stats.updated_at
+                FROM flipcard_word_stats
+                CROSS JOIN users
+                WHERE users.email = '$ownerEmail'
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE flipcard_word_stats")
+            statement.executeUpdate("ALTER TABLE flipcard_word_stats_user_new RENAME TO flipcard_word_stats")
+        }
+        if ("user_id" !in tableColumns(statement, "trophies")) {
+            statement.executeUpdate("DROP TABLE IF EXISTS trophies_user_new")
+            statement.executeUpdate(
+                """
+                CREATE TABLE trophies_user_new (
+                    user_id INTEGER NOT NULL,
+                    animal_key TEXT NOT NULL,
+                    won_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    PRIMARY KEY(user_id, animal_key)
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                INSERT INTO trophies_user_new(user_id, animal_key, won_at)
+                SELECT users.id, trophies.animal_key, trophies.won_at
+                FROM trophies
+                CROSS JOIN users
+                WHERE users.email = '$ownerEmail'
+                """.trimIndent(),
+            )
+            statement.executeUpdate("DROP TABLE trophies")
+            statement.executeUpdate("ALTER TABLE trophies_user_new RENAME TO trophies")
+        }
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_trophies_user_won_at ON trophies(user_id, won_at DESC)")
+    }
+
+    private fun tableColumns(statement: Statement, tableName: String): Set<String> {
+        return statement.executeQuery("PRAGMA table_info($tableName)").use { rows ->
+            buildSet {
+                while (rows.next()) add(rows.getString("name"))
+            }
         }
     }
 
@@ -1678,6 +1917,138 @@ fun Connection.readTests(): List<QuizTest> {
     }
 }
 
+fun Connection.readUserBySessionToken(token: String): AuthUser? {
+    return prepareStatement(
+        """
+        SELECT users.id, users.email, users.display_name, users.given_name, users.family_name, users.picture_url,
+            users.locale, users.role, users.status
+        FROM user_sessions
+        INNER JOIN users ON users.id = user_sessions.user_id
+        WHERE user_sessions.token = ? AND user_sessions.expires_at > CURRENT_TIMESTAMP
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, token)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return null
+            rows.toAuthUser()
+        }
+    }
+}
+
+fun Connection.insertUserSession(userId: Long, token: String) {
+    prepareStatement(
+        """
+        INSERT INTO user_sessions(token, user_id, expires_at)
+        VALUES(?, ?, datetime('now', '+30 days'))
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, token)
+        statement.setLong(2, userId)
+        statement.executeUpdate()
+    }
+}
+
+fun Connection.deleteUserSession(token: String) {
+    prepareStatement("DELETE FROM user_sessions WHERE token = ?").use { statement ->
+        statement.setString(1, token)
+        statement.executeUpdate()
+    }
+}
+
+fun Connection.upsertPasswordFallbackUser(): AuthUser {
+    ensureBuiltinUsers()
+    return readUserByEmail("beata.kolesarova31@gmail.com")
+        ?: throw IllegalStateException("fallback_user_missing")
+}
+
+fun Connection.upsertOAuthUser(profile: OAuthProfile): AuthUser {
+    ensureBuiltinUsers()
+    val existingAccountUserId = prepareStatement(
+        """
+        SELECT user_id
+        FROM oauth_accounts
+        WHERE provider = ? AND provider_subject = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, profile.provider)
+        statement.setString(2, profile.subject)
+        statement.executeQuery().use { rows -> if (rows.next()) rows.getLong("user_id") else null }
+    }
+    val userId = existingAccountUserId
+        ?: readUserIdByVerifiedEmail(profile.email, profile.emailVerified)
+        ?: insertOAuthUser(profile)
+    updateUserFromOAuth(userId, profile)
+    upsertOAuthAccount(userId, profile)
+    return readUserById(userId) ?: throw IllegalStateException("oauth_user_missing")
+}
+
+fun Connection.readAdminUsers(): AdminUsersResponse {
+    return prepareStatement(
+        """
+        SELECT users.id, users.email, users.email_verified, users.display_name, users.given_name, users.family_name,
+            users.picture_url, users.locale, users.role, users.status, users.registered_at, users.last_login_at,
+            COALESCE((SELECT group_concat(provider, ', ') FROM oauth_accounts WHERE oauth_accounts.user_id = users.id), '') AS providers,
+            (SELECT COUNT(*) FROM question_stats WHERE question_stats.user_id = users.id) AS stats_count,
+            (SELECT COUNT(*) FROM spelling_word_stats WHERE spelling_word_stats.user_id = users.id) AS spelling_stats_count,
+            (SELECT COUNT(*) FROM flipcard_word_stats WHERE flipcard_word_stats.user_id = users.id) AS flipcard_stats_count,
+            (SELECT COUNT(*) FROM trophies WHERE trophies.user_id = users.id) AS trophy_count
+        FROM users
+        ORDER BY users.registered_at DESC, users.id DESC
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            AdminUsersResponse(
+                users = buildList {
+                    while (rows.next()) {
+                        add(
+                            AdminUserSummary(
+                                id = rows.getLong("id"),
+                                email = rows.getString("email"),
+                                emailVerified = rows.getInt("email_verified") == 1,
+                                displayName = rows.getString("display_name"),
+                                givenName = rows.getString("given_name"),
+                                familyName = rows.getString("family_name"),
+                                pictureUrl = rows.getString("picture_url"),
+                                locale = rows.getString("locale"),
+                                role = rows.getString("role").toUserRole(),
+                                status = rows.getString("status").toUserStatus(),
+                                registeredAt = rows.getString("registered_at"),
+                                lastLoginAt = rows.getString("last_login_at"),
+                                providers = rows.getString("providers").split(',').map { it.trim() }.filter { it.isNotBlank() },
+                                statsCount = rows.getInt("stats_count"),
+                                spellingStatsCount = rows.getInt("spelling_stats_count"),
+                                flipcardStatsCount = rows.getInt("flipcard_stats_count"),
+                                trophyCount = rows.getInt("trophy_count"),
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+    }
+}
+
+fun Connection.updateUserStatus(userId: Long, status: UserStatus): AuthUser? {
+    prepareStatement(
+        """
+        UPDATE users
+        SET status = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, status.name)
+        statement.setLong(2, userId)
+        statement.executeUpdate()
+    }
+    if (status == UserStatus.suspended) {
+        prepareStatement("DELETE FROM user_sessions WHERE user_id = ?").use { statement ->
+            statement.setLong(1, userId)
+            statement.executeUpdate()
+        }
+    }
+    return readUserById(userId)
+}
+
 fun Connection.readAppSettings(): AppSettings {
     ensureAppSettingsRow()
     return prepareStatement(
@@ -1687,6 +2058,30 @@ fun Connection.readAppSettings(): AppSettings {
         WHERE id = 1
         """.trimIndent(),
     ).use { statement ->
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return AppSettings()
+            AppSettings(
+                secondsLimit = rows.getInt("seconds_limit"),
+                targetScore = rows.getInt("target_score"),
+                celebrationTapLimit = rows.getInt("celebration_tap_limit"),
+                audioSource = rows.getString("audio_source").toAudioSource(),
+                flipcardSource = rows.getString("flipcard_source").toFlipcardSource(),
+                flipcardPromptLanguage = rows.getString("flipcard_prompt_language").toLearningLanguage(defaultFlipcardPromptLanguage),
+            )
+        }
+    }
+}
+
+fun Connection.readAppSettings(userId: Long): AppSettings {
+    ensureUserSettingsRow(userId)
+    return prepareStatement(
+        """
+        SELECT seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language
+        FROM user_settings
+        WHERE user_id = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return AppSettings()
             AppSettings(
@@ -1725,6 +2120,35 @@ fun Connection.replaceAppSettings(settings: AppSettings) {
         statement.setString(4, settings.audioSource.name)
         statement.setString(5, settings.flipcardSource.name)
         statement.setString(6, settings.flipcardPromptLanguage.name)
+        statement.executeUpdate()
+    }
+}
+
+fun Connection.replaceAppSettings(userId: Long, settings: AppSettings) {
+    val secondsLimit = settings.secondsLimit.coerceAtLeast(1)
+    val targetScore = settings.targetScore.coerceAtLeast(1)
+    val celebrationTapLimit = settings.celebrationTapLimit.coerceAtLeast(0)
+    prepareStatement(
+        """
+        INSERT INTO user_settings(user_id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+            seconds_limit = excluded.seconds_limit,
+            target_score = excluded.target_score,
+            celebration_tap_limit = excluded.celebration_tap_limit,
+            audio_source = excluded.audio_source,
+            flipcard_source = excluded.flipcard_source,
+            flipcard_prompt_language = excluded.flipcard_prompt_language,
+            updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
+        statement.setInt(2, secondsLimit)
+        statement.setInt(3, targetScore)
+        statement.setInt(4, celebrationTapLimit)
+        statement.setString(5, settings.audioSource.name)
+        statement.setString(6, settings.flipcardSource.name)
+        statement.setString(7, settings.flipcardPromptLanguage.name)
         statement.executeUpdate()
     }
 }
@@ -1782,14 +2206,16 @@ fun Connection.replaceAudioTtsSettings(
     return settings
 }
 
-fun Connection.readTrophies(): List<TrophyItem> {
+fun Connection.readTrophies(userId: Long): List<TrophyItem> {
     return prepareStatement(
         """
         SELECT animal_key, won_at
         FROM trophies
+        WHERE user_id = ?
         ORDER BY won_at DESC, animal_key
         """.trimIndent(),
     ).use { statement ->
+        statement.setLong(1, userId)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {
@@ -1807,8 +2233,9 @@ fun Connection.readTrophies(): List<TrophyItem> {
     }
 }
 
-fun Connection.readTrophyKeys(): Set<String> {
-    return prepareStatement("SELECT animal_key FROM trophies").use { statement ->
+fun Connection.readTrophyKeys(userId: Long): Set<String> {
+    return prepareStatement("SELECT animal_key FROM trophies WHERE user_id = ?").use { statement ->
+        statement.setLong(1, userId)
         statement.executeQuery().use { rows ->
             buildSet {
                 while (rows.next()) add(rows.getString("animal_key"))
@@ -1817,14 +2244,15 @@ fun Connection.readTrophyKeys(): Set<String> {
     }
 }
 
-fun Connection.insertTrophy(animalKey: String) {
+fun Connection.insertTrophy(userId: Long, animalKey: String) {
     prepareStatement(
         """
-        INSERT INTO trophies(animal_key, won_at)
-        VALUES(?, CURRENT_TIMESTAMP)
+        INSERT INTO trophies(user_id, animal_key, won_at)
+        VALUES(?, ?, CURRENT_TIMESTAMP)
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, animalKey)
+        statement.setLong(1, userId)
+        statement.setString(2, animalKey)
         statement.executeUpdate()
     }
 }
@@ -1946,16 +2374,17 @@ fun Connection.readSpellingSession(
     return SpellingSession(setId = setId, words = readSpellingWords(setId), language = language)
 }
 
-fun Connection.readSpellingStats(language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
+fun Connection.readSpellingStats(userId: Long, language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
     return prepareStatement(
         """
         SELECT normalized_word, correct, wrong
         FROM spelling_word_stats
-        WHERE language = ?
+        WHERE user_id = ? AND language = ?
         ORDER BY normalized_word
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, language.name)
+        statement.setLong(1, userId)
+        statement.setString(2, language.name)
         statement.executeQuery().use { rows ->
             buildMap {
                 while (rows.next()) {
@@ -1973,6 +2402,7 @@ fun Connection.readSpellingStats(language: LearningLanguage = LearningLanguage.e
 }
 
 fun Connection.recordSpellingStats(
+    userId: Long,
     word: String,
     correct: Boolean,
     timedOut: Boolean,
@@ -1984,33 +2414,35 @@ fun Connection.recordSpellingStats(
     }
     prepareStatement(
         """
-        INSERT INTO spelling_word_stats(language, normalized_word, correct, wrong, updated_at)
-        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(language, normalized_word) DO UPDATE SET
+        INSERT INTO spelling_word_stats(user_id, language, normalized_word, correct, wrong, updated_at)
+        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, language, normalized_word) DO UPDATE SET
             correct = spelling_word_stats.correct + excluded.correct,
             wrong = spelling_word_stats.wrong + excluded.wrong,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, language.name)
-        statement.setString(2, normalized)
-        statement.setInt(3, if (correct) 1 else 0)
-        statement.setInt(4, if (correct) 0 else 1)
+        statement.setLong(1, userId)
+        statement.setString(2, language.name)
+        statement.setString(3, normalized)
+        statement.setInt(4, if (correct) 1 else 0)
+        statement.setInt(5, if (correct) 0 else 1)
         statement.executeUpdate()
     }
-    return normalized to readSpellingStat(normalized, language)
+    return normalized to readSpellingStat(userId, normalized, language)
 }
 
 fun Connection.recordSpellingStatsSession(
+    userId: Long,
     results: List<WordSessionResult>,
     language: LearningLanguage = LearningLanguage.en,
 ): SpellingStatsSnapshot {
     transaction {
         results.forEach { result ->
-            recordSpellingStats(result.word, result.correct, timedOut = false, language)
+            recordSpellingStats(userId, result.word, result.correct, timedOut = false, language)
         }
     }
-    return SpellingStatsSnapshot(statsByWord = readSpellingStats(language))
+    return SpellingStatsSnapshot(statsByWord = readSpellingStats(userId, language))
 }
 
 fun Connection.readFlipcardWordsResponse(language: LearningLanguage = LearningLanguage.en): FlipcardWordsResponse {
@@ -2332,16 +2764,17 @@ fun Connection.readFlipcardSession(limit: Int, language: LearningLanguage = Lear
     }
 }
 
-fun Connection.readFlipcardStats(language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
+fun Connection.readFlipcardStats(userId: Long, language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
     return prepareStatement(
         """
         SELECT normalized_word, correct, wrong
         FROM flipcard_word_stats
-        WHERE language = ?
+        WHERE user_id = ? AND language = ?
         ORDER BY normalized_word
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, language.name)
+        statement.setLong(1, userId)
+        statement.setString(2, language.name)
         statement.executeQuery().use { rows ->
             buildMap {
                 while (rows.next()) {
@@ -2359,6 +2792,7 @@ fun Connection.readFlipcardStats(language: LearningLanguage = LearningLanguage.e
 }
 
 fun Connection.recordFlipcardStats(
+    userId: Long,
     word: String,
     correct: Boolean,
     timedOut: Boolean,
@@ -2370,33 +2804,35 @@ fun Connection.recordFlipcardStats(
     }
     prepareStatement(
         """
-        INSERT INTO flipcard_word_stats(language, normalized_word, correct, wrong, updated_at)
-        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(language, normalized_word) DO UPDATE SET
+        INSERT INTO flipcard_word_stats(user_id, language, normalized_word, correct, wrong, updated_at)
+        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, language, normalized_word) DO UPDATE SET
             correct = flipcard_word_stats.correct + excluded.correct,
             wrong = flipcard_word_stats.wrong + excluded.wrong,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, language.name)
-        statement.setString(2, normalized)
-        statement.setInt(3, if (correct) 1 else 0)
-        statement.setInt(4, if (correct) 0 else 1)
+        statement.setLong(1, userId)
+        statement.setString(2, language.name)
+        statement.setString(3, normalized)
+        statement.setInt(4, if (correct) 1 else 0)
+        statement.setInt(5, if (correct) 0 else 1)
         statement.executeUpdate()
     }
-    return normalized to readFlipcardStat(normalized, language)
+    return normalized to readFlipcardStat(userId, normalized, language)
 }
 
 fun Connection.recordFlipcardStatsSession(
+    userId: Long,
     results: List<WordSessionResult>,
     language: LearningLanguage = LearningLanguage.en,
 ): FlipcardStatsSnapshot {
     transaction {
         results.forEach { result ->
-            recordFlipcardStats(result.word, result.correct, timedOut = false, language)
+            recordFlipcardStats(userId, result.word, result.correct, timedOut = false, language)
         }
     }
-    return FlipcardStatsSnapshot(statsByWord = readFlipcardStats(language))
+    return FlipcardStatsSnapshot(statsByWord = readFlipcardStats(userId, language))
 }
 
 fun Connection.testExists(testId: Long): Boolean {
@@ -2451,17 +2887,18 @@ private fun Connection.replaceLegacyQuestions(questions: List<LegacyQuestion>) {
     }
 }
 
-fun Connection.readStats(testId: Long, direction: PracticeDirection): Map<Long, QuestionStats> {
+fun Connection.readStats(userId: Long, testId: Long, direction: PracticeDirection): Map<Long, QuestionStats> {
     return prepareStatement(
         """
         SELECT question_stats.question_id, question_stats.correct, question_stats.wrong
         FROM question_stats
         INNER JOIN questions ON questions.id = question_stats.question_id
-        WHERE questions.test_id = ? AND question_stats.direction = ?
+        WHERE question_stats.user_id = ? AND questions.test_id = ? AND question_stats.direction = ?
         """.trimIndent(),
     ).use { statement ->
-        statement.setLong(1, testId)
-        statement.setString(2, direction.name)
+        statement.setLong(1, userId)
+        statement.setLong(2, testId)
+        statement.setString(3, direction.name)
         statement.executeQuery().use { rows ->
             buildMap {
                 while (rows.next()) {
@@ -2479,6 +2916,7 @@ fun Connection.readStats(testId: Long, direction: PracticeDirection): Map<Long, 
 }
 
 fun Connection.recordStats(
+    userId: Long,
     testId: Long,
     questionId: Long,
     correct: Boolean,
@@ -2490,34 +2928,36 @@ fun Connection.recordStats(
     }
     prepareStatement(
         """
-        INSERT INTO question_stats(question_id, direction, correct, wrong, updated_at)
-        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(question_id, direction) DO UPDATE SET
+        INSERT INTO question_stats(user_id, question_id, direction, correct, wrong, updated_at)
+        VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, question_id, direction) DO UPDATE SET
             correct = question_stats.correct + excluded.correct,
             wrong = question_stats.wrong + excluded.wrong,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
-        statement.setLong(1, questionId)
-        statement.setString(2, direction.name)
-        statement.setInt(3, if (correct) 1 else 0)
-        statement.setInt(4, if (correct) 0 else 1)
+        statement.setLong(1, userId)
+        statement.setLong(2, questionId)
+        statement.setString(3, direction.name)
+        statement.setInt(4, if (correct) 1 else 0)
+        statement.setInt(5, if (correct) 0 else 1)
         statement.executeUpdate()
     }
-    return questionId to readStat(testId, questionId, direction)
+    return questionId to readStat(userId, testId, questionId, direction)
 }
 
 fun Connection.recordStatsSession(
+    userId: Long,
     testId: Long,
     results: List<AnswerSessionResult>,
 ): Map<PracticeDirection, QuestionStatsSnapshot> {
     transaction {
         results.forEach { result ->
-            recordStats(testId, result.questionId, result.correct, timedOut = false, result.direction)
+            recordStats(userId, testId, result.questionId, result.correct, timedOut = false, result.direction)
         }
     }
     return PracticeDirection.entries.associateWith { direction ->
-        QuestionStatsSnapshot(statsByQuestionId = readStats(testId, direction))
+        QuestionStatsSnapshot(statsByQuestionId = readStats(userId, testId, direction))
     }
 }
 
@@ -2629,6 +3069,161 @@ private fun Connection.ensureAppSettingsRow() {
     ).use { it.executeUpdate() }
 }
 
+private fun Connection.ensureUserSettingsRow(userId: Long) {
+    prepareStatement(
+        """
+        INSERT INTO user_settings(user_id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, updated_at)
+        VALUES(?, $defaultSecondsLimit, $defaultTargetScore, $defaultCelebrationTapLimit, '${defaultAudioSource.name}', '${defaultFlipcardSource.name}', '${defaultFlipcardPromptLanguage.name}', CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO NOTHING
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
+        statement.executeUpdate()
+    }
+}
+
+private fun Connection.ensureBuiltinUsers() {
+    createStatement().use { statement ->
+        statement.executeUpdate(
+            """
+            INSERT INTO users(email, email_verified, display_name, given_name, family_name, role, status, registered_at, created_at, updated_at)
+            VALUES
+                ('beata.kolesarova31@gmail.com', 1, 'Beata Kolesarova', 'Beata', 'Kolesarova', '${UserRole.user.name}', '${UserStatus.active.name}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                ('michal@zeleny-ctverec.cz', 1, 'Michal', 'Michal', NULL, '${UserRole.admin.name}', '${UserStatus.active.name}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(email) DO UPDATE SET
+                role = CASE WHEN users.email = 'michal@zeleny-ctverec.cz' THEN '${UserRole.admin.name}' ELSE users.role END,
+                updated_at = CURRENT_TIMESTAMP
+            """.trimIndent(),
+        )
+    }
+}
+
+private fun Connection.readUserByEmail(email: String): AuthUser? {
+    return prepareStatement(
+        """
+        SELECT id, email, display_name, given_name, family_name, picture_url, locale, role, status
+        FROM users
+        WHERE lower(email) = lower(?)
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, email)
+        statement.executeQuery().use { rows -> if (rows.next()) rows.toAuthUser() else null }
+    }
+}
+
+private fun Connection.readUserById(userId: Long): AuthUser? {
+    return prepareStatement(
+        """
+        SELECT id, email, display_name, given_name, family_name, picture_url, locale, role, status
+        FROM users
+        WHERE id = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
+        statement.executeQuery().use { rows -> if (rows.next()) rows.toAuthUser() else null }
+    }
+}
+
+private fun Connection.readUserIdByVerifiedEmail(email: String, emailVerified: Boolean): Long? {
+    if (!emailVerified) return null
+    return prepareStatement("SELECT id FROM users WHERE lower(email) = lower(?)").use { statement ->
+        statement.setString(1, email)
+        statement.executeQuery().use { rows -> if (rows.next()) rows.getLong("id") else null }
+    }
+}
+
+private fun Connection.insertOAuthUser(profile: OAuthProfile): Long {
+    prepareStatement(
+        """
+        INSERT INTO users(email, email_verified, display_name, given_name, family_name, picture_url, locale, role, status, registered_at, last_login_at, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, '${UserRole.user.name}', '${UserStatus.active.name}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, profile.email)
+        statement.setInt(2, if (profile.emailVerified) 1 else 0)
+        statement.setString(3, profile.displayName)
+        statement.setString(4, profile.givenName)
+        statement.setString(5, profile.familyName)
+        statement.setString(6, profile.pictureUrl)
+        statement.setString(7, profile.locale)
+        statement.executeUpdate()
+    }
+    val userId = lastInsertRowId()
+    ensureUserSettingsRow(userId)
+    return userId
+}
+
+private fun Connection.updateUserFromOAuth(userId: Long, profile: OAuthProfile) {
+    prepareStatement(
+        """
+        UPDATE users
+        SET email_verified = CASE WHEN ? = 1 THEN 1 ELSE email_verified END,
+            display_name = COALESCE(NULLIF(?, ''), display_name),
+            given_name = COALESCE(NULLIF(?, ''), given_name),
+            family_name = COALESCE(NULLIF(?, ''), family_name),
+            picture_url = COALESCE(NULLIF(?, ''), picture_url),
+            locale = COALESCE(NULLIF(?, ''), locale),
+            last_login_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setInt(1, if (profile.emailVerified) 1 else 0)
+        statement.setString(2, profile.displayName.orEmpty())
+        statement.setString(3, profile.givenName.orEmpty())
+        statement.setString(4, profile.familyName.orEmpty())
+        statement.setString(5, profile.pictureUrl.orEmpty())
+        statement.setString(6, profile.locale.orEmpty())
+        statement.setLong(7, userId)
+        statement.executeUpdate()
+    }
+    ensureUserSettingsRow(userId)
+}
+
+private fun Connection.upsertOAuthAccount(userId: Long, profile: OAuthProfile) {
+    prepareStatement(
+        """
+        INSERT INTO oauth_accounts(user_id, provider, provider_subject, provider_email, provider_email_verified, raw_profile_json, linked_at, last_login_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(provider, provider_subject) DO UPDATE SET
+            user_id = excluded.user_id,
+            provider_email = excluded.provider_email,
+            provider_email_verified = excluded.provider_email_verified,
+            raw_profile_json = excluded.raw_profile_json,
+            last_login_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
+        statement.setString(2, profile.provider)
+        statement.setString(3, profile.subject)
+        statement.setString(4, profile.email)
+        statement.setInt(5, if (profile.emailVerified) 1 else 0)
+        statement.setString(6, profile.rawProfileJson)
+        statement.executeUpdate()
+    }
+}
+
+private fun ResultSet.toAuthUser(): AuthUser = AuthUser(
+    id = getLong("id"),
+    email = getString("email"),
+    displayName = getString("display_name"),
+    givenName = getString("given_name"),
+    familyName = getString("family_name"),
+    pictureUrl = getString("picture_url"),
+    locale = getString("locale"),
+    role = getString("role").toUserRole(),
+    status = getString("status").toUserStatus(),
+)
+
+private fun String?.toUserRole(): UserRole = runCatching {
+    UserRole.valueOf(this ?: UserRole.user.name)
+}.getOrDefault(UserRole.user)
+
+private fun String?.toUserStatus(): UserStatus = runCatching {
+    UserStatus.valueOf(this ?: UserStatus.active.name)
+}.getOrDefault(UserStatus.active)
+
 private fun Connection.spellingWordExists(normalizedWord: String, language: LearningLanguage): Boolean {
     return prepareStatement("SELECT 1 FROM spelling_words WHERE language = ? AND normalized_word = ? LIMIT 1").use { statement ->
         statement.setString(1, language.name)
@@ -2637,16 +3232,17 @@ private fun Connection.spellingWordExists(normalizedWord: String, language: Lear
     }
 }
 
-private fun Connection.readSpellingStat(normalizedWord: String, language: LearningLanguage): QuestionStats {
+private fun Connection.readSpellingStat(userId: Long, normalizedWord: String, language: LearningLanguage): QuestionStats {
     return prepareStatement(
         """
         SELECT correct, wrong
         FROM spelling_word_stats
-        WHERE language = ? AND normalized_word = ?
+        WHERE user_id = ? AND language = ? AND normalized_word = ?
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, language.name)
-        statement.setString(2, normalizedWord)
+        statement.setLong(1, userId)
+        statement.setString(2, language.name)
+        statement.setString(3, normalizedWord)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return QuestionStats()
             QuestionStats(
@@ -2693,16 +3289,17 @@ private fun Connection.flipcardWordExists(normalizedWord: String, language: Lear
     }
 }
 
-private fun Connection.readFlipcardStat(normalizedWord: String, language: LearningLanguage): QuestionStats {
+private fun Connection.readFlipcardStat(userId: Long, normalizedWord: String, language: LearningLanguage): QuestionStats {
     return prepareStatement(
         """
         SELECT correct, wrong
         FROM flipcard_word_stats
-        WHERE language = ? AND normalized_word = ?
+        WHERE user_id = ? AND language = ? AND normalized_word = ?
         """.trimIndent(),
     ).use { statement ->
-        statement.setString(1, language.name)
-        statement.setString(2, normalizedWord)
+        statement.setLong(1, userId)
+        statement.setString(2, language.name)
+        statement.setString(3, normalizedWord)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return QuestionStats()
             QuestionStats(
@@ -2721,18 +3318,19 @@ private fun Connection.questionBelongsToTest(testId: Long, questionId: Long): Bo
     }
 }
 
-private fun Connection.readStat(testId: Long, questionId: Long, direction: PracticeDirection): QuestionStats {
+private fun Connection.readStat(userId: Long, testId: Long, questionId: Long, direction: PracticeDirection): QuestionStats {
     return prepareStatement(
         """
         SELECT question_stats.correct, question_stats.wrong
         FROM question_stats
         INNER JOIN questions ON questions.id = question_stats.question_id
-        WHERE questions.test_id = ? AND question_stats.question_id = ? AND question_stats.direction = ?
+        WHERE question_stats.user_id = ? AND questions.test_id = ? AND question_stats.question_id = ? AND question_stats.direction = ?
         """.trimIndent(),
     ).use { statement ->
-        statement.setLong(1, testId)
-        statement.setLong(2, questionId)
-        statement.setString(3, direction.name)
+        statement.setLong(1, userId)
+        statement.setLong(2, testId)
+        statement.setLong(3, questionId)
+        statement.setString(4, direction.name)
         statement.executeQuery().use { rows ->
             if (!rows.next()) return QuestionStats()
             QuestionStats(

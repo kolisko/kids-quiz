@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, CarFront, Flag, Info, ListRestart, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings, Trophy } from 'lucide-angular';
+import { ArrowLeft, CarFront, Flag, Info, ListRestart, LogOut, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings, Trophy, UserCircle } from 'lucide-angular';
 import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
 
 type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
@@ -169,6 +169,42 @@ interface QuestionStatsSnapshot {
 
 interface AuthStatusResponse {
   authenticated: boolean;
+  user?: AuthUser | null;
+}
+
+interface AuthProvidersResponse {
+  googleConfigured: boolean;
+  passwordLoginConfigured: boolean;
+}
+
+type UserRole = 'user' | 'admin';
+type UserStatus = 'active' | 'suspended';
+
+interface AuthUser {
+  id: number;
+  email: string;
+  displayName?: string | null;
+  givenName?: string | null;
+  familyName?: string | null;
+  pictureUrl?: string | null;
+  locale?: string | null;
+  role: UserRole;
+  status: UserStatus;
+}
+
+interface AdminUserSummary extends AuthUser {
+  emailVerified: boolean;
+  registeredAt: string;
+  lastLoginAt?: string | null;
+  providers: string[];
+  statsCount: number;
+  spellingStatsCount: number;
+  flipcardStatsCount: number;
+  trophyCount: number;
+}
+
+interface AdminUsersResponse {
+  users: AdminUserSummary[];
 }
 
 interface AnswerResultResponse {
@@ -427,6 +463,8 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly flagIcon = Flag;
   readonly teslaAudioIcon = CarFront;
   readonly trophyIcon = Trophy;
+  readonly profileIcon = UserCircle;
+  readonly logoutIcon = LogOut;
   readonly teslaMp3TestVariants = TESLA_MP3_TEST_VARIANTS;
   readonly practiceModes: PracticeModeOption[] = [
     { mode: 'product_to_factors', label: 'Najdi násobení' },
@@ -444,6 +482,13 @@ export class AppComponent implements OnInit, OnDestroy {
   loading = true;
   authLoading = false;
   authError: string | null = null;
+  currentUser: AuthUser | null = null;
+  profileMenuVisible = false;
+  googleLoginConfigured = true;
+  passwordLoginConfigured = false;
+  adminUsers: AdminUserSummary[] = [];
+  adminUsersLoading = false;
+  adminUsersError: string | null = null;
   settingsSaved = false;
   settingsError: string | null = null;
   spellingSetsSaved = false;
@@ -703,6 +748,10 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.languageLabel(this.settingsLanguage);
   }
 
+  get isAdmin(): boolean {
+    return this.currentUser?.role === 'admin';
+  }
+
   get assetLibraryLanguageLabel(): string {
     return this.languageLabel(this.assetLibraryLanguage);
   }
@@ -883,6 +932,12 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearSpellingAnswerWordTimer();
   }
 
+  startGoogleLogin(): void {
+    this.authLoading = true;
+    this.authError = null;
+    window.location.href = '/api/auth/google/start';
+  }
+
   async submitLogin(): Promise<void> {
     if (!this.password.trim()) return;
     this.authLoading = true;
@@ -899,6 +954,34 @@ export class AppComponent implements OnInit, OnDestroy {
       this.authError = 'Heslo nesedí.';
     } finally {
       this.authLoading = false;
+      this.render();
+    }
+  }
+
+  toggleProfileMenu(): void {
+    this.profileMenuVisible = !this.profileMenuVisible;
+  }
+
+  async logout(): Promise<void> {
+    this.authLoading = true;
+    this.authError = null;
+    this.profileMenuVisible = false;
+    try {
+      await this.apiPost<AuthStatusResponse>('auth/logout', {}, false);
+    } catch {
+      // Even if the server session is already gone, the local UI should return to login.
+    } finally {
+      this.currentUser = null;
+      this.tests = [];
+      this.selectedTest = null;
+      this.selectedMode = null;
+      this.questions = [];
+      this.serverStats = emptyStatsByDirection();
+      this.spellingStats = {};
+      this.flipcardStats = {};
+      this.authLoading = false;
+      await this.loadAuthProviders();
+      this.setScreen('login');
       this.render();
     }
   }
@@ -928,6 +1011,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.questions = questions;
       this.setScreen('mode');
     } catch {
+      this.currentUser = null;
       this.setScreen('login');
     } finally {
       this.loading = false;
@@ -1239,12 +1323,40 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       await Promise.all([
         this.loadSettings(),
-        this.loadAllLanguageSettings(),
+        this.isAdmin ? this.loadAllLanguageSettings() : Promise.resolve(),
+        this.isAdmin ? this.loadAdminUsers() : Promise.resolve(),
       ]);
     } catch {
       this.settingsError = 'Nastavení se nepodařilo načíst.';
     } finally {
       this.loading = false;
+      this.render();
+    }
+  }
+
+  async loadAdminUsers(): Promise<void> {
+    if (!this.isAdmin) return;
+    this.adminUsersLoading = true;
+    this.adminUsersError = null;
+    try {
+      const response = await this.apiGet<AdminUsersResponse>('admin/users');
+      this.adminUsers = response.users ?? [];
+    } catch {
+      this.adminUsersError = 'Uživatele se nepodařilo načíst.';
+    } finally {
+      this.adminUsersLoading = false;
+    }
+  }
+
+  async setAdminUserStatus(user: AdminUserSummary, status: UserStatus): Promise<void> {
+    if (!this.isAdmin || user.status === status) return;
+    this.adminUsersError = null;
+    try {
+      await this.apiPut<AuthUser>(`admin/users/${user.id}/status`, { status });
+      await this.loadAdminUsers();
+    } catch {
+      this.adminUsersError = 'Stav uživatele se nepodařilo uložit.';
+    } finally {
       this.render();
     }
   }
@@ -1326,7 +1438,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.spellingSetsError = null;
     this.flipcardWordsSaved = false;
     this.flipcardWordsError = null;
-    if (language !== 'en') {
+    if (this.isAdmin && language !== 'en') {
       void this.loadTranslationBackfillStatus(language);
     }
   }
@@ -1951,6 +2063,9 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const auth = await this.apiGet<AuthStatusResponse>('auth/status');
       if (!auth.authenticated) {
+        await this.loadAuthProviders();
+        this.currentUser = null;
+        this.profileMenuVisible = false;
         this.tests = [];
         this.selectedTest = null;
         this.selectedMode = null;
@@ -1966,10 +2081,12 @@ export class AppComponent implements OnInit, OnDestroy {
         this.setScreen('login');
         return;
       }
+      this.currentUser = auth.user ?? null;
+      this.profileMenuVisible = false;
       const [tests, settings] = await Promise.all([
         this.apiGet<QuizTest[]>('tests'),
         this.apiGet<GameSettings>('settings'),
-        this.loadAllLanguageSettings(),
+        this.isAdmin ? this.loadAllLanguageSettings() : Promise.resolve(),
       ]);
       this.applySettings(settings);
       this.tests = tests;
@@ -1986,6 +2103,8 @@ export class AppComponent implements OnInit, OnDestroy {
       this.flipcardStats = {};
       this.setScreen(this.tests.length > 0 ? 'start' : 'settings');
     } catch {
+      await this.loadAuthProviders();
+      this.currentUser = null;
       this.setScreen('login');
     } finally {
       this.loading = false;
@@ -1995,6 +2114,17 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async loadSettings(): Promise<void> {
     this.applySettings(await this.apiGet<GameSettings>('settings'));
+  }
+
+  private async loadAuthProviders(): Promise<void> {
+    try {
+      const providers = await this.apiGet<AuthProvidersResponse>('auth/providers', false);
+      this.googleLoginConfigured = providers.googleConfigured;
+      this.passwordLoginConfigured = providers.passwordLoginConfigured;
+    } catch {
+      this.googleLoginConfigured = true;
+      this.passwordLoginConfigured = false;
+    }
   }
 
   private async loadSnapshotNumber(): Promise<void> {

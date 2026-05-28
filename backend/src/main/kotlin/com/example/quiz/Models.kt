@@ -93,11 +93,74 @@ data class QuestionStatsSnapshot(
 @Serializable
 data class AuthStatusResponse(
     val authenticated: Boolean,
+    val user: AuthUser? = null,
 )
 
 @Serializable
 data class LoginRequest(
     val password: String,
+)
+
+@Serializable
+enum class UserRole {
+    user,
+    admin,
+}
+
+@Serializable
+enum class UserStatus {
+    active,
+    suspended,
+}
+
+@Serializable
+data class AuthUser(
+    val id: Long,
+    val email: String,
+    val displayName: String? = null,
+    val givenName: String? = null,
+    val familyName: String? = null,
+    val pictureUrl: String? = null,
+    val locale: String? = null,
+    val role: UserRole = UserRole.user,
+    val status: UserStatus = UserStatus.active,
+)
+
+@Serializable
+data class AuthProvidersResponse(
+    val googleConfigured: Boolean,
+    val passwordLoginConfigured: Boolean = false,
+)
+
+@Serializable
+data class AdminUserSummary(
+    val id: Long,
+    val email: String,
+    val emailVerified: Boolean,
+    val displayName: String? = null,
+    val givenName: String? = null,
+    val familyName: String? = null,
+    val pictureUrl: String? = null,
+    val locale: String? = null,
+    val role: UserRole = UserRole.user,
+    val status: UserStatus = UserStatus.active,
+    val registeredAt: String,
+    val lastLoginAt: String? = null,
+    val providers: List<String> = emptyList(),
+    val statsCount: Int = 0,
+    val spellingStatsCount: Int = 0,
+    val flipcardStatsCount: Int = 0,
+    val trophyCount: Int = 0,
+)
+
+@Serializable
+data class AdminUsersResponse(
+    val users: List<AdminUserSummary>,
+)
+
+@Serializable
+data class UserStatusRequest(
+    val status: UserStatus,
 )
 
 @Serializable

@@ -102,7 +102,21 @@ fun Application.module() {
                 }
             }
             get("/auth/status") {
-                call.respond(AuthStatusResponse(authenticated = Auth.isAuthenticated(call)))
+                val user = Auth.currentUser(call)
+                call.respond(AuthStatusResponse(authenticated = user != null, user = user))
+            }
+            get("/auth/providers") {
+                call.respond(AuthProvidersResponse(googleConfigured = Auth.googleConfigured, passwordLoginConfigured = Auth.passwordLoginConfigured))
+            }
+            get("/auth/google/start") {
+                Auth.startGoogleLogin(call)
+            }
+            get("/auth/google/callback") {
+                Auth.completeGoogleLogin(call)
+            }
+            post("/auth/logout") {
+                Auth.logout(call)
+                call.respond(AuthStatusResponse(authenticated = false))
             }
             post("/auth/login") {
                 val request = runCatching { call.receive<LoginRequest>() }.getOrNull()
@@ -110,8 +124,33 @@ fun Application.module() {
                     call.respond(HttpStatusCode.Unauthorized, AuthStatusResponse(authenticated = false))
                     return@post
                 }
-                Auth.setSessionCookie(call)
-                call.respond(AuthStatusResponse(authenticated = true))
+                val user = Auth.setPasswordSessionCookie(call)
+                call.respond(AuthStatusResponse(authenticated = user != null, user = user))
+            }
+            route("/admin") {
+                get("/users") {
+                    if (Auth.requireAdmin(call) == null) return@get
+                    call.respond(UserAdminStore.readUsers())
+                }
+                put("/users/{userId}/status") {
+                    val admin = Auth.requireAdmin(call) ?: return@put
+                    val userId = call.parameters["userId"]?.toLongOrNull()
+                    val request = runCatching { call.receive<UserStatusRequest>() }.getOrNull()
+                    if (userId == null || request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_user_status_request"))
+                        return@put
+                    }
+                    if (userId == admin.id && request.status == UserStatus.suspended) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "cannot_suspend_self"))
+                        return@put
+                    }
+                    val user = UserAdminStore.updateStatus(userId, request.status)
+                    if (user == null) {
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "user_not_found"))
+                        return@put
+                    }
+                    call.respond(user)
+                }
             }
             get("/tests") {
                 if (!Auth.requireAuthenticated(call)) return@get
@@ -119,27 +158,27 @@ fun Application.module() {
             }
             route("/settings") {
                 get {
-                    if (!Auth.requireAuthenticated(call)) return@get
-                    call.respond(SettingsStore.read())
+                    val user = Auth.requireUser(call) ?: return@get
+                    call.respond(SettingsStore.read(user.id))
                 }
                 put {
-                    if (!Auth.requireAuthenticated(call)) return@put
+                    val user = Auth.requireUser(call) ?: return@put
                     val request = runCatching { call.receive<AppSettings>() }.getOrNull()
                     if (request == null) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@put
                     }
-                    call.respond(SettingsStore.replace(request))
+                    call.respond(SettingsStore.replace(user.id, request))
                 }
             }
             route("/trophies") {
                 get {
-                    if (!Auth.requireAuthenticated(call)) return@get
-                    call.respond(TrophyStore.readAll())
+                    val user = Auth.requireUser(call) ?: return@get
+                    call.respond(TrophyStore.readAll(user.id))
                 }
                 post("/award-next") {
-                    if (!Auth.requireAuthenticated(call)) return@post
-                    val response = runCatching { TrophyStore.awardNext() }.getOrElse { error ->
+                    val user = Auth.requireUser(call) ?: return@post
+                    val response = runCatching { TrophyStore.awardNext(user.id) }.getOrElse { error ->
                         val status = if (error.message == "trophy_pool_exhausted") {
                             HttpStatusCode.Conflict
                         } else {
@@ -158,7 +197,7 @@ fun Application.module() {
                     call.respond(SpellingStore.readSets(language))
                 }
                 put("/sets") {
-                    if (!Auth.requireAuthenticated(call)) return@put
+                    if (Auth.requireAdmin(call) == null) return@put
                     val language = call.requireLearningLanguage() ?: return@put
                     val request = runCatching { call.receive<SpellingSetsRequest>() }.getOrNull()
                     if (request == null) {
@@ -180,19 +219,19 @@ fun Application.module() {
                     call.respond(session)
                 }
                 get("/stats") {
-                    if (!Auth.requireAuthenticated(call)) return@get
+                    val user = Auth.requireUser(call) ?: return@get
                     val language = call.requireLearningLanguage() ?: return@get
-                    call.respond(SpellingStatsSnapshot(statsByWord = SpellingStore.snapshot(language)))
+                    call.respond(SpellingStatsSnapshot(statsByWord = SpellingStore.snapshot(user.id, language)))
                 }
                 post("/stats/answer") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    val user = Auth.requireUser(call) ?: return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     val request = runCatching { call.receive<SpellingAnswerResultRequest>() }.getOrNull()
                     if (request == null || request.word.isBlank()) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@post
                     }
-                    val (word, stats) = SpellingStore.record(request.word, request.correct, request.timedOut, language)
+                    val (word, stats) = SpellingStore.record(user.id, request.word, request.correct, request.timedOut, language)
                         ?: run {
                             call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
                             return@post
@@ -200,14 +239,14 @@ fun Application.module() {
                     call.respond(SpellingAnswerResultResponse(word = word, stats = stats))
                 }
                 post("/stats/session") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    val user = Auth.requireUser(call) ?: return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     val request = runCatching { call.receive<WordSessionRequest>() }.getOrNull()
                     if (request == null) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@post
                     }
-                    call.respond(SpellingStore.recordSession(request.results, language))
+                    call.respond(SpellingStore.recordSession(user.id, request.results, language))
                 }
                 get("/audio/words/{word}.mp3") {
                     if (!Auth.requireAuthenticated(call)) return@get
@@ -238,7 +277,7 @@ fun Application.module() {
                     call.respond(response)
                 }
                 post("/audio/words/{word}") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    if (Auth.requireAdmin(call) == null) return@post
                     val word = call.requireSpellingAudioWord() ?: return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     val kind = call.requireSpellingAudioKind() ?: return@post
@@ -266,7 +305,7 @@ fun Application.module() {
                     call.respond(FlipcardStore.readWords(language))
                 }
                 put("/words") {
-                    if (!Auth.requireAuthenticated(call)) return@put
+                    if (Auth.requireAdmin(call) == null) return@put
                     val language = call.requireLearningLanguage() ?: return@put
                     val request = runCatching { call.receive<FlipcardWordsRequest>() }.getOrNull()
                     if (request == null) {
@@ -280,10 +319,10 @@ fun Application.module() {
                     }
                 }
                 get("/session") {
-                    if (!Auth.requireAuthenticated(call)) return@get
+                    val user = Auth.requireUser(call) ?: return@get
                     val language = call.requireLearningLanguage() ?: return@get
                     val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceAtLeast(1) ?: 10
-                    call.respond(FlipcardStore.readSession(limit, language))
+                    call.respond(FlipcardStore.readSession(user.id, limit, language))
                 }
                 get("/assets") {
                     if (!Auth.requireAuthenticated(call)) return@get
@@ -306,7 +345,7 @@ fun Application.module() {
                     call.respond(response)
                 }
                 post("/images/missing") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    if (Auth.requireAdmin(call) == null) return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     try {
                         call.respond(FlipcardStore.enqueueMissingImages(language))
@@ -320,7 +359,7 @@ fun Application.module() {
                     }
                 }
                 post("/audio/missing") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    if (Auth.requireAdmin(call) == null) return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     try {
                         call.respond(FlipcardStore.enqueueMissingAudio(language))
@@ -334,12 +373,12 @@ fun Application.module() {
                     }
                 }
                 get("/audio-settings") {
-                    if (!Auth.requireAuthenticated(call)) return@get
+                    if (Auth.requireAdmin(call) == null) return@get
                     val language = call.requireLearningLanguage() ?: return@get
                     call.respond(FlipcardStore.readAudioTtsSettings(language))
                 }
                 put("/audio-settings") {
-                    if (!Auth.requireAuthenticated(call)) return@put
+                    if (Auth.requireAdmin(call) == null) return@put
                     val language = call.requireLearningLanguage() ?: return@put
                     val request = runCatching { call.receive<AudioTtsSettingsRequest>() }.getOrNull()
                     if (request == null) {
@@ -353,7 +392,7 @@ fun Application.module() {
                     }
                 }
                 post("/audio-settings/test") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    if (Auth.requireAdmin(call) == null) return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     val request = runCatching { call.receive<AudioTtsPreviewRequest>() }.getOrNull()
                     if (request == null) {
@@ -386,7 +425,7 @@ fun Application.module() {
                     call.respond(FlipcardStore.translationBackfillStatus(language))
                 }
                 post("/translations/backfill") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    if (Auth.requireAdmin(call) == null) return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     try {
                         call.respond(FlipcardStore.enqueueTranslationBackfill(language))
@@ -400,19 +439,19 @@ fun Application.module() {
                     }
                 }
                 get("/stats") {
-                    if (!Auth.requireAuthenticated(call)) return@get
+                    val user = Auth.requireUser(call) ?: return@get
                     val language = call.requireLearningLanguage() ?: return@get
-                    call.respond(FlipcardStatsSnapshot(statsByWord = FlipcardStore.snapshot(language)))
+                    call.respond(FlipcardStatsSnapshot(statsByWord = FlipcardStore.snapshot(user.id, language)))
                 }
                 post("/stats/answer") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    val user = Auth.requireUser(call) ?: return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     val request = runCatching { call.receive<FlipcardAnswerResultRequest>() }.getOrNull()
                     if (request == null || request.word.isBlank()) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@post
                     }
-                    val (word, stats) = FlipcardStore.record(request.word, request.correct, request.timedOut, language)
+                    val (word, stats) = FlipcardStore.record(user.id, request.word, request.correct, request.timedOut, language)
                         ?: run {
                             call.respond(HttpStatusCode.NotFound, mapOf("error" to "word_not_found"))
                             return@post
@@ -420,14 +459,14 @@ fun Application.module() {
                     call.respond(FlipcardAnswerResultResponse(word = word, stats = stats))
                 }
                 post("/stats/session") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    val user = Auth.requireUser(call) ?: return@post
                     val language = call.requireLearningLanguage() ?: return@post
                     val request = runCatching { call.receive<WordSessionRequest>() }.getOrNull()
                     if (request == null) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@post
                     }
-                    call.respond(FlipcardStore.recordSession(request.results, language))
+                    call.respond(FlipcardStore.recordSession(user.id, request.results, language))
                 }
                 get("/images/{word}") {
                     if (!Auth.requireAuthenticated(call)) return@get
@@ -455,7 +494,7 @@ fun Application.module() {
                     call.respond(response)
                 }
                 post("/images/{word}") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    if (Auth.requireAdmin(call) == null) return@post
                     val word = call.requireFlipcardImageWord() ?: return@post
                     val force = call.request.queryParameters["force"] == "true"
                     try {
@@ -511,7 +550,7 @@ fun Application.module() {
                     call.respond(response)
                 }
                 post("/audio/{language}/{word}") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    if (Auth.requireAdmin(call) == null) return@post
                     val language = call.requirePathLearningLanguage() ?: return@post
                     val word = call.requireSpellingAudioWord() ?: return@post
                     val force = call.request.queryParameters["force"] == "true"
@@ -545,13 +584,13 @@ fun Application.module() {
                     call.respond(QuestionsStore.readQuestions(testId))
                 }
                 get("/stats") {
-                    if (!Auth.requireAuthenticated(call)) return@get
+                    val user = Auth.requireUser(call) ?: return@get
                     val testId = call.requireQuizTestId() ?: return@get
                     val direction = call.requirePracticeDirection() ?: return@get
-                    call.respond(QuestionStatsSnapshot(statsByQuestionId = StatsStore.snapshot(testId, direction)))
+                    call.respond(QuestionStatsSnapshot(statsByQuestionId = StatsStore.snapshot(user.id, testId, direction)))
                 }
                 post("/stats/answer") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    val user = Auth.requireUser(call) ?: return@post
                     val testId = call.requireQuizTestId() ?: return@post
                     val request = runCatching { call.receive<AnswerResultRequest>() }.getOrNull()
                     if (request == null || request.questionId <= 0) {
@@ -559,6 +598,7 @@ fun Application.module() {
                         return@post
                     }
                     val (questionId, stats) = StatsStore.record(
+                        user.id,
                         testId,
                         request.questionId,
                         request.correct,
@@ -572,14 +612,14 @@ fun Application.module() {
                     call.respond(AnswerResultResponse(questionId = questionId, stats = stats))
                 }
                 post("/stats/session") {
-                    if (!Auth.requireAuthenticated(call)) return@post
+                    val user = Auth.requireUser(call) ?: return@post
                     val testId = call.requireQuizTestId() ?: return@post
                     val request = runCatching { call.receive<AnswerSessionRequest>() }.getOrNull()
                     if (request == null) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@post
                     }
-                    call.respond(StatsStore.recordSession(testId, request.results))
+                    call.respond(StatsStore.recordSession(user.id, testId, request.results))
                 }
             }
         }
