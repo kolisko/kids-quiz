@@ -262,6 +262,26 @@ data class SpellingAudioWordResponse(
 )
 
 @Serializable
+data class SpellingAudioSetStatus(
+    val setId: Long,
+    val language: LearningLanguage,
+    val status: SpellingAudioStatus,
+    val wordCount: Int,
+    val uniqueWordCount: Int,
+    val requiredAudioCount: Int,
+    val readyAudioCount: Int,
+    val missingAudioCount: Int,
+    val queuedAudioCount: Int,
+    val generatingAudioCount: Int,
+    val errorAudioCount: Int,
+)
+
+@Serializable
+data class SpellingAudioSetStatusResponse(
+    val items: List<SpellingAudioSetStatus> = emptyList(),
+)
+
+@Serializable
 data class SpellingSetsRequest(
     val sets: List<String> = emptyList(),
     val latestSetIndex: Int? = null,

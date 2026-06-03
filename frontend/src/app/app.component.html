@@ -315,6 +315,34 @@
               [(ngModel)]="latestSpellingSetIndexByLanguage[settingsLanguage]">
             Nejnovější seznam
           </label>
+          <div class="spelling-audio-panel" *ngIf="spellingSavedSetForIndex(index) as savedSet; else spellingAudioUnsaved">
+            <ng-container *ngIf="spellingAudioSetStatusFor(savedSet.id) as audioStatus; else spellingAudioLoading">
+              <span
+                class="spelling-audio-indicator"
+                [class.asset-ready]="audioStatus.status === 'ready'"
+                [class.asset-missing]="audioStatus.status === 'missing' || audioStatus.status === 'error'"
+                [class.spelling-audio-active]="audioStatus.status === 'queued' || audioStatus.status === 'generating'">
+                {{ spellingAudioSetStatusLabel(audioStatus) }}
+              </span>
+              <span class="spelling-audio-detail" *ngIf="audioStatus.uniqueWordCount !== audioStatus.wordCount">
+                {{ audioStatus.uniqueWordCount }} unikátních slov
+              </span>
+              <button
+                class="secondary-button compact-button"
+                type="button"
+                (click)="generateMissingSpellingAudio(savedSet.id)"
+                [disabled]="spellingAudioSetActionDisabled(savedSet.id)">
+                {{ spellingAudioSetButtonLabel(savedSet.id) }}
+              </button>
+              <span class="asset-error" *ngIf="spellingAudioSetErrors[savedSet.id]">{{ spellingAudioSetErrors[savedSet.id] }}</span>
+            </ng-container>
+            <ng-template #spellingAudioLoading>
+              <span class="spelling-audio-indicator">Audio: načítám...</span>
+            </ng-template>
+          </div>
+          <ng-template #spellingAudioUnsaved>
+            <p class="spelling-audio-unsaved">Audio stav bude dostupný po uložení seznamu.</p>
+          </ng-template>
           <button class="danger-button compact-button" type="button" (click)="removeSpellingSet(index)" *ngIf="spellingSetInputsByLanguage[settingsLanguage].length > 1">
             Odebrat
           </button>

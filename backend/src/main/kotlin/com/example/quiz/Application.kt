@@ -273,8 +273,28 @@ fun Application.module() {
                         ?: run {
                             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_word"))
                             return@get
-                        }
+                    }
                     call.respond(response)
+                }
+                get("/audio/sets") {
+                    if (Auth.requireAdmin(call) == null) return@get
+                    val language = call.requireLearningLanguage() ?: return@get
+                    call.respond(SpellingAudioService.setStatuses(SpellingStore.readSets(language)))
+                }
+                post("/audio/sets/{setId}/missing") {
+                    if (Auth.requireAdmin(call) == null) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
+                    val setId = call.parameters["setId"]?.toLongOrNull()
+                    if (setId == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_spelling_set"))
+                        return@post
+                    }
+                    val set = SpellingStore.readSets(language).firstOrNull { it.id == setId }
+                    if (set == null) {
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "spelling_set_not_found"))
+                        return@post
+                    }
+                    call.respond(SpellingAudioService.enqueueMissingForSet(set))
                 }
                 post("/audio/words/{word}") {
                     if (Auth.requireAdmin(call) == null) return@post

@@ -918,6 +918,37 @@ textarea {
   accent-color: #0f766e;
 }
 
+.spelling-audio-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.75rem 0.85rem;
+  border: 2px solid rgba(15, 118, 110, 0.16);
+  border-radius: 0.5rem;
+  background: rgba(240, 253, 250, 0.68);
+}
+
+.spelling-audio-indicator {
+  color: #475569;
+  font-weight: 950;
+}
+
+.spelling-audio-active {
+  color: #0f766e;
+}
+
+.spelling-audio-detail,
+.spelling-audio-unsaved {
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 850;
+}
+
+.spelling-audio-unsaved {
+  margin: 0;
+}
+
 .audio-source-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

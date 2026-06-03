@@ -155,6 +155,62 @@ object SpellingAudioService {
         )
     }
 
+    fun setStatuses(sets: List<SpellingSet>): SpellingAudioSetStatusResponse {
+        return SpellingAudioSetStatusResponse(items = sets.map(::setStatus))
+    }
+
+    fun setStatus(set: SpellingSet): SpellingAudioSetStatus {
+        val uniqueWords = set.words
+            .filter { it.text.isNotBlank() }
+            .distinctBy { it.normalized }
+        val itemStatuses = uniqueWords.flatMap { word ->
+            SpellingAudioKind.entries.mapNotNull { kind -> status(word.text, kind, set.language) }
+        }
+        val requiredAudioCount = uniqueWords.size * SpellingAudioKind.entries.size
+        val readyAudioCount = itemStatuses.count { it.status == SpellingAudioStatus.ready }
+        val queuedAudioCount = itemStatuses.count { it.status == SpellingAudioStatus.queued }
+        val generatingAudioCount = itemStatuses.count { it.status == SpellingAudioStatus.generating }
+        val errorAudioCount = itemStatuses.count { it.status == SpellingAudioStatus.error }
+        val missingAudioCount = itemStatuses.count { it.status == SpellingAudioStatus.missing } +
+            (requiredAudioCount - itemStatuses.size).coerceAtLeast(0)
+        val status = when {
+            requiredAudioCount == 0 -> SpellingAudioStatus.missing
+            errorAudioCount > 0 -> SpellingAudioStatus.error
+            generatingAudioCount > 0 -> SpellingAudioStatus.generating
+            queuedAudioCount > 0 -> SpellingAudioStatus.queued
+            readyAudioCount == requiredAudioCount -> SpellingAudioStatus.ready
+            else -> SpellingAudioStatus.missing
+        }
+        return SpellingAudioSetStatus(
+            setId = set.id,
+            language = set.language,
+            status = status,
+            wordCount = set.words.size,
+            uniqueWordCount = uniqueWords.size,
+            requiredAudioCount = requiredAudioCount,
+            readyAudioCount = readyAudioCount,
+            missingAudioCount = missingAudioCount,
+            queuedAudioCount = queuedAudioCount,
+            generatingAudioCount = generatingAudioCount,
+            errorAudioCount = errorAudioCount,
+        )
+    }
+
+    fun enqueueMissingForSet(set: SpellingSet): SpellingAudioSetStatus {
+        val uniqueWords = set.words
+            .filter { it.text.isNotBlank() }
+            .distinctBy { it.normalized }
+        uniqueWords.forEach { word ->
+            SpellingAudioKind.entries.forEach { kind ->
+                val currentStatus = status(word.text, kind, set.language)?.status
+                if (currentStatus != SpellingAudioStatus.ready) {
+                    enqueueGeneration(word.text, kind, set.language)
+                }
+            }
+        }
+        return setStatus(set)
+    }
+
     fun enqueueGeneration(
         rawWord: String,
         kind: SpellingAudioKind,

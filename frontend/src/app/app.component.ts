@@ -22,6 +22,7 @@ type TeslaMp3PlayerState = 'off' | 'idle' | 'priming' | 'loop' | 'mp3' | 'error'
 type TeslaMp3LoopMode = 'webaudio_tone_220_zero' | 'webaudio_tone_220_micro' | 'webaudio_tone_220_quiet' | 'dual_html_220_quiet';
 type PollToken = { cancelled: boolean };
 type AssetLibraryPollToken = PollToken & { language: LearningLanguage };
+type SpellingAudioSetPollToken = PollToken & { language: LearningLanguage };
 
 const AUDIO_PREROLL_MS = 220;
 const AUDIO_PREROLL_URL = createSilentWavDataUrl(AUDIO_PREROLL_MS);
@@ -238,6 +239,24 @@ interface SpellingAudioWordResponse {
   kind: 'word' | 'spelling';
   audioUrl: string | null;
   error?: string | null;
+}
+
+interface SpellingAudioSetStatus {
+  setId: number;
+  language: LearningLanguage;
+  status: ArtifactStatus;
+  wordCount: number;
+  uniqueWordCount: number;
+  requiredAudioCount: number;
+  readyAudioCount: number;
+  missingAudioCount: number;
+  queuedAudioCount: number;
+  generatingAudioCount: number;
+  errorAudioCount: number;
+}
+
+interface SpellingAudioSetStatusResponse {
+  items: SpellingAudioSetStatus[];
 }
 
 interface AudioPrepItem {
@@ -511,6 +530,10 @@ export class AppComponent implements OnInit, OnDestroy {
     factors_to_product: {},
   };
   spellingSetInputsByLanguage: Record<LearningLanguage, string[]> = { en: [''], de: [''], es: [''], cs: [''] };
+  spellingSetsByLanguage: Record<LearningLanguage, SpellingSet[]> = { en: [], de: [], es: [], cs: [] };
+  spellingAudioSetStatusesByLanguage: Record<LearningLanguage, Record<number, SpellingAudioSetStatus>> = { en: {}, de: {}, es: {}, cs: {} };
+  spellingAudioSetGenerating: Record<number, boolean> = {};
+  spellingAudioSetErrors: Record<number, string> = {};
   flipcardWordInputByLanguage: Record<LearningLanguage, string> = { en: '', de: '', es: '', cs: '' };
   flipcardWordsByLanguage: Record<LearningLanguage, FlipcardWord[]> = { en: [], de: [], es: [], cs: [] };
   latestSpellingSetIndexByLanguage: Record<LearningLanguage, number> = { en: 0, de: 0, es: 0, cs: 0 };
@@ -608,6 +631,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private finishingSession = false;
   private assetLibraryPollToken: AssetLibraryPollToken | null = null;
   private audioPrepPollToken: PollToken | null = null;
+  private spellingAudioSetPollToken: SpellingAudioSetPollToken | null = null;
   private translationBackfillPollTokens: Partial<Record<LearningLanguage, PollToken>> = {};
   private readonly flipcardImagePreloads = new Map<string, HTMLImageElement>();
   private readonly flipcardAudioPreloads = new Map<string, HTMLAudioElement>();
@@ -734,6 +758,46 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get spellingSetsConfigured(): boolean {
     return this.spellingSetInputsByLanguage[this.settingsLanguage].some((value) => parseSpellingWords(value).length > 0);
+  }
+
+  spellingSavedSetForIndex(index: number): SpellingSet | null {
+    const language = this.settingsLanguage;
+    const savedSet = this.spellingSetsByLanguage[language][index];
+    const currentRawWords = this.spellingSetInputsByLanguage[language][index]?.trim() ?? '';
+    if (!savedSet || savedSet.rawWords.trim() !== currentRawWords) return null;
+    return savedSet;
+  }
+
+  spellingAudioSetStatusFor(setId: number): SpellingAudioSetStatus | null {
+    return this.spellingAudioSetStatusesByLanguage[this.settingsLanguage][setId] ?? null;
+  }
+
+  spellingAudioSetStatusLabel(status: SpellingAudioSetStatus): string {
+    const progress = `${status.readyAudioCount}/${status.requiredAudioCount}`;
+    if (status.requiredAudioCount === 0) return 'Audio: bez slov';
+    if (status.status === 'ready') return `Audio hotovo ${progress}`;
+    if (status.status === 'generating') return `Generuji audio ${progress}`;
+    if (status.status === 'queued') return `Audio ve frontě ${progress}`;
+    if (status.status === 'error') return `Audio chyba ${progress}`;
+    return `Chybí audio ${progress}`;
+  }
+
+  spellingAudioSetButtonLabel(setId: number): string {
+    if (this.spellingAudioSetGenerating[setId]) return 'Doplňuji...';
+    const status = this.spellingAudioSetStatusFor(setId);
+    if (status?.status === 'ready') return 'Audio hotovo';
+    return 'Doplnit audio';
+  }
+
+  spellingAudioSetActionDisabled(setId: number): boolean {
+    const status = this.spellingAudioSetStatusFor(setId);
+    return this.loading
+      || Boolean(this.spellingAudioSetGenerating[setId])
+      || !status
+      || status.requiredAudioCount === 0
+      || status.status === 'ready'
+      || status.status === 'queued'
+      || status.status === 'generating';
   }
 
   get multiplicationTests(): QuizTest[] {
@@ -921,6 +985,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.cancelAssetLibraryPolling();
     this.cancelAudioPrepPolling();
+    this.cancelSpellingAudioSetPolling();
     this.cancelTranslationBackfillPolling();
     this.clearTimer();
     this.clearFlashTimer();
@@ -1330,6 +1395,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.settingsError = 'Nastavení se nepodařilo načíst.';
     } finally {
       this.loading = false;
+      if (this.isAdmin) {
+        this.startSpellingAudioSetPolling(this.settingsLanguage);
+      }
       this.render();
     }
   }
@@ -1440,6 +1508,14 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardWordsError = null;
     if (this.isAdmin && language !== 'en') {
       void this.loadTranslationBackfillStatus(language);
+    }
+    if (this.isAdmin) {
+      void this.loadSpellingAudioSetStatuses(language)
+        .then(() => this.startSpellingAudioSetPolling(language))
+        .catch(() => {
+          this.spellingSetsError = 'Stav spelling audia se nepodařilo načíst.';
+          this.render();
+        });
     }
   }
 
@@ -1862,11 +1938,59 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  private cancelSpellingAudioSetPolling(): void {
+    if (this.spellingAudioSetPollToken) {
+      this.spellingAudioSetPollToken.cancelled = true;
+      this.spellingAudioSetPollToken = null;
+    }
+  }
+
   private cancelTranslationBackfillPolling(): void {
     Object.values(this.translationBackfillPollTokens).forEach((token) => {
       if (token) token.cancelled = true;
     });
     this.translationBackfillPollTokens = {};
+  }
+
+  private startSpellingAudioSetPolling(language: LearningLanguage = this.settingsLanguage): void {
+    if (this.screen !== 'settings' || !this.isAdmin) return;
+    if (!this.hasActiveSpellingAudioSetJobs(language)) return;
+    if (this.spellingAudioSetPollToken) {
+      if (this.spellingAudioSetPollToken.language === language) return;
+      this.cancelSpellingAudioSetPolling();
+    }
+
+    const token: SpellingAudioSetPollToken = { cancelled: false, language };
+    this.spellingAudioSetPollToken = token;
+    void this.pollSpellingAudioSetStatuses(token);
+  }
+
+  private async pollSpellingAudioSetStatuses(token: SpellingAudioSetPollToken): Promise<void> {
+    while (!token.cancelled && this.screen === 'settings') {
+      await this.delay(2000);
+      if (token.cancelled || this.screen !== 'settings') break;
+      try {
+        await this.loadSpellingAudioSetStatuses(token.language);
+        if (token.language === this.settingsLanguage) {
+          this.render();
+        }
+        if (!this.hasActiveSpellingAudioSetJobs(token.language)) break;
+      } catch {
+        if (!token.cancelled && this.screen === 'settings' && token.language === this.settingsLanguage) {
+          this.spellingSetsError = 'Stav spelling audia se nepodařilo obnovit.';
+          this.render();
+        }
+        break;
+      }
+    }
+    if (this.spellingAudioSetPollToken === token) {
+      this.spellingAudioSetPollToken = null;
+    }
+  }
+
+  private hasActiveSpellingAudioSetJobs(language: LearningLanguage): boolean {
+    return Object.values(this.spellingAudioSetStatusesByLanguage[language])
+      .some((status) => status.status === 'queued' || status.status === 'generating');
   }
 
   private async pollAssetLibrary(token: AssetLibraryPollToken): Promise<void> {
@@ -1944,12 +2068,17 @@ export class AppComponent implements OnInit, OnDestroy {
     const language = this.settingsLanguage;
     this.spellingSetsSaved = false;
     this.spellingSetsError = null;
+    this.cancelSpellingAudioSetPolling();
     this.loading = true;
     try {
       const sets = await this.apiPut<SpellingSet[]>(`spelling/sets?language=${language}`, {
         sets: this.spellingSetInputsByLanguage[language],
         latestSetIndex: this.latestSpellingSetIndexByLanguage[language],
       });
+      this.spellingSetsByLanguage = {
+        ...this.spellingSetsByLanguage,
+        [language]: sets,
+      };
       this.spellingSetInputsByLanguage = {
         ...this.spellingSetInputsByLanguage,
         [language]: sets.length > 0 ? sets.map((set) => set.rawWords) : [''],
@@ -1959,11 +2088,39 @@ export class AppComponent implements OnInit, OnDestroy {
         ...this.latestSpellingSetIndexByLanguage,
         [language]: latestIndex >= 0 ? latestIndex : this.lastConfiguredSpellingSetIndex(language),
       };
+      await this.loadSpellingAudioSetStatuses(language);
+      this.startSpellingAudioSetPolling(language);
       this.spellingSetsSaved = true;
     } catch {
       this.spellingSetsError = 'Spelling seznamy se nepodařilo uložit.';
     } finally {
       this.loading = false;
+      this.render();
+    }
+  }
+
+  async generateMissingSpellingAudio(setId: number): Promise<void> {
+    if (this.spellingAudioSetActionDisabled(setId)) return;
+    const language = this.settingsLanguage;
+    this.spellingAudioSetGenerating = { ...this.spellingAudioSetGenerating, [setId]: true };
+    const { [setId]: _removedError, ...nextErrors } = this.spellingAudioSetErrors;
+    this.spellingAudioSetErrors = nextErrors;
+    this.render();
+    try {
+      const status = await this.apiPost<SpellingAudioSetStatus>(
+        `spelling/audio/sets/${setId}/missing?language=${language}`,
+        {},
+      );
+      this.applySpellingAudioSetStatus(status);
+      this.startSpellingAudioSetPolling(language);
+    } catch (error) {
+      this.spellingAudioSetErrors = {
+        ...this.spellingAudioSetErrors,
+        [setId]: error instanceof Error ? error.message : 'Audio se nepodařilo přidat do fronty.',
+      };
+    } finally {
+      const { [setId]: _removedGenerating, ...nextGenerating } = this.spellingAudioSetGenerating;
+      this.spellingAudioSetGenerating = nextGenerating;
       this.render();
     }
   }
@@ -2679,6 +2836,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.cancelAudioPrepPolling();
     }
     if (this.screen === 'settings' && screen !== 'settings') {
+      this.cancelSpellingAudioSetPolling();
       this.cancelTranslationBackfillPolling();
     }
     this.screen = screen;
@@ -3126,6 +3284,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private async loadAllLanguageSettings(): Promise<void> {
     await Promise.all(this.languageOptions.flatMap((language) => [
       this.loadSpellingSets(language.code),
+      this.loadSpellingAudioSetStatuses(language.code),
       this.loadFlipcardWords(language.code),
       language.code === 'en' ? Promise.resolve() : this.loadTranslationBackfillStatus(language.code),
     ]));
@@ -3193,6 +3352,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async loadSpellingSets(language: LearningLanguage = this.settingsLanguage): Promise<void> {
     const sets = await this.apiGet<SpellingSet[]>(`spelling/sets?language=${language}`);
+    this.spellingSetsByLanguage = {
+      ...this.spellingSetsByLanguage,
+      [language]: sets,
+    };
     this.spellingSetInputsByLanguage = {
       ...this.spellingSetInputsByLanguage,
       [language]: sets.length > 0 ? sets.map((set) => set.rawWords) : [''],
@@ -3201,6 +3364,24 @@ export class AppComponent implements OnInit, OnDestroy {
     this.latestSpellingSetIndexByLanguage = {
       ...this.latestSpellingSetIndexByLanguage,
       [language]: latestIndex >= 0 ? latestIndex : this.lastConfiguredSpellingSetIndex(language),
+    };
+  }
+
+  private async loadSpellingAudioSetStatuses(language: LearningLanguage = this.settingsLanguage): Promise<void> {
+    const response = await this.apiGet<SpellingAudioSetStatusResponse>(`spelling/audio/sets?language=${language}`);
+    this.spellingAudioSetStatusesByLanguage = {
+      ...this.spellingAudioSetStatusesByLanguage,
+      [language]: Object.fromEntries(response.items.map((item) => [item.setId, item])) as Record<number, SpellingAudioSetStatus>,
+    };
+  }
+
+  private applySpellingAudioSetStatus(status: SpellingAudioSetStatus): void {
+    this.spellingAudioSetStatusesByLanguage = {
+      ...this.spellingAudioSetStatusesByLanguage,
+      [status.language]: {
+        ...this.spellingAudioSetStatusesByLanguage[status.language],
+        [status.setId]: status,
+      },
     };
   }
 
