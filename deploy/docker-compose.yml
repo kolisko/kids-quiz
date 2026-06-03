@@ -2,6 +2,8 @@ services:
   app:
     image: ${KIDS_QUIZ_IMAGE:-kids-quiz:latest}
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       KIDS_QUIZ_DATA_DIR: /data
       KIDS_QUIZ_DB_PATH: /data/kids-quiz.sqlite
