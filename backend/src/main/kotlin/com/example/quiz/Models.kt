@@ -249,6 +249,7 @@ data class SpellingWord(
     val id: Long,
     val text: String,
     val normalized: String,
+    val conceptKey: String? = null,
 )
 
 @Serializable
@@ -347,6 +348,17 @@ data class FlipcardWordUpdate(
 data class FlipcardWordsResponse(
     val words: String,
     val items: List<FlipcardWord> = emptyList(),
+)
+
+@Serializable
+data class FlipcardSpellingSyncResponse(
+    val language: LearningLanguage,
+    val spellingUniqueCount: Int,
+    val flipcardBeforeCount: Int,
+    val addedCount: Int,
+    val skippedCount: Int = 0,
+    val addedWords: List<String> = emptyList(),
+    val skippedWords: List<String> = emptyList(),
 )
 
 @Serializable

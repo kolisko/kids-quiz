@@ -384,6 +384,21 @@
       <button class="primary-button compact-button" type="button" (click)="openFlipcardAssetLibrary()" *ngIf="isAdmin">
         Flipcards knihovna
       </button>
+      <div class="translation-backfill" *ngIf="isAdmin">
+        <strong>Spelling → Flipcards</strong>
+        <p class="settings-note">
+          Doplní chybějící spelling slova do flipcards seznamu pro {{ settingsLanguageLabel }}. Stávající flipcards nemaže ani nepřepisuje.
+        </p>
+        <button
+          class="secondary-button compact-button"
+          type="button"
+          (click)="syncFlipcardsFromSpelling()"
+          [disabled]="flipcardSpellingSyncLoading || loading">
+          {{ flipcardSpellingSyncButtonLabel }}
+        </button>
+        <p class="settings-note" *ngIf="flipcardSpellingSyncResult">{{ flipcardSpellingSyncSummary }}</p>
+        <p class="error settings-error" *ngIf="flipcardSpellingSyncError">{{ flipcardSpellingSyncError }}</p>
+      </div>
       <div class="translation-backfill" *ngIf="isAdmin && translationBackfillVisible">
         <strong>{{ translationBackfillSummary }}</strong>
         <div class="translation-progress" *ngIf="currentTranslationBackfillStatus">
@@ -751,6 +766,18 @@
           <lucide-icon [img]="playIcon" [size]="26"></lucide-icon>
         </button>
         <span class="label">{{ answerVisible ? 'Odpověď' : 'Otázka' }}</span>
+        <div class="spelling-image-frame" *ngIf="activeGame === 'spelling' && currentSpellingConceptKey">
+          <div class="flipcard-image-loader" *ngIf="!spellingImageLoaded">
+            {{ spellingImageError ?? 'Načítám obrázek...' }}
+          </div>
+          <img
+            *ngIf="currentSpellingImageUrl"
+            [class.flipcard-image-hidden]="!spellingImageLoaded"
+            [src]="currentSpellingImageUrl"
+            [alt]="currentSpellingWord?.text ?? 'Spelling'"
+            (load)="onSpellingImageLoad()"
+            (error)="onSpellingImageError()">
+        </div>
         <h1
           [class.spelling-answer-clickable]="spellingAnswerTextClickable"
           [class.spelling-answer-audio-active]="spellingAnswerWordActive"

@@ -85,6 +85,11 @@ private data class LegacyFlipcardRow(
     val sortOrder: Int,
 )
 
+private data class SpellingFlipcardSyncWord(
+    val word: String,
+    val normalized: String,
+)
+
 object Database {
     private val connectionLock = Any()
 
@@ -2276,7 +2281,7 @@ fun Connection.readSpellingSets(language: LearningLanguage = LearningLanguage.en
                             id = setId,
                             rawWords = rows.getString("raw_words"),
                             isLatest = rows.getInt("is_latest") == 1,
-                            words = readSpellingWords(setId),
+                            words = readSpellingWords(setId, rows.getString("language").toLearningLanguage()),
                             language = rows.getString("language").toLearningLanguage(),
                         ),
                     )
@@ -2371,7 +2376,7 @@ fun Connection.readSpellingSession(
             rows.getLong("id")
         }
     }
-    return SpellingSession(setId = setId, words = readSpellingWords(setId), language = language)
+    return SpellingSession(setId = setId, words = readSpellingWords(setId, language), language = language)
 }
 
 fun Connection.readSpellingStats(userId: Long, language: LearningLanguage = LearningLanguage.en): Map<String, QuestionStats> {
@@ -2504,6 +2509,68 @@ fun Connection.replaceFlipcardWords(
             }
         }
     }
+}
+
+fun Connection.syncFlipcardWordsFromSpelling(language: LearningLanguage): FlipcardSpellingSyncResponse {
+    val spellingWords = readUniqueSpellingWordsForFlipcardSync(language)
+    val existingNormalizedWords = readFlipcardWords(language).map { it.normalized }.toSet()
+    val missingWords = spellingWords.filter { it.normalized !in existingNormalizedWords }
+    val addedWords = mutableListOf<String>()
+    val skippedWords = mutableListOf<String>()
+
+    transaction {
+        var nextConceptSortOrder = nextFlipcardConceptSortOrder()
+        var nextTranslationSortOrder = nextFlipcardTranslationSortOrder(language)
+        prepareStatement(
+            """
+            INSERT INTO flipcard_concepts(concept_key, sort_order, updated_at)
+            VALUES(?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(concept_key) DO NOTHING
+            """.trimIndent(),
+        ).use { conceptStatement ->
+            prepareStatement(
+                """
+                INSERT INTO flipcard_translations(concept_id, language, word, normalized_word, sort_order, updated_at)
+                VALUES(?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """.trimIndent(),
+            ).use { translationStatement ->
+                missingWords.forEach { word ->
+                    val conceptKey = word.normalized
+                    if (language != LearningLanguage.en && !flipcardConceptExists(conceptKey)) {
+                        skippedWords += word.word
+                        return@forEach
+                    }
+                    if (language == LearningLanguage.en && !flipcardConceptExists(conceptKey)) {
+                        conceptStatement.setString(1, conceptKey)
+                        conceptStatement.setInt(2, nextConceptSortOrder++)
+                        conceptStatement.executeUpdate()
+                    }
+                    val conceptId = requireFlipcardConceptId(conceptKey)
+                    if (flipcardTranslationExists(conceptId, language)) {
+                        skippedWords += word.word
+                        return@forEach
+                    }
+                    translationStatement.setLong(1, conceptId)
+                    translationStatement.setString(2, language.name)
+                    translationStatement.setString(3, word.word)
+                    translationStatement.setString(4, word.normalized)
+                    translationStatement.setInt(5, nextTranslationSortOrder++)
+                    translationStatement.executeUpdate()
+                    addedWords += word.word
+                }
+            }
+        }
+    }
+
+    return FlipcardSpellingSyncResponse(
+        language = language,
+        spellingUniqueCount = spellingWords.size,
+        flipcardBeforeCount = existingNormalizedWords.size,
+        addedCount = addedWords.size,
+        skippedCount = skippedWords.size,
+        addedWords = addedWords,
+        skippedWords = skippedWords,
+    )
 }
 
 private fun Connection.replaceFlipcardTranslationsByConcept(
@@ -3004,16 +3071,29 @@ private fun Connection.readAnswers(questionId: Long): List<String> {
     }
 }
 
-private fun Connection.readSpellingWords(setId: Long): List<SpellingWord> {
+private fun Connection.readSpellingWords(setId: Long, language: LearningLanguage): List<SpellingWord> {
     return prepareStatement(
         """
-        SELECT id, word, normalized_word
+        SELECT
+            spelling_words.id,
+            spelling_words.word,
+            spelling_words.normalized_word,
+            (
+                SELECT flipcard_concepts.concept_key
+                FROM flipcard_translations
+                INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
+                WHERE flipcard_translations.language = ?
+                AND flipcard_translations.normalized_word = spelling_words.normalized_word
+                ORDER BY flipcard_translations.sort_order, flipcard_translations.id
+                LIMIT 1
+            ) AS concept_key
         FROM spelling_words
         WHERE set_id = ?
         ORDER BY sort_order, id
         """.trimIndent(),
     ).use { statement ->
-        statement.setLong(1, setId)
+        statement.setString(1, language.name)
+        statement.setLong(2, setId)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {
@@ -3022,6 +3102,7 @@ private fun Connection.readSpellingWords(setId: Long): List<SpellingWord> {
                             id = rows.getLong("id"),
                             text = rows.getString("word"),
                             normalized = rows.getString("normalized_word"),
+                            conceptKey = rows.getString("concept_key"),
                         ),
                     )
                 }
@@ -3045,6 +3126,72 @@ private fun Connection.requireFlipcardConceptId(conceptKey: String): Long {
         statement.executeQuery().use { rows ->
             require(rows.next()) { "Missing flipcard concept: $conceptKey" }
             rows.getLong("id")
+        }
+    }
+}
+
+private fun Connection.flipcardConceptExists(conceptKey: String): Boolean {
+    return prepareStatement("SELECT 1 FROM flipcard_concepts WHERE concept_key = ? LIMIT 1").use { statement ->
+        statement.setString(1, conceptKey)
+        statement.executeQuery().use { rows -> rows.next() }
+    }
+}
+
+private fun Connection.flipcardTranslationExists(conceptId: Long, language: LearningLanguage): Boolean {
+    return prepareStatement("SELECT 1 FROM flipcard_translations WHERE concept_id = ? AND language = ? LIMIT 1").use { statement ->
+        statement.setLong(1, conceptId)
+        statement.setString(2, language.name)
+        statement.executeQuery().use { rows -> rows.next() }
+    }
+}
+
+private fun Connection.nextFlipcardConceptSortOrder(): Int {
+    return createStatement().use { statement ->
+        statement.executeQuery("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_sort_order FROM flipcard_concepts").use { rows ->
+            require(rows.next()) { "Missing next flipcard concept sort order." }
+            rows.getInt("next_sort_order")
+        }
+    }
+}
+
+private fun Connection.nextFlipcardTranslationSortOrder(language: LearningLanguage): Int {
+    return prepareStatement("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_sort_order FROM flipcard_translations WHERE language = ?").use { statement ->
+        statement.setString(1, language.name)
+        statement.executeQuery().use { rows ->
+            require(rows.next()) { "Missing next flipcard translation sort order." }
+            rows.getInt("next_sort_order")
+        }
+    }
+}
+
+private fun Connection.readUniqueSpellingWordsForFlipcardSync(language: LearningLanguage): List<SpellingFlipcardSyncWord> {
+    return prepareStatement(
+        """
+        SELECT spelling_words.word, spelling_words.normalized_word
+        FROM spelling_words
+        INNER JOIN spelling_sets ON spelling_sets.id = spelling_words.set_id
+        WHERE spelling_words.language = ?
+        AND spelling_sets.language = ?
+        AND TRIM(spelling_words.word) <> ''
+        ORDER BY spelling_sets.sort_order, spelling_sets.id, spelling_words.sort_order, spelling_words.id
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, language.name)
+        statement.setString(2, language.name)
+        statement.executeQuery().use { rows ->
+            buildList {
+                val seen = mutableSetOf<String>()
+                while (rows.next()) {
+                    val normalized = rows.getString("normalized_word")
+                    if (normalized.isBlank() || !seen.add(normalized)) continue
+                    add(
+                        SpellingFlipcardSyncWord(
+                            word = rows.getString("word"),
+                            normalized = normalized,
+                        ),
+                    )
+                }
+            }
         }
     }
 }

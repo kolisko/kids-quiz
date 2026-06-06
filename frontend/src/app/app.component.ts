@@ -230,6 +230,7 @@ interface SpellingWord {
   id: number;
   text: string;
   normalized: string;
+  conceptKey?: string | null;
 }
 
 interface SpellingAudioWordResponse {
@@ -257,6 +258,16 @@ interface SpellingAudioSetStatus {
 
 interface SpellingAudioSetStatusResponse {
   items: SpellingAudioSetStatus[];
+}
+
+interface FlipcardSpellingSyncResponse {
+  language: LearningLanguage;
+  spellingUniqueCount: number;
+  flipcardBeforeCount: number;
+  addedCount: number;
+  skippedCount: number;
+  addedWords: string[];
+  skippedWords: string[];
 }
 
 interface AudioPrepItem {
@@ -514,6 +525,9 @@ export class AppComponent implements OnInit, OnDestroy {
   spellingSetsError: string | null = null;
   flipcardWordsSaved = false;
   flipcardWordsError: string | null = null;
+  flipcardSpellingSyncLoading = false;
+  flipcardSpellingSyncResult: FlipcardSpellingSyncResponse | null = null;
+  flipcardSpellingSyncError: string | null = null;
   password = '';
   snapshotNumber = 'dev';
 
@@ -549,6 +563,8 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardAttemptFailed = false;
   flipcardImageLoaded = false;
   flipcardImageError: string | null = null;
+  spellingImageLoaded = false;
+  spellingImageError: string | null = null;
   flipcardPromptAudioToken = 0;
   spellingWordIndex: number | null = null;
   spellingPendingIndices: number[] = [];
@@ -704,6 +720,15 @@ export class AppComponent implements OnInit, OnDestroy {
   get currentFlipcardImageUrl(): string | null {
     const word = this.currentFlipcardWord;
     return word ? this.flipcardImageUrls[word.conceptKey] ?? null : null;
+  }
+
+  get currentSpellingConceptKey(): string | null {
+    return this.currentSpellingWord?.conceptKey ?? null;
+  }
+
+  get currentSpellingImageUrl(): string | null {
+    const conceptKey = this.currentSpellingConceptKey;
+    return conceptKey ? this.flipcardImageUrls[conceptKey] ?? null : null;
   }
 
   get currentFlipcardPromptWord(): FlipcardWord | null {
@@ -925,6 +950,38 @@ export class AppComponent implements OnInit, OnDestroy {
   get translationBackfillActive(): boolean {
     const status = this.currentTranslationBackfillStatus?.status;
     return this.translationBackfillLoading || status === 'queued' || status === 'generating';
+  }
+
+  get flipcardSpellingSyncSummary(): string {
+    const result = this.flipcardSpellingSyncResult;
+    if (!result) return '';
+    if (result.addedCount === 0 && result.skippedCount === 0) {
+      return `Všech ${result.spellingUniqueCount} spelling slov už je ve flipcards.`;
+    }
+    const added = `Doplněno ${result.addedCount}`;
+    const skipped = result.skippedCount > 0 ? `, přeskočeno ${result.skippedCount}` : '';
+    return `${added}${skipped}. Flipcards před syncem: ${result.flipcardBeforeCount}.`;
+  }
+
+  get flipcardSpellingSyncButtonLabel(): string {
+    if (this.flipcardSpellingSyncLoading) return 'Doplňuji...';
+    return `Doplnit ${this.flipcardSpellingSyncMissingCount} ze spellingu`;
+  }
+
+  get flipcardSpellingSyncMissingCount(): number {
+    const spellingWords = this.spellingSetsByLanguage[this.settingsLanguage]
+      .flatMap((set) => set.words)
+      .filter((word) => word.normalized.trim() !== '');
+    const flipcardWords = new Set(
+      this.flipcardWordsByLanguage[this.settingsLanguage]
+        .map((word) => word.normalized)
+        .filter((normalized) => normalized.trim() !== ''),
+    );
+    return new Set(
+      spellingWords
+        .map((word) => word.normalized)
+        .filter((normalized) => !flipcardWords.has(normalized)),
+    ).size;
   }
 
   get translationBackfillSummary(): string {
@@ -1165,11 +1222,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.spellingStats = stats.statsByWord ?? {};
       this.spellingWords = session.words;
       this.startSpellingSession();
-      if (this.settings.audioSource === 'backend_mp3') {
-        await this.prepareBackendAudio();
-        return;
-      }
-      this.startSpellingGame();
+      await this.prepareSpellingAssets();
     } catch {
       this.spellingWords = [];
       this.spellingPendingIndices = [];
@@ -1258,7 +1311,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   async retryAudioGeneration(): Promise<void> {
     if (this.activeGame === 'spelling' && this.spellingWords.length > 0) {
-      await this.prepareBackendAudio();
+      await this.prepareSpellingAssets();
       return;
     }
     if (this.activeGame === 'flipcards' && this.flipcardWords.length > 0) {
@@ -1506,6 +1559,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.spellingSetsError = null;
     this.flipcardWordsSaved = false;
     this.flipcardWordsError = null;
+    this.flipcardSpellingSyncResult = null;
+    this.flipcardSpellingSyncError = null;
     if (this.isAdmin && language !== 'en') {
       void this.loadTranslationBackfillStatus(language);
     }
@@ -2157,6 +2212,33 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
+  async syncFlipcardsFromSpelling(): Promise<void> {
+    if (this.flipcardSpellingSyncLoading) return;
+    const language = this.settingsLanguage;
+    this.flipcardSpellingSyncLoading = true;
+    this.flipcardSpellingSyncResult = null;
+    this.flipcardSpellingSyncError = null;
+    this.flipcardWordsSaved = false;
+    this.flipcardWordsError = null;
+    this.render();
+    try {
+      const result = await this.apiPost<FlipcardSpellingSyncResponse>(
+        `flipcards/words/sync-from-spelling?language=${language}`,
+        {},
+      );
+      this.flipcardSpellingSyncResult = result;
+      await this.loadFlipcardWords(language);
+      if (this.screen === 'assetLibrary' && this.assetLibraryLanguage === language) {
+        await this.loadFlipcardAssets(language);
+      }
+    } catch (error) {
+      this.flipcardSpellingSyncError = error instanceof Error ? error.message : 'Sync ze spellingu se nepodařilo spustit.';
+    } finally {
+      this.flipcardSpellingSyncLoading = false;
+      this.render();
+    }
+  }
+
   addSpellingSet(): void {
     const inputs = [...this.spellingSetInputsByLanguage[this.settingsLanguage], ''];
     this.spellingSetInputsByLanguage = { ...this.spellingSetInputsByLanguage, [this.settingsLanguage]: inputs };
@@ -2199,6 +2281,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardOptionsByIndex = [];
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;
+    this.spellingImageLoaded = false;
+    this.spellingImageError = null;
     this.flipcardPromptAudioToken += 1;
     this.spellingPendingIndices = [];
     this.startingSpellingMode = null;
@@ -2389,39 +2473,62 @@ export class AppComponent implements OnInit, OnDestroy {
     this.pickQuestion();
   }
 
-  private async prepareBackendAudio(): Promise<void> {
+  private async prepareSpellingAssets(): Promise<void> {
     this.audioPrepLoading = true;
     this.audioPrepError = null;
     this.backendAudioUrls = {};
     this.backendSpellingAudioUrls = {};
+    this.flipcardImageUrls = {};
     try {
       const selectedWords = this.spellingSession.selectedValues()
         .map((index) => this.spellingWords[index])
         .filter((word): word is SpellingWord => Boolean(word));
-      this.audioPrepItems = selectedWords.flatMap((word) => [
-        {
-          audioWord: word.text,
-          normalized: word.normalized,
+      const imageItems: AudioPrepItem[] = selectedWords
+        .filter((word) => Boolean(word.conceptKey))
+        .map((word) => ({
+          audioWord: word.conceptKey as string,
+          normalized: word.conceptKey as string,
           word: word.text,
           language: this.selectedLanguage,
-          kind: 'word' as const,
-          status: 'pending' as const,
+          kind: 'flipcard_image',
+          status: 'pending',
           audioUrl: null,
           error: null,
-        },
-        {
-          audioWord: word.text,
-          normalized: word.normalized,
-          word: formatSpellingAnswer(word.text, this.selectedLanguage),
-          language: this.selectedLanguage,
-          kind: 'spelling' as const,
-          status: 'pending' as const,
-          audioUrl: null,
-          error: null,
-        },
-      ]);
+        }));
+      const audioItems: AudioPrepItem[] = this.settings.audioSource === 'backend_mp3'
+        ? selectedWords.flatMap((word) => [
+          {
+            audioWord: word.text,
+            normalized: word.normalized,
+            word: word.text,
+            language: this.selectedLanguage,
+            kind: 'word' as const,
+            status: 'pending' as const,
+            audioUrl: null,
+            error: null,
+          },
+          {
+            audioWord: word.text,
+            normalized: word.normalized,
+            word: formatSpellingAnswer(word.text, this.selectedLanguage),
+            language: this.selectedLanguage,
+            kind: 'spelling' as const,
+            status: 'pending' as const,
+            audioUrl: null,
+            error: null,
+          },
+        ])
+        : [];
+      this.audioPrepItems = [...imageItems, ...audioItems];
 
-      await Promise.all(this.audioPrepItems.map((item) => this.loadAudioItemStatus(item)));
+      await Promise.all(this.audioPrepItems.map((item) => (
+        item.kind === 'flipcard_image' ? this.loadFlipcardImageStatus(item) : this.loadAudioItemStatus(item)
+      )));
+      this.flipcardImageUrls = Object.fromEntries(
+        this.audioPrepItems
+          .filter((item) => item.kind === 'flipcard_image' && item.audioUrl)
+          .map((item) => [item.normalized, item.audioUrl as string]),
+      );
       this.backendAudioUrls = Object.fromEntries(
         this.audioPrepItems
           .filter((item) => item.kind === 'word' && item.audioUrl)
@@ -2440,11 +2547,12 @@ export class AppComponent implements OnInit, OnDestroy {
       }
       await this.generateMissingAudio(missingItems);
       if (this.audioPrepItems.some((item) => item.status === 'error')) return;
+      await this.preloadSpellingImages();
       this.audioPrepLoading = false;
       this.startSpellingGame();
     } catch (error) {
       this.setScreen('audioPrep');
-      this.audioPrepError = error instanceof Error ? error.message : 'Audio se nepodařilo připravit.';
+      this.audioPrepError = error instanceof Error ? error.message : 'Test se nepodařilo připravit.';
     } finally {
       this.audioPrepLoading = false;
       this.render();
@@ -2584,6 +2692,14 @@ export class AppComponent implements OnInit, OnDestroy {
   private async preloadFlipcardImages(): Promise<void> {
     const urls = this.flipcardWords
       .map((word) => this.flipcardImageUrls[word.conceptKey])
+      .filter((url): url is string => Boolean(url));
+    await Promise.allSettled(urls.map((url) => this.preloadImage(url)));
+  }
+
+  private async preloadSpellingImages(): Promise<void> {
+    const urls = this.spellingSession.selectedValues()
+      .map((index) => this.spellingWords[index]?.conceptKey ?? null)
+      .map((conceptKey) => (conceptKey ? this.flipcardImageUrls[conceptKey] : null))
       .filter((url): url is string => Boolean(url));
     await Promise.allSettled(urls.map((url) => this.preloadImage(url)));
   }
@@ -2884,10 +3000,13 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
     this.spellingWordIndex = nextIndex;
+    this.spellingImageLoaded = false;
+    this.spellingImageError = null;
     this.answerVisible = false;
     this.timedOut = false;
     this.secondsLeft = this.settings.secondsLimit;
     this.startTimer();
+    this.render();
     window.setTimeout(() => this.playCurrentSpellingAudio(), 120);
   }
 
@@ -2905,6 +3024,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardAttemptFailed = false;
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;
+    this.spellingImageLoaded = false;
+    this.spellingImageError = null;
     this.flipcardPromptAudioToken += 1;
     this.flipcardOptions = this.flipcardOptionsForIndex(nextIndex);
     this.answerVisible = false;
@@ -3016,6 +3137,20 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearTimer();
     this.flipcardImageLoaded = false;
     this.flipcardImageError = 'Obrázek se nepodařilo načíst.';
+    this.render();
+  }
+
+  onSpellingImageLoad(): void {
+    if (this.activeGame !== 'spelling' || this.spellingWordIndex === null) return;
+    this.spellingImageLoaded = true;
+    this.spellingImageError = null;
+    this.render();
+  }
+
+  onSpellingImageError(): void {
+    if (this.activeGame !== 'spelling' || this.spellingWordIndex === null) return;
+    this.spellingImageLoaded = false;
+    this.spellingImageError = 'Obrázek se nepodařilo načíst.';
     this.render();
   }
 
@@ -3245,6 +3380,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardAttemptFailed = false;
     this.flipcardImageLoaded = false;
     this.flipcardImageError = null;
+    this.spellingImageLoaded = false;
+    this.spellingImageError = null;
     this.flipcardPromptAudioToken += 1;
     this.startingSpellingMode = null;
     this.currentDirection = 'product_to_factors';

@@ -163,6 +163,10 @@ object FlipcardStore {
         }
     }
 
+    fun syncFromSpelling(language: LearningLanguage): FlipcardSpellingSyncResponse = synchronized(lock) {
+        Database.useConnection { connection -> connection.syncFlipcardWordsFromSpelling(language) }
+    }
+
     fun readSession(userId: Long, limit: Int, language: LearningLanguage): FlipcardSession = synchronized(lock) {
         Database.useConnection { connection ->
             when (connection.readAppSettings(userId).flipcardSource) {

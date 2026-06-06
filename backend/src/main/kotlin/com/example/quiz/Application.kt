@@ -338,6 +338,11 @@ fun Application.module() {
                         call.respond(HttpStatusCode.BadRequest, mapOf("error" to (error.message ?: "invalid_flipcard_words")))
                     }
                 }
+                post("/words/sync-from-spelling") {
+                    if (Auth.requireAdmin(call) == null) return@post
+                    val language = call.requireLearningLanguage() ?: return@post
+                    call.respond(FlipcardStore.syncFromSpelling(language))
+                }
                 get("/session") {
                     val user = Auth.requireUser(call) ?: return@get
                     val language = call.requireLearningLanguage() ?: return@get
