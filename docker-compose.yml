@@ -13,26 +13,10 @@ services:
     expose:
       - "8080"
     networks:
-      - kids-quiz
-
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    depends_on:
-      - app
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /opt/kids-quiz/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks:
-      - kids-quiz
-
-volumes:
-  caddy_data:
-  caddy_config:
+      public-proxy:
+        aliases:
+          - beatka-app
 
 networks:
-  kids-quiz:
+  public-proxy:
+    external: true

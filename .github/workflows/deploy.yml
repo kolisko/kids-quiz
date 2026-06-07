@@ -15,8 +15,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  KIDS_QUIZ_DOMAIN: beatka.eu
-  KIDS_QUIZ_EXTRA_DOMAINS: ""
   KIDS_QUIZ_HEALTHCHECK_DOMAIN: beatka.eu
   KIDS_QUIZ_REMOTE_ROOT: /opt/kids-quiz
 
@@ -88,6 +86,8 @@ jobs:
             "mkdir -p '${KIDS_QUIZ_REMOTE_ROOT}/deploy' '${KIDS_QUIZ_REMOTE_ROOT}/data/backups'"
           scp -i ~/.ssh/kids_quiz_vps deploy/docker-compose.yml \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${KIDS_QUIZ_REMOTE_ROOT}/deploy/docker-compose.yml"
+          scp -i ~/.ssh/kids_quiz_vps deploy/beatka.caddy \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${KIDS_QUIZ_REMOTE_ROOT}/deploy/beatka.caddy"
 
       - name: Deploy on VPS
         shell: bash
@@ -95,28 +95,12 @@ jobs:
           IMAGE: ${{ steps.image.outputs.sha }}
         run: |
           ssh -i ~/.ssh/kids_quiz_vps "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "KIDS_QUIZ_IMAGE='${IMAGE}' KIDS_QUIZ_DOMAIN='${KIDS_QUIZ_DOMAIN}' KIDS_QUIZ_EXTRA_DOMAINS='${KIDS_QUIZ_EXTRA_DOMAINS}' KIDS_QUIZ_REMOTE_ROOT='${KIDS_QUIZ_REMOTE_ROOT}' bash -s" <<'REMOTE'
+            "KIDS_QUIZ_IMAGE='${IMAGE}' KIDS_QUIZ_REMOTE_ROOT='${KIDS_QUIZ_REMOTE_ROOT}' bash -s" <<'REMOTE'
           set -euo pipefail
 
           root="${KIDS_QUIZ_REMOTE_ROOT}"
-          domain="${KIDS_QUIZ_DOMAIN}"
-          extra_domains="${KIDS_QUIZ_EXTRA_DOMAINS:-}"
           image="${KIDS_QUIZ_IMAGE}"
           mkdir -p "$root/deploy" "$root/data/backups"
-
-          addresses="$domain"
-          if [ -n "$extra_domains" ]; then
-              addresses="$addresses, $extra_domains"
-          fi
-
-          cat > "$root/Caddyfile" <<CADDY
-          $addresses {
-              @noStore not path_regexp ^/api/flipcards/images/.+\.(webp|png|jpe?g)$
-              header @noStore Cache-Control "no-store"
-              reverse_proxy app:8080
-          }
-          CADDY
-          chmod 600 "$root/Caddyfile"
 
           cd "$root/deploy"
           touch .env
@@ -142,8 +126,8 @@ jobs:
 
           docker compose -p kids-quiz pull app
           docker compose -p kids-quiz run --interactive=false -T --rm app migrate
-          docker compose -p kids-quiz rm -sf app caddy
-          docker compose -p kids-quiz up -d app caddy
+          docker compose -p kids-quiz rm -sf app
+          docker compose -p kids-quiz up -d --remove-orphans app
 
           running_image="$(docker inspect kids-quiz-app-1 --format '{{.Config.Image}}')"
           if [ "$running_image" != "$image" ]; then
@@ -151,6 +135,10 @@ jobs:
               docker compose -p kids-quiz ps
               exit 1
           fi
+
+          install -D -m 644 "$root/deploy/beatka.caddy" /opt/caddy/sites/beatka.caddy
+          docker exec caddy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+          docker exec caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
           REMOTE
 
       - name: Healthcheck
