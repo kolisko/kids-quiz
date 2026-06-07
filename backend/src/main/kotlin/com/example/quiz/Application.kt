@@ -21,6 +21,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondFile
 import io.ktor.server.routing.get
+import io.ktor.server.routing.head
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
@@ -57,6 +58,7 @@ fun Application.module() {
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Authorization)
         allowMethod(HttpMethod.Get)
+        allowMethod(HttpMethod.Head)
         allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Put)
     }
@@ -77,6 +79,9 @@ fun Application.module() {
     val staticDir = runtimeStaticDir().toFile()
     routing {
         route("/api") {
+            head("/health") {
+                call.respond(HttpStatusCode.OK)
+            }
             get("/health") {
                 call.respond(mapOf("ok" to true))
             }
@@ -649,6 +654,9 @@ fun Application.module() {
             }
         }
 
+        head("/") {
+            call.respond(HttpStatusCode.OK)
+        }
         get("/") {
             call.respondStaticOrIndex(staticDir)
         }
