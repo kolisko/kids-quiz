@@ -16,6 +16,188 @@ object TestsStore {
     }
 }
 
+object TestMenuStore {
+    private val lock = Any()
+    private val mathLaunchKey = Regex("""^tests\.math\.(\d+)\.(product_to_factors|factors_to_product|mix)$""")
+    private val spellingLaunchKey = Regex("""^tests\.language\.(en|de|es|cs)\.spelling\.(latest|older)$""")
+    private val flipcardsLaunchKey = Regex("""^tests\.language\.(en|de|es|cs)\.flipcards$""")
+    private val practiceModes = listOf(
+        PracticeMode.product_to_factors to "Najdi násobení",
+        PracticeMode.factors_to_product to "Spočítej výsledek",
+        PracticeMode.mix to "Mix",
+    )
+    private val languageLabels = listOf(
+        LearningLanguage.en to "Angličtina",
+        LearningLanguage.de to "Němčina",
+        LearningLanguage.es to "Španělština",
+        LearningLanguage.cs to "Čeština",
+    )
+
+    fun read(userId: Long, includeHidden: Boolean): TestMenuNode = synchronized(lock) {
+        Database.useConnection { connection ->
+            val settings = connection.readAppSettings(userId)
+            val tree = buildTree(connection.readTests(), settings.hiddenTestMenuKeys.toSet())
+            if (includeHidden) tree else tree.onlyVisible() ?: TestMenuNode(key = rootKey, label = "Testy")
+        }
+    }
+
+    fun launch(userId: Long, key: String): TestMenuLaunchResponse? = synchronized(lock) {
+        Database.useConnection { connection ->
+            val settings = connection.readAppSettings(userId)
+            val tests = connection.readTests()
+            val visibleTree = buildTree(tests, settings.hiddenTestMenuKeys.toSet()).onlyVisible()
+            if (visibleTree?.find(key)?.launchable != true) return@useConnection null
+
+            mathLaunchKey.matchEntire(key)?.let { match ->
+                val testId = match.groupValues[1].toLongOrNull() ?: return@useConnection null
+                val mode = PracticeMode.valueOf(match.groupValues[2])
+                val test = tests.firstOrNull { it.id == testId && it.type != QuizTestType.english } ?: return@useConnection null
+                return@useConnection TestMenuLaunchResponse(
+                    key = key,
+                    kind = TestMenuLaunchKind.multiplication,
+                    settings = settings,
+                    selectedTest = test,
+                    practiceMode = mode,
+                    questions = connection.readQuestions(testId),
+                    mathStats = mapOf(
+                        PracticeDirection.product_to_factors to QuestionStatsSnapshot(
+                            statsByQuestionId = connection.readStats(userId, testId, PracticeDirection.product_to_factors),
+                        ),
+                        PracticeDirection.factors_to_product to QuestionStatsSnapshot(
+                            statsByQuestionId = connection.readStats(userId, testId, PracticeDirection.factors_to_product),
+                        ),
+                    ),
+                )
+            }
+
+            spellingLaunchKey.matchEntire(key)?.let { match ->
+                val language = match.groupValues[1].toLearningLanguage()
+                val mode = SpellingSessionMode.valueOf(match.groupValues[2])
+                val session = connection.readSpellingSession(mode, language) ?: return@useConnection null
+                return@useConnection TestMenuLaunchResponse(
+                    key = key,
+                    kind = TestMenuLaunchKind.spelling,
+                    settings = settings,
+                    selectedTest = languageTest(language),
+                    selectedLanguage = language,
+                    spellingMode = mode,
+                    spellingSession = session,
+                    spellingStats = SpellingStatsSnapshot(statsByWord = connection.readSpellingStats(userId, language)),
+                )
+            }
+
+            flipcardsLaunchKey.matchEntire(key)?.let { match ->
+                val language = match.groupValues[1].toLearningLanguage()
+                return@useConnection TestMenuLaunchResponse(
+                    key = key,
+                    kind = TestMenuLaunchKind.flipcards,
+                    settings = settings,
+                    selectedTest = languageTest(language),
+                    selectedLanguage = language,
+                    flipcardStats = FlipcardStatsSnapshot(statsByWord = connection.readFlipcardStats(userId, language)),
+                )
+            }
+
+            null
+        }
+    }
+
+    private fun buildTree(tests: List<QuizTest>, hiddenKeys: Set<String>): TestMenuNode {
+        val mathTests = tests
+            .filter { it.type != QuizTestType.english }
+            .map { test ->
+                val testKey = "tests.math.${test.id}"
+                TestMenuNode(
+                    key = testKey,
+                    label = test.name,
+                    visible = testKey !in hiddenKeys,
+                    children = practiceModes.map { (mode, label) ->
+                        val modeKey = "$testKey.${mode.name}"
+                        TestMenuNode(
+                            key = modeKey,
+                            label = label,
+                            launchable = true,
+                            visible = modeKey !in hiddenKeys,
+                        )
+                    },
+                )
+            }
+        val mathKey = "tests.math"
+        val languageNodes = languageLabels.map { (language, label) ->
+            val languageKey = "tests.language.${language.name}"
+            val spellingKey = "$languageKey.spelling"
+            TestMenuNode(
+                key = languageKey,
+                label = label,
+                visible = languageKey !in hiddenKeys,
+                children = listOf(
+                    TestMenuNode(
+                        key = spellingKey,
+                        label = "Spelling",
+                        visible = spellingKey !in hiddenKeys,
+                        children = listOf(
+                            TestMenuNode(
+                                key = "$spellingKey.latest",
+                                label = "Nová slovíčka",
+                                launchable = true,
+                                visible = "$spellingKey.latest" !in hiddenKeys,
+                            ),
+                            TestMenuNode(
+                                key = "$spellingKey.older",
+                                label = "Starší slovíčka",
+                                launchable = true,
+                                visible = "$spellingKey.older" !in hiddenKeys,
+                            ),
+                        ),
+                    ),
+                    TestMenuNode(
+                        key = "$languageKey.flipcards",
+                        label = "Flipcards",
+                        launchable = true,
+                        visible = "$languageKey.flipcards" !in hiddenKeys,
+                    ),
+                ),
+            )
+        }
+        return TestMenuNode(
+            key = rootKey,
+            label = "Testy",
+            visible = rootKey !in hiddenKeys,
+            children = listOf(
+                TestMenuNode(
+                    key = mathKey,
+                    label = "Matematika",
+                    visible = mathKey !in hiddenKeys,
+                    children = mathTests,
+                ),
+            ) + languageNodes,
+        )
+    }
+
+    private fun TestMenuNode.onlyVisible(): TestMenuNode? {
+        if (!visible) return null
+        val visibleChildren = children.mapNotNull { it.onlyVisible() }
+        if (!launchable && key != rootKey && visibleChildren.isEmpty()) return null
+        return copy(children = visibleChildren)
+    }
+
+    private fun TestMenuNode.find(key: String): TestMenuNode? {
+        if (this.key == key) return this
+        return children.firstNotNullOfOrNull { it.find(key) }
+    }
+
+    private fun languageTest(language: LearningLanguage): QuizTest {
+        return QuizTest(
+            id = -1,
+            name = languageLabels.firstOrNull { it.first == language }?.second ?: "Jazyk",
+            type = QuizTestType.english,
+            questionCount = 0,
+        )
+    }
+
+    private const val rootKey = "tests"
+}
+
 object SettingsStore {
     private val lock = Any()
 
@@ -28,6 +210,23 @@ object SettingsStore {
     fun replace(userId: Long, settings: AppSettings): AppSettings = synchronized(lock) {
         Database.useConnection { connection ->
             connection.replaceAppSettings(userId, settings)
+            connection.readAppSettings(userId)
+        }
+    }
+
+    fun patch(userId: Long, request: AppSettingsPatchRequest): AppSettings = synchronized(lock) {
+        Database.useConnection { connection ->
+            val current = connection.readAppSettings(userId)
+            val merged = current.copy(
+                secondsLimit = request.secondsLimit ?: current.secondsLimit,
+                targetScore = request.targetScore ?: current.targetScore,
+                celebrationTapLimit = request.celebrationTapLimit ?: current.celebrationTapLimit,
+                audioSource = request.audioSource ?: current.audioSource,
+                flipcardSource = request.flipcardSource ?: current.flipcardSource,
+                flipcardPromptLanguage = request.flipcardPromptLanguage ?: current.flipcardPromptLanguage,
+                hiddenTestMenuKeys = request.hiddenTestMenuKeys ?: current.hiddenTestMenuKeys,
+            )
+            connection.replaceAppSettings(userId, merged)
             connection.readAppSettings(userId)
         }
     }

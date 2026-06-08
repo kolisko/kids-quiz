@@ -9,6 +9,13 @@ enum class PracticeDirection {
 }
 
 @Serializable
+enum class PracticeMode {
+    product_to_factors,
+    factors_to_product,
+    mix,
+}
+
+@Serializable
 enum class QuizTestType {
     multiplication,
     english,
@@ -171,6 +178,55 @@ data class AppSettings(
     val audioSource: AudioSource = AudioSource.browser_tts,
     val flipcardSource: FlipcardSource = FlipcardSource.all_words,
     val flipcardPromptLanguage: LearningLanguage = LearningLanguage.cs,
+    val hiddenTestMenuKeys: List<String> = emptyList(),
+)
+
+@Serializable
+data class AppSettingsPatchRequest(
+    val secondsLimit: Int? = null,
+    val targetScore: Int? = null,
+    val celebrationTapLimit: Int? = null,
+    val audioSource: AudioSource? = null,
+    val flipcardSource: FlipcardSource? = null,
+    val flipcardPromptLanguage: LearningLanguage? = null,
+    val hiddenTestMenuKeys: List<String>? = null,
+)
+
+@Serializable
+data class TestMenuNode(
+    val key: String,
+    val label: String,
+    val children: List<TestMenuNode> = emptyList(),
+    val launchable: Boolean = false,
+    val visible: Boolean = true,
+)
+
+@Serializable
+data class TestMenuLaunchRequest(
+    val key: String,
+)
+
+@Serializable
+enum class TestMenuLaunchKind {
+    multiplication,
+    spelling,
+    flipcards,
+}
+
+@Serializable
+data class TestMenuLaunchResponse(
+    val key: String,
+    val kind: TestMenuLaunchKind,
+    val settings: AppSettings,
+    val selectedTest: QuizTest? = null,
+    val selectedLanguage: LearningLanguage? = null,
+    val practiceMode: PracticeMode? = null,
+    val spellingMode: SpellingSessionMode? = null,
+    val questions: List<Question> = emptyList(),
+    val mathStats: Map<PracticeDirection, QuestionStatsSnapshot> = emptyMap(),
+    val spellingSession: SpellingSession? = null,
+    val spellingStats: SpellingStatsSnapshot? = null,
+    val flipcardStats: FlipcardStatsSnapshot? = null,
 )
 
 @Serializable

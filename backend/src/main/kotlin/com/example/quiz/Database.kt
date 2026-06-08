@@ -1,6 +1,7 @@
 package com.example.quiz
 
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.nio.charset.StandardCharsets
@@ -289,6 +290,12 @@ object DatabaseMigrator {
                 connection.transaction {
                     addMultiUserOAuth()
                     recordMigration(25, "add_multi_user_oauth")
+                }
+            }
+            if (26 !in applied) {
+                connection.transaction {
+                    addUserTestMenuVisibilitySettings()
+                    recordMigration(26, "add_user_test_menu_visibility_settings")
                 }
             }
         }
@@ -785,6 +792,28 @@ object DatabaseMigrator {
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addUserTestMenuVisibilitySettings() {
+        createStatement().use { statement ->
+            val columns = statement.executeQuery("PRAGMA table_info(user_settings)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            if ("hidden_test_menu_keys" !in columns) {
+                statement.executeUpdate(
+                    "ALTER TABLE user_settings ADD COLUMN hidden_test_menu_keys TEXT NOT NULL DEFAULT '[]'",
+                )
+            }
+            statement.executeUpdate(
+                """
+                UPDATE user_settings
+                SET hidden_test_menu_keys = '[]'
+                WHERE hidden_test_menu_keys IS NULL OR TRIM(hidden_test_menu_keys) = ''
                 """.trimIndent(),
             )
         }
@@ -2081,7 +2110,7 @@ fun Connection.readAppSettings(userId: Long): AppSettings {
     ensureUserSettingsRow(userId)
     return prepareStatement(
         """
-        SELECT seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language
+        SELECT seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, hidden_test_menu_keys
         FROM user_settings
         WHERE user_id = ?
         """.trimIndent(),
@@ -2096,6 +2125,7 @@ fun Connection.readAppSettings(userId: Long): AppSettings {
                 audioSource = rows.getString("audio_source").toAudioSource(),
                 flipcardSource = rows.getString("flipcard_source").toFlipcardSource(),
                 flipcardPromptLanguage = rows.getString("flipcard_prompt_language").toLearningLanguage(defaultFlipcardPromptLanguage),
+                hiddenTestMenuKeys = decodeHiddenTestMenuKeys(rows.getString("hidden_test_menu_keys")),
             )
         }
     }
@@ -2133,10 +2163,11 @@ fun Connection.replaceAppSettings(userId: Long, settings: AppSettings) {
     val secondsLimit = settings.secondsLimit.coerceAtLeast(1)
     val targetScore = settings.targetScore.coerceAtLeast(1)
     val celebrationTapLimit = settings.celebrationTapLimit.coerceAtLeast(0)
+    val hiddenTestMenuKeys = encodeHiddenTestMenuKeys(settings.hiddenTestMenuKeys)
     prepareStatement(
         """
-        INSERT INTO user_settings(user_id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, updated_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO user_settings(user_id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, hidden_test_menu_keys, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(user_id) DO UPDATE SET
             seconds_limit = excluded.seconds_limit,
             target_score = excluded.target_score,
@@ -2144,6 +2175,7 @@ fun Connection.replaceAppSettings(userId: Long, settings: AppSettings) {
             audio_source = excluded.audio_source,
             flipcard_source = excluded.flipcard_source,
             flipcard_prompt_language = excluded.flipcard_prompt_language,
+            hidden_test_menu_keys = excluded.hidden_test_menu_keys,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
@@ -2154,6 +2186,7 @@ fun Connection.replaceAppSettings(userId: Long, settings: AppSettings) {
         statement.setString(5, settings.audioSource.name)
         statement.setString(6, settings.flipcardSource.name)
         statement.setString(7, settings.flipcardPromptLanguage.name)
+        statement.setString(8, hiddenTestMenuKeys)
         statement.executeUpdate()
     }
 }
@@ -3684,6 +3717,25 @@ fun String?.toLearningLanguage(): LearningLanguage {
 
 private fun String?.toLearningLanguage(fallback: LearningLanguage): LearningLanguage {
     return LearningLanguage.entries.firstOrNull { it.name == this } ?: fallback
+}
+
+private fun decodeHiddenTestMenuKeys(value: String?): List<String> {
+    if (value.isNullOrBlank()) return emptyList()
+    return runCatching { migrationJson.decodeFromString<List<String>>(value) }
+        .getOrDefault(emptyList())
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+}
+
+private fun encodeHiddenTestMenuKeys(keys: List<String>): String {
+    return migrationJson.encodeToString(
+        keys
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted(),
+    )
 }
 
 private fun timestamp(): String = backupTimestampFormatter.format(Instant.now())

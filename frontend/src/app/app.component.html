@@ -91,26 +91,39 @@
   </section>
 
   <section class="start-screen" *ngIf="screen === 'start'">
-    <button class="trophy-entry-button" type="button" (click)="openTrophies()" title="Sbírka fumfíků" aria-label="Sbírka fumfíků">
+    <button
+      class="trophy-entry-button"
+      type="button"
+      *ngIf="currentTestMenuIsRoot"
+      (click)="openTrophies()"
+      title="Sbírka fumfíků"
+      aria-label="Sbírka fumfíků">
       <lucide-icon [img]="trophyIcon" [size]="38"></lucide-icon>
     </button>
-    <h1>Kids Quiz</h1>
+    <div class="settings-header test-menu-header" *ngIf="!currentTestMenuIsRoot">
+      <button
+        class="icon-button"
+        type="button"
+        (click)="backInTestMenu()"
+        title="Zpět"
+        aria-label="Zpět">
+        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+      </button>
+      <h1>{{ currentTestMenuTitle }}</h1>
+      <span class="header-left-slot" aria-hidden="true"></span>
+    </div>
+    <h1 *ngIf="currentTestMenuIsRoot">{{ currentTestMenuTitle }}</h1>
+    <p class="settings-note" *ngIf="!hasVisibleTestMenu">
+      Žádné testy nejsou zobrazené.
+    </p>
     <div class="test-list">
       <button
         class="primary-button test-button"
         type="button"
-        *ngFor="let test of multiplicationTests"
-        (click)="startTest(test)"
+        *ngFor="let node of currentTestMenuChildren"
+        (click)="selectTestMenuNode(node)"
         [disabled]="loading">
-        {{ loading && selectedTest?.id === test.id ? 'Načítám...' : test.name }}
-      </button>
-      <button
-        class="primary-button test-button"
-        type="button"
-        *ngFor="let language of languageOptions"
-        (click)="startLanguage(language.code)"
-        [disabled]="loading">
-        {{ language.label }}
+        {{ loading ? 'Načítám...' : node.label }}
       </button>
     </div>
   </section>
@@ -132,65 +145,6 @@
       <div class="trophy-card" *ngFor="let trophy of trophies">
         <img [src]="trophy.imagePath" alt="Vyhraná figurka">
       </div>
-    </div>
-  </section>
-
-  <section class="mode-screen" *ngIf="screen === 'mode'">
-    <div class="settings-header">
-      <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
-        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
-      </button>
-      <h1>{{ selectedTest?.name }}</h1>
-      <span class="header-left-slot" aria-hidden="true"></span>
-    </div>
-
-    <div class="mode-list">
-      <button
-        class="primary-button mode-button"
-        type="button"
-        *ngFor="let option of practiceModes"
-        (click)="startPractice(option.mode)"
-        [disabled]="loading">
-        {{ option.label }}
-      </button>
-    </div>
-  </section>
-
-  <section class="mode-screen" *ngIf="screen === 'category'">
-    <div class="settings-header">
-      <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
-        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
-      </button>
-      <h1>{{ selectedTest?.name }}</h1>
-      <span class="header-left-slot" aria-hidden="true"></span>
-    </div>
-
-    <div class="mode-list">
-      <button class="primary-button mode-button" type="button" (click)="openSpellingModes()" [disabled]="loading">
-        Spelling
-      </button>
-      <button class="primary-button mode-button" type="button" (click)="startFlipcards()" [disabled]="loading">
-        Flipcards
-      </button>
-    </div>
-  </section>
-
-  <section class="mode-screen" *ngIf="screen === 'spellingMode'">
-    <div class="settings-header">
-      <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
-        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
-      </button>
-      <h1>{{ selectedLanguageLabel }} - Spelling</h1>
-      <span class="header-left-slot" aria-hidden="true"></span>
-    </div>
-
-    <div class="mode-list">
-      <button class="primary-button mode-button" type="button" (click)="startSpelling('latest')" [disabled]="loading || startingSpellingMode !== null">
-        {{ startingSpellingMode === 'latest' ? 'Načítám...' : 'Nová slovíčka' }}
-      </button>
-      <button class="primary-button mode-button" type="button" (click)="startSpelling('older')" [disabled]="loading || startingSpellingMode !== null">
-        {{ startingSpellingMode === 'older' ? 'Načítám...' : 'Starší slovíčka' }}
-      </button>
     </div>
   </section>
 
@@ -217,6 +171,49 @@
         <input type="number" min="0" inputmode="numeric" [(ngModel)]="settings.celebrationTapLimit" name="celebrationTapLimit">
       </label>
     </div>
+
+    <section class="settings-section">
+      <h2>Zobrazení testů</h2>
+      <p class="settings-note">
+        Skrytý rodič schová celou větev menu. Položku můžeš kdykoliv znovu zapnout.
+      </p>
+      <div class="test-visibility-tree" *ngIf="testMenuSettingsRoot; else testMenuVisibilityLoading">
+        <ng-container
+          *ngTemplateOutlet="testMenuVisibilityNodes; context: { $implicit: testMenuSettingsRoot.children, depth: 0 }">
+        </ng-container>
+      </div>
+      <ng-template #testMenuVisibilityLoading>
+        <p class="settings-note">Načítám strom testů...</p>
+      </ng-template>
+      <ng-template #testMenuVisibilityNodes let-nodes let-depth="depth">
+        <div class="test-visibility-node" *ngFor="let node of nodes" [style.padding-left.rem]="depth * 1.15">
+          <label class="test-visibility-option">
+            <input
+              type="checkbox"
+              [checked]="isTestMenuNodeVisible(node)"
+              (change)="toggleTestMenuNodeVisibility(node, $event)">
+            <span>{{ node.label }}</span>
+            <small>{{ testMenuVisibilityDetail(node) }}</small>
+          </label>
+          <ng-container *ngIf="node.children.length > 0">
+            <ng-container
+              *ngTemplateOutlet="testMenuVisibilityNodes; context: { $implicit: node.children, depth: depth + 1 }">
+            </ng-container>
+          </ng-container>
+        </div>
+      </ng-template>
+      <div class="test-visibility-actions">
+        <button
+          class="secondary-button compact-button"
+          type="button"
+          (click)="saveTestMenuVisibility()"
+          [disabled]="loading || testMenuVisibilitySaving || !testMenuVisibilityDirty">
+          {{ testMenuVisibilitySaving ? 'Ukládám...' : 'Uložit zobrazení testů' }}
+        </button>
+        <p class="settings-note" *ngIf="testMenuVisibilitySaved">Zobrazení testů je uložené.</p>
+        <p class="error settings-error" *ngIf="testMenuVisibilityError">{{ testMenuVisibilityError }}</p>
+      </div>
+    </section>
 
     <section class="settings-section">
       <h2>Audio</h2>
@@ -473,7 +470,7 @@
     <p class="settings-note" *ngIf="settingsSaved">Nastavení je uložené.</p>
     <p class="error settings-error" *ngIf="settingsError">{{ settingsError }}</p>
     <button class="primary-button settings-save-button" type="button" (click)="saveSettingsOnly()" [disabled]="loading">
-      Uložit nastavení
+      Uložit obecná nastavení
     </button>
   </section>
 

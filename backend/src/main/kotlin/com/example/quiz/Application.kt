@@ -22,6 +22,7 @@ import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondFile
 import io.ktor.server.routing.get
 import io.ktor.server.routing.head
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
@@ -59,6 +60,7 @@ fun Application.module() {
         allowHeader(HttpHeaders.Authorization)
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Head)
+        allowMethod(HttpMethod.Patch)
         allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Put)
     }
@@ -161,6 +163,27 @@ fun Application.module() {
                 if (!Auth.requireAuthenticated(call)) return@get
                 call.respond(TestsStore.readTests())
             }
+            route("/test-menu") {
+                get {
+                    val user = Auth.requireUser(call) ?: return@get
+                    val includeHidden = call.request.queryParameters["includeHidden"] == "true"
+                    call.respond(TestMenuStore.read(user.id, includeHidden))
+                }
+                post("/launch") {
+                    val user = Auth.requireUser(call) ?: return@post
+                    val request = runCatching { call.receive<TestMenuLaunchRequest>() }.getOrNull()
+                    if (request == null || request.key.isBlank()) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_test_menu_launch"))
+                        return@post
+                    }
+                    val response = TestMenuStore.launch(user.id, request.key)
+                    if (response == null) {
+                        call.respond(HttpStatusCode.NotFound, mapOf("error" to "test_menu_node_not_found"))
+                        return@post
+                    }
+                    call.respond(response)
+                }
+            }
             route("/settings") {
                 get {
                     val user = Auth.requireUser(call) ?: return@get
@@ -174,6 +197,15 @@ fun Application.module() {
                         return@put
                     }
                     call.respond(SettingsStore.replace(user.id, request))
+                }
+                patch {
+                    val user = Auth.requireUser(call) ?: return@patch
+                    val request = runCatching { call.receive<AppSettingsPatchRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@patch
+                    }
+                    call.respond(SettingsStore.patch(user.id, request))
                 }
             }
             route("/trophies") {

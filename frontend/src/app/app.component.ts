@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ArrowLeft, CarFront, Flag, Info, ListRestart, LogOut, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings, Trophy, UserCircle } from 'lucide-angular';
 import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
 
-type Screen = 'login' | 'start' | 'category' | 'spellingMode' | 'mode' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
+type Screen = 'login' | 'start' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
 type QuizTestType = 'multiplication' | 'english';
 type ActiveGame = 'multiplication' | 'spelling' | 'flipcards';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
@@ -144,7 +144,10 @@ interface GameSettings {
   audioSource: AudioSource;
   flipcardSource: FlipcardSource;
   flipcardPromptLanguage: LearningLanguage;
+  hiddenTestMenuKeys: string[];
 }
+
+type GameSettingsPatch = Partial<GameSettings>;
 
 interface Question {
   id: number;
@@ -157,6 +160,31 @@ interface QuizTest {
   name: string;
   type: QuizTestType;
   questionCount: number;
+}
+
+interface TestMenuNode {
+  key: string;
+  label: string;
+  children: TestMenuNode[];
+  launchable: boolean;
+  visible: boolean;
+}
+
+type TestMenuLaunchKind = 'multiplication' | 'spelling' | 'flipcards';
+
+interface TestMenuLaunchResponse {
+  key: string;
+  kind: TestMenuLaunchKind;
+  settings: GameSettings;
+  selectedTest?: QuizTest | null;
+  selectedLanguage?: LearningLanguage | null;
+  practiceMode?: PracticeMode | null;
+  spellingMode?: SpellingSessionMode | null;
+  questions?: Question[];
+  mathStats?: Record<PracticeDirection, QuestionStatsSnapshot>;
+  spellingSession?: SpellingSession | null;
+  spellingStats?: SpellingStatsSnapshot | null;
+  flipcardStats?: FlipcardStatsSnapshot | null;
 }
 
 interface QuestionStats {
@@ -211,11 +239,6 @@ interface AdminUsersResponse {
 interface AnswerResultResponse {
   questionId: number;
   stats: QuestionStats;
-}
-
-interface PracticeModeOption {
-  mode: PracticeMode;
-  label: string;
 }
 
 interface SpellingSet {
@@ -496,11 +519,6 @@ export class AppComponent implements OnInit, OnDestroy {
   readonly profileIcon = UserCircle;
   readonly logoutIcon = LogOut;
   readonly teslaMp3TestVariants = TESLA_MP3_TEST_VARIANTS;
-  readonly practiceModes: PracticeModeOption[] = [
-    { mode: 'product_to_factors', label: 'Najdi násobení' },
-    { mode: 'factors_to_product', label: 'Spočítej výsledek' },
-    { mode: 'mix', label: 'Mix' },
-  ];
   readonly languageOptions: LanguageOption[] = [
     { code: 'en', label: 'Angličtina', ttsLang: 'en-US' },
     { code: 'de', label: 'Němčina', ttsLang: 'de-DE' },
@@ -521,6 +539,10 @@ export class AppComponent implements OnInit, OnDestroy {
   adminUsersError: string | null = null;
   settingsSaved = false;
   settingsError: string | null = null;
+  testMenuVisibilityDraftKeys: string[] = [];
+  testMenuVisibilitySaving = false;
+  testMenuVisibilitySaved = false;
+  testMenuVisibilityError: string | null = null;
   spellingSetsSaved = false;
   spellingSetsError: string | null = null;
   flipcardWordsSaved = false;
@@ -531,8 +553,10 @@ export class AppComponent implements OnInit, OnDestroy {
   password = '';
   snapshotNumber = 'dev';
 
-  settings: GameSettings = { secondsLimit: 30, targetScore: 10, celebrationTapLimit: 100, audioSource: 'browser_tts', flipcardSource: 'all_words', flipcardPromptLanguage: 'cs' };
-  tests: QuizTest[] = [];
+  settings: GameSettings = { secondsLimit: 30, targetScore: 10, celebrationTapLimit: 100, audioSource: 'browser_tts', flipcardSource: 'all_words', flipcardPromptLanguage: 'cs', hiddenTestMenuKeys: [] };
+  testMenuRoot: TestMenuNode | null = null;
+  testMenuSettingsRoot: TestMenuNode | null = null;
+  testMenuPath: string[] = [];
   selectedTest: QuizTest | null = null;
   selectedLanguage: LearningLanguage = 'en';
   settingsLanguage: LearningLanguage = 'en';
@@ -568,7 +592,6 @@ export class AppComponent implements OnInit, OnDestroy {
   flipcardPromptAudioToken = 0;
   spellingWordIndex: number | null = null;
   spellingPendingIndices: number[] = [];
-  startingSpellingMode: SpellingSessionMode | null = null;
   score = 0;
   currentIndex: number | null = null;
   currentDirection: PracticeDirection = 'product_to_factors';
@@ -825,12 +848,36 @@ export class AppComponent implements OnInit, OnDestroy {
       || status.status === 'generating';
   }
 
-  get multiplicationTests(): QuizTest[] {
-    return this.tests.filter((test) => test.type !== 'english');
+  get currentTestMenuNode(): TestMenuNode | null {
+    let node = this.testMenuRoot;
+    for (const key of this.testMenuPath) {
+      node = node?.children.find((child) => child.key === key) ?? null;
+      if (!node) return null;
+    }
+    return node;
   }
 
-  get selectedLanguageLabel(): string {
-    return this.languageLabel(this.selectedLanguage);
+  get currentTestMenuChildren(): TestMenuNode[] {
+    return this.currentTestMenuNode?.children ?? [];
+  }
+
+  get currentTestMenuTitle(): string {
+    return this.testMenuPath.length === 0 ? 'Kids Quiz' : this.currentTestMenuNode?.label ?? 'Testy';
+  }
+
+  get currentTestMenuIsRoot(): boolean {
+    return this.testMenuPath.length === 0;
+  }
+
+  get hasVisibleTestMenu(): boolean {
+    return this.currentTestMenuChildren.length > 0;
+  }
+
+  get testMenuVisibilityDirty(): boolean {
+    return !sameStringList(
+      this.effectiveDraftTestMenuHiddenKeys(),
+      this.effectiveSavedTestMenuHiddenKeys(),
+    );
   }
 
   get settingsLanguageLabel(): string {
@@ -1094,7 +1141,6 @@ export class AppComponent implements OnInit, OnDestroy {
       // Even if the server session is already gone, the local UI should return to login.
     } finally {
       this.currentUser = null;
-      this.tests = [];
       this.selectedTest = null;
       this.selectedMode = null;
       this.questions = [];
@@ -1108,132 +1154,107 @@ export class AppComponent implements OnInit, OnDestroy {
     }
   }
 
-  async startTest(test: QuizTest): Promise<void> {
-    this.selectedTest = test;
-    this.loading = true;
-    this.resetRoundState();
-    if (test.type === 'english') {
-      this.activeGame = 'spelling';
-      this.setScreen('category');
-      this.loading = false;
+  selectTestMenuNode(node: TestMenuNode): void {
+    if (node.children.length > 0) {
+      this.testMenuPath = [...this.testMenuPath, node.key];
       this.render();
       return;
     }
-    this.activeGame = 'multiplication';
+    if (node.launchable) {
+      void this.launchTestMenuNode(node);
+    }
+  }
+
+  backInTestMenu(): void {
+    if (this.testMenuPath.length === 0) return;
+    this.testMenuPath = this.testMenuPath.slice(0, -1);
+    this.render();
+  }
+
+  async launchTestMenuNode(node: TestMenuNode): Promise<void> {
+    if (!node.launchable || this.loading) return;
+    this.loading = true;
+    this.resetRoundState();
+    this.render();
     try {
-      const [productStats, factorStats, questions] = await Promise.all([
-        this.apiGet<QuestionStatsSnapshot>(`tests/${test.id}/stats?direction=product_to_factors`),
-        this.apiGet<QuestionStatsSnapshot>(`tests/${test.id}/stats?direction=factors_to_product`),
-        this.apiGet<Question[]>(`tests/${test.id}/questions`),
-      ]);
-      this.serverStats = {
-        product_to_factors: productStats.statsByQuestionId ?? {},
-        factors_to_product: factorStats.statsByQuestionId ?? {},
-      };
-      this.questions = questions;
-      this.setScreen('mode');
+      const launch = await this.apiPost<TestMenuLaunchResponse>('test-menu/launch', { key: node.key });
+      this.applySettings(launch.settings);
+      if (launch.kind === 'multiplication') {
+        this.startLaunchedMath(launch);
+      } else if (launch.kind === 'spelling') {
+        await this.startLaunchedSpelling(launch);
+      } else if (launch.kind === 'flipcards') {
+        await this.startLaunchedFlipcards(launch);
+      }
     } catch {
-      this.currentUser = null;
-      this.setScreen('login');
+      this.audioPrepError = 'Test se nepodařilo spustit.';
+      this.setScreen('start');
     } finally {
       this.loading = false;
       this.render();
     }
   }
 
-  startLanguage(language: LearningLanguage): void {
+  private startLaunchedMath(launch: TestMenuLaunchResponse): void {
+    this.activeGame = 'multiplication';
+    this.selectedTest = launch.selectedTest ?? null;
+    this.selectedMode = launch.practiceMode ?? 'mix';
+    this.questions = launch.questions ?? [];
+    this.serverStats = {
+      product_to_factors: launch.mathStats?.product_to_factors?.statsByQuestionId ?? {},
+      factors_to_product: launch.mathStats?.factors_to_product?.statsByQuestionId ?? {},
+    };
+    void this.startTeslaMp3AudioForTest();
+    this.startMathSession();
+    this.setScreen('play');
+    this.pickQuestion();
+  }
+
+  private async startLaunchedSpelling(launch: TestMenuLaunchResponse): Promise<void> {
+    const language = launch.selectedLanguage ?? 'en';
+    this.activeGame = 'spelling';
     this.selectedLanguage = language;
-    this.selectedTest = {
+    this.selectedTest = launch.selectedTest ?? {
       id: -1,
       name: this.languageLabel(language),
       type: 'english',
       questionCount: 0,
     };
-    this.loading = true;
-    this.resetRoundState();
-    this.activeGame = 'spelling';
-    this.setScreen('category');
-    this.loading = false;
-    this.render();
+    this.spellingStats = launch.spellingStats?.statsByWord ?? {};
+    this.spellingWords = launch.spellingSession?.words ?? [];
+    this.startSpellingSession();
+    await this.prepareSpellingAssets();
   }
 
-  openSpellingModes(): void {
-    this.setScreen('spellingMode');
-  }
-
-  async startFlipcards(): Promise<void> {
+  private async startLaunchedFlipcards(launch: TestMenuLaunchResponse): Promise<void> {
+    const language = launch.selectedLanguage ?? 'en';
     this.activeGame = 'flipcards';
-    this.resetRoundState();
+    this.selectedLanguage = language;
+    this.selectedTest = launch.selectedTest ?? {
+      id: -1,
+      name: this.languageLabel(language),
+      type: 'english',
+      questionCount: 0,
+    };
     void this.startTeslaMp3AudioForTest();
-    this.loading = true;
-    this.render();
-    try {
-      const [stats, settings] = await Promise.all([
-        this.apiGet<FlipcardStatsSnapshot>(`flipcards/stats?language=${this.selectedLanguage}`),
-        this.apiGet<GameSettings>('settings'),
-      ]);
-      this.applySettings(settings);
-      this.flipcardStats = stats.statsByWord ?? {};
-      await this.loadFlipcardWords(this.settings.flipcardPromptLanguage);
-      const answerPool = await this.loadFlipcardAnswerPool();
-      this.flipcardWords = answerPool;
-      this.flipcardAnswerPool = answerPool;
-      this.startFlipcardSession();
-      this.flipcardOptionsByIndex = this.flipcardWords.map((_, index) => this.buildFlipcardOptions(index));
-      if (this.flipcardWords.length < 1 || this.flipcardAnswerPool.length < 3 || this.flipcardOptionsByIndex.some((options) => options.length < 3)) {
-        if (this.settings.flipcardSource === 'ready_only') {
-          this.audioPrepItems = [];
-          this.audioPrepError = 'Pro ready-only test jsou potřeba aspoň 3 připravená slovíčka.';
-          this.setScreen('audioPrep');
-        } else {
-          this.setScreen('play');
-        }
-        return;
+    this.flipcardStats = launch.flipcardStats?.statsByWord ?? {};
+    await this.loadFlipcardWords(this.settings.flipcardPromptLanguage);
+    const answerPool = await this.loadFlipcardAnswerPool();
+    this.flipcardWords = answerPool;
+    this.flipcardAnswerPool = answerPool;
+    this.startFlipcardSession();
+    this.flipcardOptionsByIndex = this.flipcardWords.map((_, index) => this.buildFlipcardOptions(index));
+    if (this.flipcardWords.length < 1 || this.flipcardAnswerPool.length < 3 || this.flipcardOptionsByIndex.some((options) => options.length < 3)) {
+      if (this.settings.flipcardSource === 'ready_only') {
+        this.audioPrepItems = [];
+        this.audioPrepError = 'Pro ready-only test jsou potřeba aspoň 3 připravená slovíčka.';
+        this.setScreen('audioPrep');
+      } else {
+        this.setScreen('play');
       }
-      await this.prepareFlipcardAssets();
-    } catch {
-      this.flipcardWords = [];
-      this.flipcardAnswerPool = [];
-      this.flipcardQueue = [];
-      this.flipcardOptionsByIndex = [];
-      this.setScreen('play');
-      if (this.settings.audioSource === 'browser_tts') {
-        this.checkTtsSupport();
-      }
-    } finally {
-      this.loading = false;
-      this.render();
+      return;
     }
-  }
-
-  async startSpelling(mode: SpellingSessionMode): Promise<void> {
-    this.activeGame = 'spelling';
-    this.resetRoundState();
-    this.startingSpellingMode = mode;
-    void this.startTeslaMp3AudioForTest();
-    this.render();
-    try {
-      const [stats, settings, session] = await Promise.all([
-        this.apiGet<SpellingStatsSnapshot>(`spelling/stats?language=${this.selectedLanguage}`),
-        this.apiGet<GameSettings>('settings'),
-        this.apiGet<SpellingSession>(`spelling/session?language=${this.selectedLanguage}&mode=${mode}`),
-      ]);
-      this.applySettings(settings);
-      this.spellingStats = stats.statsByWord ?? {};
-      this.spellingWords = session.words;
-      this.startSpellingSession();
-      await this.prepareSpellingAssets();
-    } catch {
-      this.spellingWords = [];
-      this.spellingPendingIndices = [];
-      this.setScreen('play');
-      if (this.settings.audioSource === 'browser_tts') {
-        this.checkTtsSupport();
-      }
-    } finally {
-      this.startingSpellingMode = null;
-      this.render();
-    }
+    await this.prepareFlipcardAssets();
   }
 
   private async loadFlipcardAnswerPool(): Promise<FlipcardWord[]> {
@@ -1253,17 +1274,6 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     const response = await this.apiGet<FlipcardWordsResponse>(`flipcards/words?language=${this.selectedLanguage}`);
     return response.items;
-  }
-
-  startPractice(mode: PracticeMode): void {
-    this.activeGame = 'multiplication';
-    this.selectedMode = mode;
-    this.resetRoundState();
-    void this.startTeslaMp3AudioForTest();
-    this.startMathSession();
-    this.setScreen('play');
-    this.pickQuestion();
-    this.render();
   }
 
   showAnswer(): void {
@@ -1436,11 +1446,15 @@ export class AppComponent implements OnInit, OnDestroy {
     this.ttsDetailsVisible = false;
     this.settingsSaved = false;
     this.settingsError = null;
+    this.testMenuVisibilitySaving = false;
+    this.testMenuVisibilitySaved = false;
+    this.testMenuVisibilityError = null;
     this.loading = true;
     this.render();
     try {
+      await this.loadSettings();
       await Promise.all([
-        this.loadSettings(),
+        this.loadTestMenuSettings(),
         this.isAdmin ? this.loadAllLanguageSettings() : Promise.resolve(),
         this.isAdmin ? this.loadAdminUsers() : Promise.resolve(),
       ]);
@@ -2108,13 +2122,46 @@ export class AppComponent implements OnInit, OnDestroy {
     this.settingsError = null;
     this.loading = true;
     try {
-      const savedSettings = await this.apiPut<GameSettings>('settings', this.normalizedSettings());
+      const settings = this.normalizedSettings();
+      const savedSettings = await this.apiPatch<GameSettings>('settings', {
+        secondsLimit: settings.secondsLimit,
+        targetScore: settings.targetScore,
+        celebrationTapLimit: settings.celebrationTapLimit,
+        audioSource: settings.audioSource,
+        flipcardSource: settings.flipcardSource,
+        flipcardPromptLanguage: settings.flipcardPromptLanguage,
+      } satisfies GameSettingsPatch);
       this.applySettings(savedSettings);
       this.settingsSaved = true;
     } catch {
       this.settingsError = 'Nastavení se nepodařilo uložit.';
     } finally {
       this.loading = false;
+      this.render();
+    }
+  }
+
+  async saveTestMenuVisibility(): Promise<void> {
+    if (this.testMenuVisibilitySaving || !this.testMenuVisibilityDirty) return;
+    this.testMenuVisibilitySaving = true;
+    this.testMenuVisibilitySaved = false;
+    this.testMenuVisibilityError = null;
+    this.render();
+    try {
+      const savedSettings = await this.apiPatch<GameSettings>('settings', {
+        hiddenTestMenuKeys: this.effectiveDraftTestMenuHiddenKeys(),
+      } satisfies GameSettingsPatch);
+      this.applySettings(savedSettings);
+      await Promise.all([
+        this.loadTestMenu(),
+        this.loadTestMenuSettings(),
+      ]);
+      this.syncTestMenuVisibilityDraftFromSettings();
+      this.testMenuVisibilitySaved = true;
+    } catch {
+      this.testMenuVisibilityError = 'Zobrazení testů se nepodařilo uložit.';
+    } finally {
+      this.testMenuVisibilitySaving = false;
       this.render();
     }
   }
@@ -2285,7 +2332,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.spellingImageError = null;
     this.flipcardPromptAudioToken += 1;
     this.spellingPendingIndices = [];
-    this.startingSpellingMode = null;
     this.spellingStats = {};
     this.flipcardStats = {};
     this.audioPrepItems = [];
@@ -2295,7 +2341,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardImageUrls = {};
     this.flipcardAdvancing = false;
     this.clearFlipcardPreloads();
-    this.setScreen(this.tests.length > 0 ? 'start' : 'settings');
+    this.testMenuPath = [];
+    this.setScreen(this.testMenuRoot?.children.length ? 'start' : 'settings');
     this.render();
   }
 
@@ -2307,7 +2354,9 @@ export class AppComponent implements OnInit, OnDestroy {
         await this.loadAuthProviders();
         this.currentUser = null;
         this.profileMenuVisible = false;
-        this.tests = [];
+        this.testMenuRoot = null;
+        this.testMenuSettingsRoot = null;
+        this.testMenuPath = [];
         this.selectedTest = null;
         this.selectedMode = null;
         this.questions = [];
@@ -2316,7 +2365,6 @@ export class AppComponent implements OnInit, OnDestroy {
         this.flipcardWords = [];
         this.flipcardQueue = [];
         this.spellingPendingIndices = [];
-        this.startingSpellingMode = null;
         this.spellingStats = {};
         this.flipcardStats = {};
         this.setScreen('login');
@@ -2324,13 +2372,15 @@ export class AppComponent implements OnInit, OnDestroy {
       }
       this.currentUser = auth.user ?? null;
       this.profileMenuVisible = false;
-      const [tests, settings] = await Promise.all([
-        this.apiGet<QuizTest[]>('tests'),
+      const [testMenu, settings] = await Promise.all([
+        this.apiGet<TestMenuNode>('test-menu'),
         this.apiGet<GameSettings>('settings'),
         this.isAdmin ? this.loadAllLanguageSettings() : Promise.resolve(),
       ]);
       this.applySettings(settings);
-      this.tests = tests;
+      this.testMenuRoot = normalizeTestMenuNode(testMenu);
+      this.testMenuSettingsRoot = null;
+      this.testMenuPath = [];
       this.selectedTest = null;
       this.selectedMode = null;
       this.questions = [];
@@ -2339,10 +2389,9 @@ export class AppComponent implements OnInit, OnDestroy {
       this.flipcardWords = [];
       this.flipcardQueue = [];
       this.spellingPendingIndices = [];
-      this.startingSpellingMode = null;
       this.spellingStats = {};
       this.flipcardStats = {};
-      this.setScreen(this.tests.length > 0 ? 'start' : 'settings');
+      this.setScreen(this.testMenuRoot.children.length > 0 ? 'start' : 'settings');
     } catch {
       await this.loadAuthProviders();
       this.currentUser = null;
@@ -2355,6 +2404,17 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private async loadSettings(): Promise<void> {
     this.applySettings(await this.apiGet<GameSettings>('settings'));
+    this.syncTestMenuVisibilityDraftFromSettings();
+  }
+
+  private async loadTestMenu(): Promise<void> {
+    this.testMenuRoot = normalizeTestMenuNode(await this.apiGet<TestMenuNode>('test-menu'));
+    this.testMenuPath = this.validTestMenuPath(this.testMenuPath);
+  }
+
+  private async loadTestMenuSettings(): Promise<void> {
+    this.testMenuSettingsRoot = normalizeTestMenuNode(await this.apiGet<TestMenuNode>('test-menu?includeHidden=true'));
+    this.syncTestMenuVisibilityDraftFromSettings();
   }
 
   private async loadAuthProviders(): Promise<void> {
@@ -2389,6 +2449,7 @@ export class AppComponent implements OnInit, OnDestroy {
       audioSource: this.settings.audioSource === 'backend_mp3' ? 'backend_mp3' : 'browser_tts',
       flipcardSource: this.settings.flipcardSource === 'ready_only' ? 'ready_only' : 'all_words',
       flipcardPromptLanguage: this.normalizedLearningLanguage(this.settings.flipcardPromptLanguage, 'cs'),
+      hiddenTestMenuKeys: this.normalizedHiddenTestMenuKeys(this.settings.hiddenTestMenuKeys),
     };
   }
 
@@ -2402,6 +2463,7 @@ export class AppComponent implements OnInit, OnDestroy {
       audioSource: settings.audioSource === 'backend_mp3' ? 'backend_mp3' : 'browser_tts',
       flipcardSource: settings.flipcardSource === 'ready_only' ? 'ready_only' : 'all_words',
       flipcardPromptLanguage: this.normalizedLearningLanguage(settings.flipcardPromptLanguage, 'cs'),
+      hiddenTestMenuKeys: this.normalizedHiddenTestMenuKeys(settings.hiddenTestMenuKeys),
     };
     this.secondsLeft = this.settings.secondsLimit;
     if (wasTeslaMp3AudioModeActive && !this.teslaMp3AudioModeActive) {
@@ -2412,6 +2474,80 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private normalizedLearningLanguage(language: LearningLanguage | null | undefined, fallback: LearningLanguage): LearningLanguage {
     return this.languageOptions.find((option) => option.code === language)?.code ?? fallback;
+  }
+
+  isTestMenuNodeVisible(node: TestMenuNode): boolean {
+    return !this.effectiveDraftTestMenuHiddenKeys().includes(node.key);
+  }
+
+  toggleTestMenuNodeVisibility(node: TestMenuNode, event: Event): void {
+    const checked = (event.target as HTMLInputElement | null)?.checked ?? true;
+    const hidden = new Set(this.testMenuVisibilityDraftKeys);
+    const affectedKeys = this.collectTestMenuNodeKeys(node);
+    if (checked) {
+      affectedKeys.forEach((key) => hidden.delete(key));
+    } else {
+      affectedKeys.forEach((key) => hidden.add(key));
+    }
+    this.testMenuVisibilityDraftKeys = this.normalizeTestMenuVisibilityKeys([...hidden]);
+    this.testMenuVisibilitySaved = false;
+    this.testMenuVisibilityError = null;
+  }
+
+  testMenuVisibilityDetail(node: TestMenuNode): string {
+    if (node.launchable) return 'test';
+    if (node.children.length === 0) return 'prázdná větev';
+    return `${node.children.length} položek`;
+  }
+
+  private normalizedHiddenTestMenuKeys(keys: string[] | null | undefined): string[] {
+    return Array.from(new Set((keys ?? []).map((key) => String(key).trim()).filter(Boolean))).sort();
+  }
+
+  private syncTestMenuVisibilityDraftFromSettings(): void {
+    this.testMenuVisibilityDraftKeys = this.effectiveSavedTestMenuHiddenKeys();
+  }
+
+  private effectiveSavedTestMenuHiddenKeys(): string[] {
+    return this.normalizeTestMenuVisibilityKeys(this.settings.hiddenTestMenuKeys);
+  }
+
+  private effectiveDraftTestMenuHiddenKeys(): string[] {
+    return this.normalizeTestMenuVisibilityKeys(this.testMenuVisibilityDraftKeys);
+  }
+
+  private normalizeTestMenuVisibilityKeys(keys: string[] | null | undefined): string[] {
+    const normalized = this.normalizedHiddenTestMenuKeys(keys);
+    return this.testMenuSettingsRoot ? this.cascadeHiddenTestMenuKeys(normalized, this.testMenuSettingsRoot) : normalized;
+  }
+
+  private cascadeHiddenTestMenuKeys(keys: string[], root: TestMenuNode): string[] {
+    const hidden = new Set(this.normalizedHiddenTestMenuKeys(keys));
+    const visit = (node: TestMenuNode, parentHidden: boolean): void => {
+      const nodeHidden = parentHidden || hidden.has(node.key);
+      if (nodeHidden) {
+        hidden.add(node.key);
+      }
+      node.children.forEach((child) => visit(child, nodeHidden));
+    };
+    visit(root, false);
+    return this.normalizedHiddenTestMenuKeys([...hidden]);
+  }
+
+  private collectTestMenuNodeKeys(node: TestMenuNode): string[] {
+    return [node.key, ...node.children.flatMap((child) => this.collectTestMenuNodeKeys(child))];
+  }
+
+  private validTestMenuPath(path: string[]): string[] {
+    const validPath: string[] = [];
+    let node = this.testMenuRoot;
+    for (const key of path) {
+      const next = node?.children.find((child) => child.key === key);
+      if (!next) break;
+      validPath.push(key);
+      node = next;
+    }
+    return validPath;
   }
 
   private startSpellingGame(): void {
@@ -2970,7 +3106,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     if (this.questions.length === 0) {
       this.currentIndex = null;
-      this.setScreen(this.selectedTest ? 'mode' : 'start');
+      this.setScreen('play');
       return;
     }
 
@@ -3383,7 +3519,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.spellingImageLoaded = false;
     this.spellingImageError = null;
     this.flipcardPromptAudioToken += 1;
-    this.startingSpellingMode = null;
     this.currentDirection = 'product_to_factors';
     this.currentFactorQuestion = null;
     this.spellingPendingIndices = [];
@@ -4274,6 +4409,17 @@ export class AppComponent implements OnInit, OnDestroy {
   private async apiPut<T>(path: string, body: unknown, redirectOnUnauthorized = true): Promise<T> {
     const response = await fetch(`/api/${path}`, {
       method: 'PUT',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return this.readApiResponse<T>(response, redirectOnUnauthorized);
+  }
+
+  private async apiPatch<T>(path: string, body: unknown, redirectOnUnauthorized = true): Promise<T> {
+    const response = await fetch(`/api/${path}`, {
+      method: 'PATCH',
       credentials: 'include',
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
@@ -5331,6 +5477,21 @@ function parseApiError(body: string): string | null {
   } catch {
     return body.slice(0, 160);
   }
+}
+
+function normalizeTestMenuNode(node: TestMenuNode): TestMenuNode {
+  return {
+    key: node.key,
+    label: node.label,
+    children: (node.children ?? []).map((child) => normalizeTestMenuNode(child)),
+    launchable: Boolean(node.launchable),
+    visible: node.visible !== false,
+  };
+}
+
+function sameStringList(first: string[], second: string[]): boolean {
+  if (first.length !== second.length) return false;
+  return first.every((value, index) => value === second[index]);
 }
 
 const surprises: AnimalSurprise[] = Array.from({ length: 40 }, (_, index) => ({

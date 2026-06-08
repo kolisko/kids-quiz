@@ -462,6 +462,11 @@ button,
   margin: 2.25rem auto 0;
 }
 
+.test-menu-header {
+  width: min(100%, 50rem);
+  margin-bottom: 0.75rem;
+}
+
 .test-button {
   min-height: 7.4rem;
   padding: 1rem;
@@ -891,6 +896,54 @@ textarea {
   font-size: 1.35rem;
   line-height: 1.2;
   text-align: left;
+}
+
+.test-visibility-tree {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.test-visibility-node {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.test-visibility-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.3rem;
+  padding: 0.65rem 0.75rem;
+  border: 2px solid rgba(15, 118, 110, 0.14);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.test-visibility-option input {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.test-visibility-option span {
+  min-width: 0;
+  color: #111827;
+}
+
+.test-visibility-option small {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.test-visibility-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.test-visibility-actions p {
+  margin: 0;
 }
 
 .spelling-set-list {
