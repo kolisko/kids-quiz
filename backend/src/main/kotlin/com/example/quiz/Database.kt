@@ -2405,13 +2405,20 @@ fun Connection.readSpellingSession(
     mode: SpellingSessionMode,
     language: LearningLanguage = LearningLanguage.en,
 ): SpellingSession? {
+    if (mode == SpellingSessionMode.mix) {
+        val words = readAllSpellingWords(language)
+        return if (words.isEmpty()) null else SpellingSession(setId = 0, words = words, language = language)
+    }
+
     val modeClause = when (mode) {
         SpellingSessionMode.latest -> "spelling_sets.is_latest = 1"
         SpellingSessionMode.older -> "spelling_sets.is_latest = 0"
+        SpellingSessionMode.mix -> error("Mix spelling session is handled before set filtering.")
     }
     val orderClause = when (mode) {
         SpellingSessionMode.latest -> "spelling_sets.sort_order DESC, spelling_sets.id DESC"
         SpellingSessionMode.older -> "RANDOM()"
+        SpellingSessionMode.mix -> error("Mix spelling session is handled before set filtering.")
     }
     val setId = prepareStatement(
         """
@@ -3216,6 +3223,54 @@ private fun Connection.readSpellingWords(setId: Long, language: LearningLanguage
     ).use { statement ->
         statement.setString(1, language.name)
         statement.setLong(2, setId)
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) {
+                    add(
+                        SpellingWord(
+                            id = rows.getLong("id"),
+                            text = rows.getString("word"),
+                            normalized = rows.getString("normalized_word"),
+                            conceptKey = rows.getString("concept_key"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun Connection.readAllSpellingWords(language: LearningLanguage): List<SpellingWord> {
+    return prepareStatement(
+        """
+        SELECT
+            spelling_words.id,
+            spelling_words.word,
+            spelling_words.normalized_word,
+            (
+                SELECT flipcard_concepts.concept_key
+                FROM flipcard_translations
+                INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
+                WHERE flipcard_translations.language = ?
+                AND flipcard_translations.normalized_word = spelling_words.normalized_word
+                ORDER BY flipcard_translations.sort_order, flipcard_translations.id
+                LIMIT 1
+            ) AS concept_key
+        FROM spelling_words
+        INNER JOIN (
+            SELECT MIN(id) AS id
+            FROM spelling_words
+            WHERE language = ?
+            AND TRIM(word) <> ''
+            GROUP BY normalized_word
+        ) unique_words ON unique_words.id = spelling_words.id
+        WHERE spelling_words.language = ?
+        ORDER BY RANDOM()
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, language.name)
+        statement.setString(2, language.name)
+        statement.setString(3, language.name)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {

@@ -20,7 +20,7 @@ object TestMenuStore {
     private val lock = Any()
     private val mathLaunchKey = Regex("""^tests\.math\.(\d+)\.(product_to_factors|factors_to_product|mix)$""")
     private val arithmeticLaunchKey = Regex("""^tests\.math\.arithmetic\.(easy|normal|hard|mix)$""")
-    private val spellingLaunchKey = Regex("""^tests\.language\.(en|de|es|cs)\.spelling\.(latest|older)$""")
+    private val spellingLaunchKey = Regex("""^tests\.language\.(en|de|es|cs)\.spelling\.(latest|older|mix)$""")
     private val flipcardsLaunchKey = Regex("""^tests\.language\.(en|de|es|cs)\.flipcards$""")
     private val practiceModes = listOf(
         PracticeMode.product_to_factors to "Najdi násobení",
@@ -188,6 +188,12 @@ object TestMenuStore {
                                 label = "Starší slovíčka",
                                 launchable = true,
                                 visible = "$spellingKey.older" !in hiddenKeys,
+                            ),
+                            TestMenuNode(
+                                key = "$spellingKey.mix",
+                                label = "Mix",
+                                launchable = true,
+                                visible = "$spellingKey.mix" !in hiddenKeys,
                             ),
                         ),
                     ),

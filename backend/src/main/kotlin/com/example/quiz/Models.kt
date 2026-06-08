@@ -48,6 +48,7 @@ enum class LearningLanguage {
 enum class SpellingSessionMode {
     latest,
     older,
+    mix,
 }
 
 @Serializable
