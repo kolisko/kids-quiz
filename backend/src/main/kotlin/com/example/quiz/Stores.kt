@@ -19,12 +19,19 @@ object TestsStore {
 object TestMenuStore {
     private val lock = Any()
     private val mathLaunchKey = Regex("""^tests\.math\.(\d+)\.(product_to_factors|factors_to_product|mix)$""")
+    private val arithmeticLaunchKey = Regex("""^tests\.math\.arithmetic\.(easy|normal|hard|mix)$""")
     private val spellingLaunchKey = Regex("""^tests\.language\.(en|de|es|cs)\.spelling\.(latest|older)$""")
     private val flipcardsLaunchKey = Regex("""^tests\.language\.(en|de|es|cs)\.flipcards$""")
     private val practiceModes = listOf(
         PracticeMode.product_to_factors to "Najdi násobení",
         PracticeMode.factors_to_product to "Spočítej výsledek",
         PracticeMode.mix to "Mix",
+    )
+    private val arithmeticModes = listOf(
+        ArithmeticMode.easy to "Lehké",
+        ArithmeticMode.normal to "Normál",
+        ArithmeticMode.hard to "Těžké",
+        ArithmeticMode.mix to "Mix",
     )
     private val languageLabels = listOf(
         LearningLanguage.en to "Angličtina",
@@ -51,7 +58,7 @@ object TestMenuStore {
             mathLaunchKey.matchEntire(key)?.let { match ->
                 val testId = match.groupValues[1].toLongOrNull() ?: return@useConnection null
                 val mode = PracticeMode.valueOf(match.groupValues[2])
-                val test = tests.firstOrNull { it.id == testId && it.type != QuizTestType.english } ?: return@useConnection null
+                val test = tests.firstOrNull { it.id == testId && it.type == QuizTestType.multiplication } ?: return@useConnection null
                 return@useConnection TestMenuLaunchResponse(
                     key = key,
                     kind = TestMenuLaunchKind.multiplication,
@@ -67,6 +74,25 @@ object TestMenuStore {
                             statsByQuestionId = connection.readStats(userId, testId, PracticeDirection.factors_to_product),
                         ),
                     ),
+                )
+            }
+
+            arithmeticLaunchKey.matchEntire(key)?.let { match ->
+                val mode = ArithmeticMode.valueOf(match.groupValues[1])
+                val questions = ArithmeticQuestionGenerator.questions(mode)
+                return@useConnection TestMenuLaunchResponse(
+                    key = key,
+                    kind = TestMenuLaunchKind.arithmetic,
+                    settings = settings,
+                    selectedTest = QuizTest(
+                        id = -2,
+                        name = "Sčítání a odčítání",
+                        type = QuizTestType.arithmetic,
+                        questionCount = questions.size,
+                    ),
+                    arithmeticMode = mode,
+                    arithmeticQuestions = questions,
+                    arithmeticStats = ArithmeticStatsSnapshot(statsByKey = connection.readArithmeticStats(userId)),
                 )
             }
 
@@ -104,7 +130,7 @@ object TestMenuStore {
 
     private fun buildTree(tests: List<QuizTest>, hiddenKeys: Set<String>): TestMenuNode {
         val mathTests = tests
-            .filter { it.type != QuizTestType.english }
+            .filter { it.type == QuizTestType.multiplication }
             .map { test ->
                 val testKey = "tests.math.${test.id}"
                 TestMenuNode(
@@ -122,6 +148,21 @@ object TestMenuStore {
                     },
                 )
             }
+        val arithmeticKey = "tests.math.arithmetic"
+        val arithmeticNode = TestMenuNode(
+            key = arithmeticKey,
+            label = "Sčítání a odčítání",
+            visible = arithmeticKey !in hiddenKeys,
+            children = arithmeticModes.map { (mode, label) ->
+                val modeKey = "$arithmeticKey.${mode.name}"
+                TestMenuNode(
+                    key = modeKey,
+                    label = label,
+                    launchable = true,
+                    visible = modeKey !in hiddenKeys,
+                )
+            },
+        )
         val mathKey = "tests.math"
         val languageNodes = languageLabels.map { (language, label) ->
             val languageKey = "tests.language.${language.name}"
@@ -168,7 +209,7 @@ object TestMenuStore {
                     key = mathKey,
                     label = "Matematika",
                     visible = mathKey !in hiddenKeys,
-                    children = mathTests,
+                    children = mathTests + arithmeticNode,
                 ),
             ) + languageNodes,
         )
@@ -301,6 +342,16 @@ object StatsStore {
     fun recordSession(userId: Long, testId: Long, results: List<AnswerSessionResult>): Map<PracticeDirection, QuestionStatsSnapshot> = synchronized(lock) {
         Database.useConnection { connection ->
             connection.recordStatsSession(userId, testId, results)
+        }
+    }
+}
+
+object ArithmeticStore {
+    private val lock = Any()
+
+    fun recordSession(userId: Long, results: List<ArithmeticSessionResult>): ArithmeticStatsSnapshot = synchronized(lock) {
+        Database.useConnection { connection ->
+            connection.recordArithmeticStatsSession(userId, results)
         }
     }
 }

@@ -184,6 +184,17 @@ fun Application.module() {
                     call.respond(response)
                 }
             }
+            route("/arithmetic") {
+                post("/stats/session") {
+                    val user = Auth.requireUser(call) ?: return@post
+                    val request = runCatching { call.receive<ArithmeticSessionRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@post
+                    }
+                    call.respond(ArithmeticStore.recordSession(user.id, request.results))
+                }
+            }
             route("/settings") {
                 get {
                     val user = Auth.requireUser(call) ?: return@get

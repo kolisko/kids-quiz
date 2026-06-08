@@ -9,6 +9,7 @@ export interface WeightedSessionItem<T> {
   key: string;
   value: T;
   weight: number;
+  group?: string;
 }
 
 export class TestSessionEngine<T> {
@@ -19,7 +20,15 @@ export class TestSessionEngine<T> {
   private lastKey: string | null = null;
 
   start(items: WeightedSessionItem<T>[], limit: number): void {
-    this.selectedItems = this.pickUniqueWeighted(items, Math.max(1, limit));
+    this.startWithSelected(this.pickUniqueWeighted(items, Math.max(1, limit)));
+  }
+
+  startBalanced(items: WeightedSessionItem<T>[], limit: number): void {
+    this.startWithSelected(this.pickBalancedUniqueWeighted(items, Math.max(1, limit)));
+  }
+
+  private startWithSelected(items: WeightedSessionItem<T>[]): void {
+    this.selectedItems = items;
     this.queue = [...this.selectedItems];
     this.resultsByKey = new Map(
       this.selectedItems.map((item) => [item.key, { hadMistake: false, completed: false }]),
@@ -98,6 +107,36 @@ export class TestSessionEngine<T> {
     return selected;
   }
 
+  private pickBalancedUniqueWeighted(items: WeightedSessionItem<T>[], limit: number): WeightedSessionItem<T>[] {
+    const poolsByGroup = new Map<string, WeightedSessionItem<T>[]>();
+    items.forEach((item) => {
+      const group = item.group ?? 'default';
+      poolsByGroup.set(group, [...(poolsByGroup.get(group) ?? []), item]);
+    });
+
+    const selected: WeightedSessionItem<T>[] = [];
+    let groupQueue: string[] = [];
+    while (selected.length < limit) {
+      const availableGroups = Array.from(poolsByGroup.entries())
+        .filter(([, pool]) => pool.length > 0)
+        .map(([group]) => group);
+      if (availableGroups.length === 0) break;
+
+      groupQueue = groupQueue.filter((group) => availableGroups.includes(group));
+      if (groupQueue.length === 0) {
+        groupQueue = shuffled(availableGroups);
+      }
+
+      const group = groupQueue.shift() ?? availableGroups[0];
+      const pool = poolsByGroup.get(group) ?? [];
+      if (pool.length === 0) continue;
+      const index = weightedRandomIndex(pool);
+      const [item] = pool.splice(index, 1);
+      if (item) selected.push(item);
+    }
+    return selected;
+  }
+
   private nextQueueIndex(): number {
     if (this.queue.length <= 1) return 0;
     const candidates = this.queue
@@ -137,4 +176,13 @@ function randomInteger(min: number, max: number): number {
 
 function randomChoice<T>(items: T[], fallback: T): T {
   return items[Math.floor(Math.random() * items.length)] ?? fallback;
+}
+
+function shuffled<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
 }

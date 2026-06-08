@@ -298,6 +298,12 @@ object DatabaseMigrator {
                     recordMigration(26, "add_user_test_menu_visibility_settings")
                 }
             }
+            if (27 !in applied) {
+                connection.transaction {
+                    addArithmeticStats()
+                    recordMigration(27, "add_arithmetic_stats")
+                }
+            }
         }
         migrated = true
     }
@@ -814,6 +820,24 @@ object DatabaseMigrator {
                 UPDATE user_settings
                 SET hidden_test_menu_keys = '[]'
                 WHERE hidden_test_menu_keys IS NULL OR TRIM(hidden_test_menu_keys) = ''
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addArithmeticStats() {
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS arithmetic_stats (
+                    user_id INTEGER NOT NULL,
+                    item_key TEXT NOT NULL,
+                    correct INTEGER NOT NULL DEFAULT 0 CHECK(correct >= 0),
+                    wrong INTEGER NOT NULL DEFAULT 0 CHECK(wrong >= 0),
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    PRIMARY KEY(user_id, item_key)
+                )
                 """.trimIndent(),
             )
         }
@@ -3015,6 +3039,71 @@ fun Connection.readStats(userId: Long, testId: Long, direction: PracticeDirectio
     }
 }
 
+fun Connection.readArithmeticStats(userId: Long): Map<String, QuestionStats> {
+    return prepareStatement(
+        """
+        SELECT item_key, correct, wrong
+        FROM arithmetic_stats
+        WHERE user_id = ?
+        ORDER BY item_key
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
+        statement.executeQuery().use { rows ->
+            buildMap {
+                while (rows.next()) {
+                    put(
+                        rows.getString("item_key"),
+                        QuestionStats(
+                            correct = rows.getInt("correct"),
+                            wrong = rows.getInt("wrong"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun Connection.recordArithmeticStats(
+    userId: Long,
+    key: String,
+    correct: Boolean,
+): Pair<String, QuestionStats>? {
+    if (!ArithmeticQuestionGenerator.isValidKey(key)) {
+        return null
+    }
+    prepareStatement(
+        """
+        INSERT INTO arithmetic_stats(user_id, item_key, correct, wrong, updated_at)
+        VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, item_key) DO UPDATE SET
+            correct = arithmetic_stats.correct + excluded.correct,
+            wrong = arithmetic_stats.wrong + excluded.wrong,
+            updated_at = CURRENT_TIMESTAMP
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
+        statement.setString(2, key)
+        statement.setInt(3, if (correct) 1 else 0)
+        statement.setInt(4, if (correct) 0 else 1)
+        statement.executeUpdate()
+    }
+    return key to readArithmeticStat(userId, key)
+}
+
+fun Connection.recordArithmeticStatsSession(
+    userId: Long,
+    results: List<ArithmeticSessionResult>,
+): ArithmeticStatsSnapshot {
+    transaction {
+        results.forEach { result ->
+            recordArithmeticStats(userId, result.key, result.correct)
+        }
+    }
+    return ArithmeticStatsSnapshot(statsByKey = readArithmeticStats(userId))
+}
+
 fun Connection.recordStats(
     userId: Long,
     testId: Long,
@@ -3495,6 +3584,26 @@ private fun Connection.questionBelongsToTest(testId: Long, questionId: Long): Bo
         statement.setLong(1, testId)
         statement.setLong(2, questionId)
         statement.executeQuery().use { rows -> rows.next() }
+    }
+}
+
+private fun Connection.readArithmeticStat(userId: Long, key: String): QuestionStats {
+    return prepareStatement(
+        """
+        SELECT correct, wrong
+        FROM arithmetic_stats
+        WHERE user_id = ? AND item_key = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
+        statement.setString(2, key)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return QuestionStats()
+            QuestionStats(
+                correct = rows.getInt("correct"),
+                wrong = rows.getInt("wrong"),
+            )
+        }
     }
 }
 

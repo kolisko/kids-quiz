@@ -5,10 +5,12 @@ import { ArrowLeft, CarFront, Flag, Info, ListRestart, LogOut, LucideAngularModu
 import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
 
 type Screen = 'login' | 'start' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
-type QuizTestType = 'multiplication' | 'english';
-type ActiveGame = 'multiplication' | 'spelling' | 'flipcards';
+type QuizTestType = 'multiplication' | 'arithmetic' | 'english';
+type ActiveGame = 'multiplication' | 'arithmetic' | 'spelling' | 'flipcards';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
 type PracticeMode = PracticeDirection | 'mix';
+type ArithmeticMode = 'easy' | 'normal' | 'hard' | 'mix';
+type ArithmeticDifficulty = 'easy' | 'normal' | 'hard';
 type SpellingSessionMode = 'latest' | 'older';
 type LearningLanguage = 'en' | 'de' | 'es' | 'cs';
 type TtsStatus = 'checking' | 'supported' | 'unsupported';
@@ -170,7 +172,7 @@ interface TestMenuNode {
   visible: boolean;
 }
 
-type TestMenuLaunchKind = 'multiplication' | 'spelling' | 'flipcards';
+type TestMenuLaunchKind = 'multiplication' | 'arithmetic' | 'spelling' | 'flipcards';
 
 interface TestMenuLaunchResponse {
   key: string;
@@ -179,9 +181,12 @@ interface TestMenuLaunchResponse {
   selectedTest?: QuizTest | null;
   selectedLanguage?: LearningLanguage | null;
   practiceMode?: PracticeMode | null;
+  arithmeticMode?: ArithmeticMode | null;
   spellingMode?: SpellingSessionMode | null;
   questions?: Question[];
   mathStats?: Record<PracticeDirection, QuestionStatsSnapshot>;
+  arithmeticQuestions?: ArithmeticQuestion[];
+  arithmeticStats?: ArithmeticStatsSnapshot | null;
   spellingSession?: SpellingSession | null;
   spellingStats?: SpellingStatsSnapshot | null;
   flipcardStats?: FlipcardStatsSnapshot | null;
@@ -194,6 +199,17 @@ interface QuestionStats {
 
 interface QuestionStatsSnapshot {
   statsByQuestionId: Record<string, QuestionStats>;
+}
+
+interface ArithmeticQuestion {
+  key: string;
+  text: string;
+  answer: string;
+  difficulty: ArithmeticDifficulty;
+}
+
+interface ArithmeticStatsSnapshot {
+  statsByKey: Record<string, QuestionStats>;
 }
 
 interface AuthStatusResponse {
@@ -446,6 +462,15 @@ interface MathSessionSaveRequest {
   results: MathSessionSaveResult[];
 }
 
+interface ArithmeticSessionSaveResult {
+  key: string;
+  correct: boolean;
+}
+
+interface ArithmeticSessionSaveRequest {
+  results: ArithmeticSessionSaveResult[];
+}
+
 interface WordSessionSaveResult {
   word: string;
   correct: boolean;
@@ -562,11 +587,15 @@ export class AppComponent implements OnInit, OnDestroy {
   settingsLanguage: LearningLanguage = 'en';
   activeGame: ActiveGame = 'multiplication';
   selectedMode: PracticeMode | null = null;
+  arithmeticMode: ArithmeticMode | null = null;
   questions: Question[] = [];
+  arithmeticQuestions: ArithmeticQuestion[] = [];
+  currentArithmeticQuestionText: string | null = null;
   serverStats: Record<PracticeDirection, Record<string, QuestionStats>> = {
     product_to_factors: {},
     factors_to_product: {},
   };
+  arithmeticStats: Record<string, QuestionStats> = {};
   spellingSetInputsByLanguage: Record<LearningLanguage, string[]> = { en: [''], de: [''], es: [''], cs: [''] };
   spellingSetsByLanguage: Record<LearningLanguage, SpellingSet[]> = { en: [], de: [], es: [], cs: [] };
   spellingAudioSetStatusesByLanguage: Record<LearningLanguage, Record<number, SpellingAudioSetStatus>> = { en: {}, de: {}, es: {}, cs: {} };
@@ -599,7 +628,6 @@ export class AppComponent implements OnInit, OnDestroy {
   answerVisible = false;
   timedOut = false;
   secondsLeft = this.settings.secondsLimit;
-  flash: string | null = null;
   surprise = surprises[0];
   ttsStatus: TtsStatus = 'checking';
   ttsDiagnostics: TtsDiagnostics = createTtsDiagnostics('Kontrola TTS jeste neprobehla.', null);
@@ -651,10 +679,10 @@ export class AppComponent implements OnInit, OnDestroy {
   spellingAnswerWordActive = false;
 
   private readonly mathSession = new TestSessionEngine<MathSessionItem>();
+  private readonly arithmeticSession = new TestSessionEngine<number>();
   private readonly spellingSession = new TestSessionEngine<number>();
   private readonly flipcardSession = new TestSessionEngine<number>();
   private timerId: number | null = null;
-  private flashTimerId: number | null = null;
   private ttsVoicesTimerId: number | null = null;
   private ttsVoicesChangedHandler: (() => void) | null = null;
   private backendAudio: HTMLAudioElement | null = null;
@@ -681,6 +709,10 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.currentIndex === null ? null : this.questions[this.currentIndex] ?? null;
   }
 
+  get currentArithmeticQuestion(): ArithmeticQuestion | null {
+    return this.currentIndex === null ? null : this.arithmeticQuestions[this.currentIndex] ?? null;
+  }
+
   get currentSpellingWord(): SpellingWord | null {
     return this.spellingWordIndex === null ? null : this.spellingWords[this.spellingWordIndex] ?? null;
   }
@@ -692,6 +724,7 @@ export class AppComponent implements OnInit, OnDestroy {
   get hasCurrentPrompt(): boolean {
     if (this.activeGame === 'spelling') return this.currentSpellingWord !== null;
     if (this.activeGame === 'flipcards') return this.currentFlipcardWord !== null;
+    if (this.activeGame === 'arithmetic') return this.currentArithmeticQuestion !== null;
     return this.currentQuestion !== null;
   }
 
@@ -734,10 +767,13 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.activeGame === 'spelling') {
       return 'Poslechni si slovo';
     }
+    if (this.activeGame === 'arithmetic') {
+      return this.currentArithmeticQuestionText ?? this.currentArithmeticQuestion?.text ?? '';
+    }
     if (!this.currentQuestion) return '';
     return this.currentDirection === 'factors_to_product'
-      ? this.currentFactorQuestion ?? ''
-      : this.currentQuestion.q;
+      ? formatMultiplicationExpression(this.currentFactorQuestion ?? '')
+      : formatMultiplicationExpression(this.currentQuestion.q);
   }
 
   get currentFlipcardImageUrl(): string | null {
@@ -781,10 +817,13 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.activeGame === 'spelling') {
       return formatSpellingAnswer(this.currentSpellingWord?.text ?? '', this.selectedLanguage);
     }
+    if (this.activeGame === 'arithmetic') {
+      return this.currentArithmeticQuestion?.answer ?? '';
+    }
     if (!this.currentQuestion) return '';
     return this.currentDirection === 'factors_to_product'
-      ? this.currentQuestion.q
-      : this.currentQuestion.answers.join(', ');
+      ? formatMultiplicationExpression(this.currentQuestion.q)
+      : this.currentQuestion.answers.map(formatMultiplicationExpression).join(', ');
   }
 
   get spellingAnswerTextClickable(): boolean {
@@ -793,6 +832,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentAnswerHint(): string | null {
     if (this.activeGame === 'spelling') return null;
+    if (this.activeGame === 'arithmetic') return null;
     if (this.currentDirection !== 'product_to_factors') return null;
     const count = this.currentQuestion?.answers.length ?? 0;
     return count > 1 ? answerCountLabel(count) : null;
@@ -801,6 +841,7 @@ export class AppComponent implements OnInit, OnDestroy {
   get scoreGoal(): number {
     if (this.activeGame === 'spelling') return this.spellingSession.selectedCount;
     if (this.activeGame === 'flipcards') return this.flipcardSession.selectedCount;
+    if (this.activeGame === 'arithmetic') return this.arithmeticSession.selectedCount;
     return this.mathSession.selectedCount || this.settings.targetScore;
   }
 
@@ -1092,7 +1133,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.cancelSpellingAudioSetPolling();
     this.cancelTranslationBackfillPolling();
     this.clearTimer();
-    this.clearFlashTimer();
     this.clearTtsVoiceCheck();
     this.stopBackendAudio();
     this.destroyTeslaMp3Audio();
@@ -1143,8 +1183,12 @@ export class AppComponent implements OnInit, OnDestroy {
       this.currentUser = null;
       this.selectedTest = null;
       this.selectedMode = null;
+      this.arithmeticMode = null;
       this.questions = [];
+      this.arithmeticQuestions = [];
+      this.currentArithmeticQuestionText = null;
       this.serverStats = emptyStatsByDirection();
+      this.arithmeticStats = {};
       this.spellingStats = {};
       this.flipcardStats = {};
       this.authLoading = false;
@@ -1181,6 +1225,8 @@ export class AppComponent implements OnInit, OnDestroy {
       this.applySettings(launch.settings);
       if (launch.kind === 'multiplication') {
         this.startLaunchedMath(launch);
+      } else if (launch.kind === 'arithmetic') {
+        this.startLaunchedArithmetic(launch);
       } else if (launch.kind === 'spelling') {
         await this.startLaunchedSpelling(launch);
       } else if (launch.kind === 'flipcards') {
@@ -1206,6 +1252,23 @@ export class AppComponent implements OnInit, OnDestroy {
     };
     void this.startTeslaMp3AudioForTest();
     this.startMathSession();
+    this.setScreen('play');
+    this.pickQuestion();
+  }
+
+  private startLaunchedArithmetic(launch: TestMenuLaunchResponse): void {
+    this.activeGame = 'arithmetic';
+    this.selectedTest = launch.selectedTest ?? {
+      id: -2,
+      name: 'Sčítání a odčítání',
+      type: 'arithmetic',
+      questionCount: 0,
+    };
+    this.arithmeticMode = launch.arithmeticMode ?? 'mix';
+    this.arithmeticQuestions = launch.arithmeticQuestions ?? [];
+    this.arithmeticStats = launch.arithmeticStats?.statsByKey ?? {};
+    void this.startTeslaMp3AudioForTest();
+    this.startArithmeticSession();
     this.setScreen('play');
     this.pickQuestion();
   }
@@ -1419,7 +1482,6 @@ export class AppComponent implements OnInit, OnDestroy {
     if (index === null) return;
     this.recordSessionOutcome('wrong');
     this.score = this.currentSessionCompletedCount();
-    this.showPenalty();
     this.pickQuestion();
   }
 
@@ -2312,7 +2374,6 @@ export class AppComponent implements OnInit, OnDestroy {
 
   returnToTestSelection(): void {
     this.clearTimer();
-    this.clearFlashTimer();
     this.ttsDetailsVisible = false;
     this.resetRoundState();
     this.selectedTest = null;
@@ -2572,6 +2633,24 @@ export class AppComponent implements OnInit, OnDestroy {
     });
     this.mathSession.start(candidates, this.settings.targetScore);
     this.score = this.mathSession.completedCount;
+  }
+
+  private startArithmeticSession(): void {
+    this.arithmeticSession.startBalanced(
+      this.arithmeticQuestions.map((question, index) => ({
+        key: question.key,
+        value: index,
+        weight: statsWeight(this.arithmeticStats[question.key]),
+        group: this.arithmeticSelectionGroup(question),
+      })),
+      this.settings.targetScore,
+    );
+    this.score = this.arithmeticSession.completedCount;
+  }
+
+  private arithmeticSelectionGroup(question: ArithmeticQuestion): string {
+    const operation = question.key.startsWith('add:') ? 'add' : 'sub';
+    return this.arithmeticMode === 'mix' ? `${question.difficulty}:${operation}` : operation;
   }
 
   private startSpellingSession(): void {
@@ -3104,6 +3183,10 @@ export class AppComponent implements OnInit, OnDestroy {
       this.pickFlipcardWord();
       return;
     }
+    if (this.activeGame === 'arithmetic') {
+      this.pickArithmeticQuestion();
+      return;
+    }
     if (this.questions.length === 0) {
       this.currentIndex = null;
       this.setScreen('play');
@@ -3123,6 +3206,36 @@ export class AppComponent implements OnInit, OnDestroy {
     this.timedOut = false;
     this.secondsLeft = this.settings.secondsLimit;
     this.startTimer();
+  }
+
+  private pickArithmeticQuestion(): void {
+    if (this.arithmeticQuestions.length === 0) {
+      this.currentIndex = null;
+      this.setScreen('play');
+      return;
+    }
+
+    const nextIndex = this.arithmeticSession.next();
+    if (nextIndex === null) {
+      void this.finishSession();
+      return;
+    }
+
+    this.currentIndex = nextIndex;
+    this.currentArithmeticQuestionText = this.displayArithmeticQuestion(this.arithmeticQuestions[nextIndex]);
+    this.answerVisible = false;
+    this.timedOut = false;
+    this.secondsLeft = this.settings.secondsLimit;
+    this.startTimer();
+  }
+
+  private displayArithmeticQuestion(question: ArithmeticQuestion | undefined): string {
+    if (!question || !question.key.startsWith('add:')) return question?.text ?? '';
+    const [, firstRaw, secondRaw] = question.key.split(':');
+    const first = Number(firstRaw);
+    const second = Number(secondRaw);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) return question.text;
+    return Math.random() < 0.5 ? `${first} + ${second}` : `${second} + ${first}`;
   }
 
   private pickSpellingWord(): void {
@@ -3226,7 +3339,6 @@ export class AppComponent implements OnInit, OnDestroy {
       this.flipcardSession.record('wrong');
       this.score = this.flipcardSession.completedCount;
       this.flipcardAdvancing = false;
-      this.showPenalty();
       this.pickQuestion();
       return;
     }
@@ -3365,7 +3477,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.revealAnswer();
     this.recordSessionOutcome('wrong');
     this.score = this.currentSessionCompletedCount();
-    this.showPenalty();
     this.render();
   }
 
@@ -3374,7 +3485,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.flipcardAdvancing = true;
     this.flipcardSession.record('wrong');
     this.score = this.flipcardSession.completedCount;
-    this.showPenalty();
     this.render();
     await this.playFlipcardWordAudio(this.flipcardWords[index]);
     this.flipcardAdvancing = false;
@@ -3398,18 +3508,24 @@ export class AppComponent implements OnInit, OnDestroy {
       this.flipcardSession.record(outcome);
       return;
     }
+    if (this.activeGame === 'arithmetic') {
+      this.arithmeticSession.record(outcome);
+      return;
+    }
     this.mathSession.record(outcome);
   }
 
   private currentSessionCompletedCount(): number {
     if (this.activeGame === 'spelling') return this.spellingSession.completedCount;
     if (this.activeGame === 'flipcards') return this.flipcardSession.completedCount;
+    if (this.activeGame === 'arithmetic') return this.arithmeticSession.completedCount;
     return this.mathSession.completedCount;
   }
 
   private currentSessionFinished(): boolean {
     if (this.activeGame === 'spelling') return this.spellingSession.finished;
     if (this.activeGame === 'flipcards') return this.flipcardSession.finished;
+    if (this.activeGame === 'arithmetic') return this.arithmeticSession.finished;
     return this.mathSession.finished;
   }
 
@@ -3443,6 +3559,10 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.saveFlipcardSessionResults();
       return;
     }
+    if (this.activeGame === 'arithmetic') {
+      await this.saveArithmeticSessionResults();
+      return;
+    }
     await this.saveMathSessionResults();
   }
 
@@ -3468,6 +3588,19 @@ export class AppComponent implements OnInit, OnDestroy {
       product_to_factors: byDirection.product_to_factors?.statsByQuestionId ?? this.serverStats.product_to_factors,
       factors_to_product: byDirection.factors_to_product?.statsByQuestionId ?? this.serverStats.factors_to_product,
     };
+  }
+
+  private async saveArithmeticSessionResults(): Promise<void> {
+    const results: ArithmeticSessionSaveResult[] = this.arithmeticSession.results().map((result) => ({
+      key: result.key,
+      correct: !result.hadMistake,
+    }));
+    if (results.length === 0) return;
+    const response = await this.apiPost<ArithmeticStatsSnapshot>(
+      'arithmetic/stats/session',
+      { results } satisfies ArithmeticSessionSaveRequest,
+    );
+    this.arithmeticStats = response.statsByKey ?? this.arithmeticStats;
   }
 
   private async saveSpellingSessionResults(): Promise<void> {
@@ -3509,6 +3642,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.currentIndex = null;
     this.spellingWordIndex = null;
     this.flipcardWordIndex = null;
+    this.arithmeticMode = null;
+    this.arithmeticQuestions = [];
+    this.currentArithmeticQuestionText = null;
+    this.arithmeticStats = {};
     this.flipcardQueue = [];
     this.flipcardOptions = [];
     this.flipcardOptionsByIndex = [];
@@ -3532,10 +3669,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearFlipcardPreloads();
     this.answerVisible = false;
     this.timedOut = false;
-    this.flash = null;
     this.secondsLeft = this.settings.secondsLimit;
     this.finishingSession = false;
     this.mathSession.clear();
+    this.arithmeticSession.clear();
     this.spellingSession.clear();
     this.flipcardSession.clear();
   }
@@ -4190,17 +4327,6 @@ export class AppComponent implements OnInit, OnDestroy {
     this.render();
   }
 
-  private showPenalty(): void {
-    this.flash = '-1';
-    this.clearFlashTimer();
-    this.flashTimerId = window.setTimeout(() => {
-      this.flash = null;
-      this.flashTimerId = null;
-      this.render();
-    }, 900);
-    this.render();
-  }
-
   playCelebrationTap(): void {
     if (this.celebrationTapCount >= this.settings.celebrationTapLimit) return;
     this.celebrationTapCount += 1;
@@ -4444,13 +4570,6 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.timerId !== null) {
       window.clearInterval(this.timerId);
       this.timerId = null;
-    }
-  }
-
-  private clearFlashTimer(): void {
-    if (this.flashTimerId !== null) {
-      window.clearTimeout(this.flashTimerId);
-      this.flashTimerId = null;
     }
   }
 
@@ -5306,6 +5425,10 @@ function formatSpellingAnswer(word: string, language: LearningLanguage): string 
   return spellingLetterGroups(word)
     .map((letters) => letters.map((letter) => letter.toLocaleUpperCase(localeForLanguage(language))).join('-'))
     .join('  ');
+}
+
+function formatMultiplicationExpression(value: string): string {
+  return value.replace(/\*/g, '·');
 }
 
 function formatSpellingSpeech(word: string, language: LearningLanguage): string {

@@ -16,8 +16,24 @@ enum class PracticeMode {
 }
 
 @Serializable
+enum class ArithmeticMode {
+    easy,
+    normal,
+    hard,
+    mix,
+}
+
+@Serializable
+enum class ArithmeticDifficulty {
+    easy,
+    normal,
+    hard,
+}
+
+@Serializable
 enum class QuizTestType {
     multiplication,
+    arithmetic,
     english,
 }
 
@@ -95,6 +111,11 @@ data class QuestionStats(
 @Serializable
 data class QuestionStatsSnapshot(
     val statsByQuestionId: Map<Long, QuestionStats> = emptyMap(),
+)
+
+@Serializable
+data class ArithmeticStatsSnapshot(
+    val statsByKey: Map<String, QuestionStats> = emptyMap(),
 )
 
 @Serializable
@@ -209,6 +230,7 @@ data class TestMenuLaunchRequest(
 @Serializable
 enum class TestMenuLaunchKind {
     multiplication,
+    arithmetic,
     spelling,
     flipcards,
 }
@@ -221,9 +243,12 @@ data class TestMenuLaunchResponse(
     val selectedTest: QuizTest? = null,
     val selectedLanguage: LearningLanguage? = null,
     val practiceMode: PracticeMode? = null,
+    val arithmeticMode: ArithmeticMode? = null,
     val spellingMode: SpellingSessionMode? = null,
     val questions: List<Question> = emptyList(),
     val mathStats: Map<PracticeDirection, QuestionStatsSnapshot> = emptyMap(),
+    val arithmeticQuestions: List<ArithmeticQuestion> = emptyList(),
+    val arithmeticStats: ArithmeticStatsSnapshot? = null,
     val spellingSession: SpellingSession? = null,
     val spellingStats: SpellingStatsSnapshot? = null,
     val flipcardStats: FlipcardStatsSnapshot? = null,
@@ -289,6 +314,25 @@ data class AnswerSessionResult(
 @Serializable
 data class AnswerSessionRequest(
     val results: List<AnswerSessionResult> = emptyList(),
+)
+
+@Serializable
+data class ArithmeticQuestion(
+    val key: String,
+    val text: String,
+    val answer: String,
+    val difficulty: ArithmeticDifficulty,
+)
+
+@Serializable
+data class ArithmeticSessionResult(
+    val key: String,
+    val correct: Boolean,
+)
+
+@Serializable
+data class ArithmeticSessionRequest(
+    val results: List<ArithmeticSessionResult> = emptyList(),
 )
 
 @Serializable

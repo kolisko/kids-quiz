@@ -186,13 +186,6 @@ button,
   height: 3.65rem;
 }
 
-.flash {
-  position: absolute;
-  margin-left: 0.5rem;
-  color: #dc2626;
-  animation: rise 900ms ease-out forwards;
-}
-
 .top-actions {
   display: flex;
   gap: 0.5rem;
