@@ -1199,19 +1199,25 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   selectTestMenuNode(node: TestMenuNode): void {
-    if (node.children.length > 0) {
-      this.testMenuPath = [...this.testMenuPath, node.key];
-      this.render();
-      return;
-    }
     if (node.launchable) {
       void this.launchTestMenuNode(node);
+      return;
+    }
+
+    if (node.children.length > 0) {
+      const destination = this.resolveTestMenuDestination([...this.testMenuPath, node.key]);
+      if (destination.launchNode) {
+        void this.launchTestMenuNode(destination.launchNode);
+        return;
+      }
+      this.testMenuPath = destination.path;
+      this.render();
     }
   }
 
   backInTestMenu(): void {
     if (this.testMenuPath.length === 0) return;
-    this.testMenuPath = this.testMenuPath.slice(0, -1);
+    this.testMenuPath = this.previousVisibleTestMenuPath(this.testMenuPath);
     this.render();
   }
 
@@ -2597,6 +2603,42 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private collectTestMenuNodeKeys(node: TestMenuNode): string[] {
     return [node.key, ...node.children.flatMap((child) => this.collectTestMenuNodeKeys(child))];
+  }
+
+  private resolveTestMenuDestination(path: string[]): { path: string[]; launchNode: TestMenuNode | null } {
+    const resolvedPath = this.validTestMenuPath(path);
+    let node = this.testMenuNodeForPath(resolvedPath);
+    const visited = new Set<string>();
+    while (node && node.children.length === 1) {
+      const child = node.children[0];
+      if (!child || visited.has(child.key)) break;
+      visited.add(child.key);
+      if (child.launchable) {
+        return { path: resolvedPath, launchNode: child };
+      }
+      resolvedPath.push(child.key);
+      node = child;
+    }
+    return { path: resolvedPath, launchNode: null };
+  }
+
+  private previousVisibleTestMenuPath(path: string[]): string[] {
+    let candidate = this.validTestMenuPath(path).slice(0, -1);
+    while (candidate.length > 0) {
+      const node = this.testMenuNodeForPath(candidate);
+      if (!node || node.children.length !== 1) break;
+      candidate = candidate.slice(0, -1);
+    }
+    return candidate;
+  }
+
+  private testMenuNodeForPath(path: string[]): TestMenuNode | null {
+    let node = this.testMenuRoot;
+    for (const key of path) {
+      node = node?.children.find((child) => child.key === key) ?? null;
+      if (!node) return null;
+    }
+    return node;
   }
 
   private validTestMenuPath(path: string[]): string[] {
