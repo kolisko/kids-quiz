@@ -132,7 +132,7 @@
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
         <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
       </button>
-      <h1>Sbírka fumfíků</h1>
+      <h1>Sbírka {{ trophies.length }} fumfíků</h1>
       <span class="header-left-slot" aria-hidden="true"></span>
     </div>
     <p class="settings-note" *ngIf="trophiesLoading">Načítám fumfíky...</p>
