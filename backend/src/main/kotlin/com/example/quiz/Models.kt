@@ -351,6 +351,7 @@ data class SpellingWord(
     val text: String,
     val normalized: String,
     val conceptKey: String? = null,
+    val imageReported: Boolean = false,
 )
 
 @Serializable

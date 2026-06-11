@@ -3215,14 +3215,24 @@ private fun Connection.readSpellingWords(setId: Long, language: LearningLanguage
                 AND flipcard_translations.normalized_word = spelling_words.normalized_word
                 ORDER BY flipcard_translations.sort_order, flipcard_translations.id
                 LIMIT 1
-            ) AS concept_key
+            ) AS concept_key,
+            (
+                SELECT flipcard_concepts.image_reported
+                FROM flipcard_translations
+                INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
+                WHERE flipcard_translations.language = ?
+                AND flipcard_translations.normalized_word = spelling_words.normalized_word
+                ORDER BY flipcard_translations.sort_order, flipcard_translations.id
+                LIMIT 1
+            ) AS image_reported
         FROM spelling_words
         WHERE set_id = ?
         ORDER BY sort_order, id
         """.trimIndent(),
     ).use { statement ->
         statement.setString(1, language.name)
-        statement.setLong(2, setId)
+        statement.setString(2, language.name)
+        statement.setLong(3, setId)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {
@@ -3232,6 +3242,7 @@ private fun Connection.readSpellingWords(setId: Long, language: LearningLanguage
                             text = rows.getString("word"),
                             normalized = rows.getString("normalized_word"),
                             conceptKey = rows.getString("concept_key"),
+                            imageReported = rows.getInt("image_reported") == 1,
                         ),
                     )
                 }
@@ -3255,7 +3266,16 @@ private fun Connection.readAllSpellingWords(language: LearningLanguage): List<Sp
                 AND flipcard_translations.normalized_word = spelling_words.normalized_word
                 ORDER BY flipcard_translations.sort_order, flipcard_translations.id
                 LIMIT 1
-            ) AS concept_key
+            ) AS concept_key,
+            (
+                SELECT flipcard_concepts.image_reported
+                FROM flipcard_translations
+                INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
+                WHERE flipcard_translations.language = ?
+                AND flipcard_translations.normalized_word = spelling_words.normalized_word
+                ORDER BY flipcard_translations.sort_order, flipcard_translations.id
+                LIMIT 1
+            ) AS image_reported
         FROM spelling_words
         INNER JOIN (
             SELECT MIN(id) AS id
@@ -3271,6 +3291,7 @@ private fun Connection.readAllSpellingWords(language: LearningLanguage): List<Sp
         statement.setString(1, language.name)
         statement.setString(2, language.name)
         statement.setString(3, language.name)
+        statement.setString(4, language.name)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {
@@ -3280,6 +3301,7 @@ private fun Connection.readAllSpellingWords(language: LearningLanguage): List<Sp
                             text = rows.getString("word"),
                             normalized = rows.getString("normalized_word"),
                             conceptKey = rows.getString("concept_key"),
+                            imageReported = rows.getInt("image_reported") == 1,
                         ),
                     )
                 }

@@ -766,6 +766,17 @@
           <div class="flipcard-image-loader" *ngIf="!spellingImageLoaded">
             {{ spellingImageError ?? 'Načítám obrázek...' }}
           </div>
+          <button
+            class="icon-button image-report-button flipcard-image-report-button spelling-image-report-button"
+            type="button"
+            (click)="toggleCurrentSpellingImageReport($event)"
+            [disabled]="currentSpellingImageReportSaving"
+            [class.image-report-button-active]="currentSpellingImageReported"
+            [title]="currentSpellingImageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek'"
+            [attr.aria-label]="currentSpellingImageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek'"
+            [attr.aria-pressed]="currentSpellingImageReported">
+            <lucide-icon [img]="flagIcon" [size]="22"></lucide-icon>
+          </button>
           <img
             *ngIf="currentSpellingImageUrl"
             [class.flipcard-image-hidden]="!spellingImageLoaded"

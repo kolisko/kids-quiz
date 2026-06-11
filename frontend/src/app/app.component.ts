@@ -270,6 +270,7 @@ interface SpellingWord {
   text: string;
   normalized: string;
   conceptKey?: string | null;
+  imageReported?: boolean;
 }
 
 interface SpellingAudioWordResponse {
@@ -806,6 +807,17 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get currentFlipcardImageReportSaving(): boolean {
     const conceptKey = this.currentFlipcardWord?.conceptKey;
+    return conceptKey ? Boolean(this.imageReportSaving[conceptKey]) : false;
+  }
+
+  get currentSpellingImageReported(): boolean {
+    const conceptKey = this.currentSpellingConceptKey;
+    if (!conceptKey) return false;
+    return this.imageReportedForConcept(conceptKey);
+  }
+
+  get currentSpellingImageReportSaving(): boolean {
+    const conceptKey = this.currentSpellingConceptKey;
     return conceptKey ? Boolean(this.imageReportSaving[conceptKey]) : false;
   }
 
@@ -1766,6 +1778,13 @@ export class AppComponent implements OnInit, OnDestroy {
     await this.setFlipcardImageReported(word.conceptKey, !word.imageReported);
   }
 
+  async toggleCurrentSpellingImageReport(event?: Event): Promise<void> {
+    event?.stopPropagation();
+    const conceptKey = this.currentSpellingConceptKey;
+    if (!conceptKey) return;
+    await this.setFlipcardImageReported(conceptKey, !this.currentSpellingImageReported);
+  }
+
   toggleAssetTranslationInfo(asset: FlipcardAsset): void {
     const key = this.assetTranslationInfoKeyFor(asset);
     this.assetTranslationInfoKey = this.assetTranslationInfoKey === key ? null : key;
@@ -2006,6 +2025,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private imageReportedForConcept(conceptKey: string): boolean {
+    const spellingWord = this.spellingWords.find((word) => word.conceptKey === conceptKey);
+    if (spellingWord) return spellingWord.imageReported ?? false;
     const asset = this.flipcardAssets.find((item) => item.conceptKey === conceptKey);
     if (asset) return asset.imageReported;
     const current = this.flipcardWords.find((word) => word.conceptKey === conceptKey);
@@ -2017,6 +2038,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private applyFlipcardImageReport(response: FlipcardImageReportResponse): void {
+    this.spellingWords = this.spellingWords.map((word) => (
+      word.conceptKey === response.conceptKey ? { ...word, imageReported: response.imageReported } : word
+    ));
     const updateWord = (word: FlipcardWord): FlipcardWord => (
       word.conceptKey === response.conceptKey ? { ...word, imageReported: response.imageReported } : word
     );
