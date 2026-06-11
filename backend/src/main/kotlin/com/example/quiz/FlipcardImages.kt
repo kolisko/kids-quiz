@@ -48,20 +48,22 @@ object FlipcardImageService {
         .connectTimeout(Duration.ofSeconds(20))
         .build()
 
-    fun status(rawWord: String): FlipcardImageResponse? {
+    fun status(rawWord: String, knownImageVersion: Long? = null): FlipcardImageResponse? {
         val word = flipcardImageWord(rawWord) ?: return null
         val ready = Files.isRegularFile(imagePath(word))
         val job = ArtifactGenerationQueue.snapshot(imageJobKey(word))
+        val activeJobStatus = job?.status?.takeIf { it == ArtifactJobStatus.queued || it == ArtifactJobStatus.generating }
         return FlipcardImageResponse(
             word = word.text,
             normalized = word.normalized,
             status = when {
+                activeJobStatus != null -> activeJobStatus.toFlipcardImageStatus()
                 ready -> FlipcardImageStatus.ready
                 job?.status == ArtifactJobStatus.ready -> FlipcardImageStatus.missing
                 job != null -> job.status.toFlipcardImageStatus()
                 else -> FlipcardImageStatus.missing
             },
-            imageUrl = if (ready) imageUrl(word) else null,
+            imageUrl = if (ready) imageUrl(word, knownImageVersion) else null,
             error = if (ready) null else job?.error,
         )
     }
@@ -137,6 +139,7 @@ object FlipcardImageService {
             ?: throw FlipcardImageException("image_generation_failed:missing_image")
         Files.write(tempPath, Base64.getDecoder().decode(encoded))
         Files.move(tempPath, outputPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        Database.useConnection { it.incrementFlipcardImageVersion(word.normalized) }
     }
 
     private fun imagePath(word: FlipcardWord): Path {
@@ -154,13 +157,12 @@ object FlipcardImageService {
         return "flipcard_image:${imageCacheKey(word)}"
     }
 
-    private fun imageUrl(word: FlipcardWord): String {
-        return "/api/flipcards/images/${urlEncodePathSegment(word.text)}.${imageFormat()}?v=${imageCacheKey(word)}-${imageVersion(word)}"
+    private fun imageUrl(word: FlipcardWord, knownImageVersion: Long? = null): String {
+        return "/api/flipcards/images/${urlEncodePathSegment(word.text)}.${imageFormat()}?v=${imageCacheKey(word)}-${imageVersion(word, knownImageVersion)}"
     }
 
-    private fun imageVersion(word: FlipcardWord): Long {
-        val path = imagePath(word)
-        return runCatching { Files.getLastModifiedTime(path).toMillis() }.getOrDefault(0L)
+    private fun imageVersion(word: FlipcardWord, knownImageVersion: Long? = null): Long {
+        return knownImageVersion ?: Database.useConnection { it.readFlipcardImageVersion(word.normalized) } ?: 1L
     }
 
     private fun imageModel(): String = System.getenv("OPENAI_IMAGE_MODEL")?.takeIf { it.isNotBlank() }

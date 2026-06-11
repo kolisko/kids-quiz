@@ -12,3 +12,4 @@ backend/build/
 .quiz-questions.json
 *.sqlite
 *.sqlite-*
+.local-data/

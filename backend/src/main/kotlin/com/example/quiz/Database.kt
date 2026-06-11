@@ -304,6 +304,12 @@ object DatabaseMigrator {
                     recordMigration(27, "add_arithmetic_stats")
                 }
             }
+            if (28 !in applied) {
+                connection.transaction {
+                    addFlipcardImageVersion()
+                    recordMigration(28, "add_flipcard_image_version")
+                }
+            }
         }
         migrated = true
     }
@@ -781,6 +787,28 @@ object DatabaseMigrator {
                 UPDATE flipcard_concepts
                 SET image_reported = 0
                 WHERE image_reported IS NULL OR image_reported NOT IN (0, 1)
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addFlipcardImageVersion() {
+        createStatement().use { statement ->
+            val columns = statement.executeQuery("PRAGMA table_info(flipcard_concepts)").use { rows ->
+                buildList {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            if ("image_version" !in columns) {
+                statement.executeUpdate(
+                    "ALTER TABLE flipcard_concepts ADD COLUMN image_version INTEGER NOT NULL DEFAULT 1 CHECK(image_version >= 1)",
+                )
+            }
+            statement.executeUpdate(
+                """
+                UPDATE flipcard_concepts
+                SET image_version = 1
+                WHERE image_version IS NULL OR image_version < 1
                 """.trimIndent(),
             )
         }
@@ -1434,6 +1462,7 @@ object DatabaseMigrator {
                     concept_key TEXT NOT NULL UNIQUE,
                     sort_order INTEGER NOT NULL,
                     image_reported INTEGER NOT NULL DEFAULT 0 CHECK(image_reported IN (0, 1)),
+                    image_version INTEGER NOT NULL DEFAULT 1 CHECK(image_version >= 1),
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
@@ -2722,6 +2751,30 @@ fun Connection.setFlipcardImageReported(conceptKey: String, reported: Boolean): 
     )
 }
 
+fun Connection.readFlipcardImageVersion(conceptKey: String): Long? {
+    return prepareStatement("SELECT image_version FROM flipcard_concepts WHERE concept_key = ?").use { statement ->
+        statement.setString(1, conceptKey)
+        statement.executeQuery().use { rows ->
+            if (rows.next()) rows.getLong("image_version") else null
+        }
+    }
+}
+
+fun Connection.incrementFlipcardImageVersion(conceptKey: String): Long? {
+    prepareStatement(
+        """
+        UPDATE flipcard_concepts
+        SET image_version = image_version + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE concept_key = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, conceptKey)
+        statement.executeUpdate()
+    }
+    return readFlipcardImageVersion(conceptKey)
+}
+
 fun Connection.readFlipcardTranslationBackfillProgress(language: LearningLanguage): FlipcardTranslationBackfillProgress {
     val total = prepareStatement("SELECT COUNT(*) FROM flipcard_concepts").use { statement ->
         statement.executeQuery().use { rows ->
@@ -2888,7 +2941,7 @@ fun Connection.readFlipcardSession(limit: Int, language: LearningLanguage = Lear
     val safeLimit = limit.coerceAtLeast(1)
     return prepareStatement(
         """
-        SELECT flipcard_translations.word, flipcard_translations.normalized_word, flipcard_concepts.concept_key, flipcard_concepts.image_reported
+        SELECT flipcard_translations.word, flipcard_translations.normalized_word, flipcard_concepts.concept_key, flipcard_concepts.image_reported, flipcard_concepts.image_version
         FROM flipcard_translations
         INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
         WHERE flipcard_translations.language = ?
@@ -2909,6 +2962,7 @@ fun Connection.readFlipcardSession(limit: Int, language: LearningLanguage = Lear
                                 normalized = rows.getString("normalized_word"),
                                 conceptKey = rows.getString("concept_key"),
                                 imageReported = rows.getInt("image_reported") == 1,
+                                imageVersion = rows.getLong("image_version"),
                             ),
                         )
                     }
@@ -3247,7 +3301,16 @@ private fun Connection.readSpellingWords(setId: Long, language: LearningLanguage
                 AND flipcard_translations.normalized_word = spelling_words.normalized_word
                 ORDER BY flipcard_translations.sort_order, flipcard_translations.id
                 LIMIT 1
-            ) AS image_reported
+            ) AS image_reported,
+            (
+                SELECT flipcard_concepts.image_version
+                FROM flipcard_translations
+                INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
+                WHERE flipcard_translations.language = ?
+                AND flipcard_translations.normalized_word = spelling_words.normalized_word
+                ORDER BY flipcard_translations.sort_order, flipcard_translations.id
+                LIMIT 1
+            ) AS image_version
         FROM spelling_words
         WHERE set_id = ?
         ORDER BY sort_order, id
@@ -3255,7 +3318,8 @@ private fun Connection.readSpellingWords(setId: Long, language: LearningLanguage
     ).use { statement ->
         statement.setString(1, language.name)
         statement.setString(2, language.name)
-        statement.setLong(3, setId)
+        statement.setString(3, language.name)
+        statement.setLong(4, setId)
         statement.executeQuery().use { rows ->
             buildList {
                 while (rows.next()) {
@@ -3266,6 +3330,7 @@ private fun Connection.readSpellingWords(setId: Long, language: LearningLanguage
                             normalized = rows.getString("normalized_word"),
                             conceptKey = rows.getString("concept_key"),
                             imageReported = rows.getInt("image_reported") == 1,
+                            imageVersion = rows.getLong("image_version").let { if (rows.wasNull()) 1 else it },
                         ),
                     )
                 }
@@ -3625,7 +3690,7 @@ private fun Connection.readSpellingStat(userId: Long, normalizedWord: String, la
 fun Connection.readFlipcardWords(language: LearningLanguage = LearningLanguage.en): List<FlipcardWord> {
     return prepareStatement(
         """
-        SELECT flipcard_translations.word, flipcard_translations.normalized_word, flipcard_concepts.concept_key, flipcard_concepts.image_reported
+        SELECT flipcard_translations.word, flipcard_translations.normalized_word, flipcard_concepts.concept_key, flipcard_concepts.image_reported, flipcard_concepts.image_version
         FROM flipcard_translations
         INNER JOIN flipcard_concepts ON flipcard_concepts.id = flipcard_translations.concept_id
         WHERE flipcard_translations.language = ?
@@ -3642,6 +3707,7 @@ fun Connection.readFlipcardWords(language: LearningLanguage = LearningLanguage.e
                             normalized = rows.getString("normalized_word"),
                             conceptKey = rows.getString("concept_key"),
                             imageReported = rows.getInt("image_reported") == 1,
+                            imageVersion = rows.getLong("image_version"),
                         ),
                     )
                 }

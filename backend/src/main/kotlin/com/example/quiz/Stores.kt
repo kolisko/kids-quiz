@@ -582,7 +582,7 @@ object FlipcardStore {
         language: LearningLanguage,
         spellingNormalizedWords: Set<String> = emptySet(),
     ): FlipcardAsset {
-        val image = FlipcardImageService.status(word.conceptKey)
+        val image = FlipcardImageService.status(word.conceptKey, word.imageVersion)
         val audio = SpellingAudioService.status(
             rawWord = word.text,
             kind = SpellingAudioKind.word,

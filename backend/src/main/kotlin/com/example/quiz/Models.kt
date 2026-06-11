@@ -352,6 +352,7 @@ data class SpellingWord(
     val normalized: String,
     val conceptKey: String? = null,
     val imageReported: Boolean = false,
+    val imageVersion: Long = 1,
 )
 
 @Serializable
@@ -432,6 +433,7 @@ data class FlipcardWord(
     val normalized: String,
     val conceptKey: String = normalized,
     val imageReported: Boolean = false,
+    val imageVersion: Long = 1,
 )
 
 @Serializable
