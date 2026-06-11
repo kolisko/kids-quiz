@@ -2637,6 +2637,29 @@ fun Connection.syncFlipcardWordsFromSpelling(language: LearningLanguage): Flipca
     )
 }
 
+fun Connection.readSpellingNormalizedWords(language: LearningLanguage): Set<String> {
+    return prepareStatement(
+        """
+        SELECT DISTINCT spelling_words.normalized_word
+        FROM spelling_words
+        INNER JOIN spelling_sets ON spelling_sets.id = spelling_words.set_id
+        WHERE spelling_words.language = ?
+        AND spelling_sets.language = ?
+        AND TRIM(spelling_words.normalized_word) <> ''
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, language.name)
+        statement.setString(2, language.name)
+        statement.executeQuery().use { rows ->
+            buildSet {
+                while (rows.next()) {
+                    add(rows.getString("normalized_word"))
+                }
+            }
+        }
+    }
+}
+
 private fun Connection.replaceFlipcardTranslationsByConcept(
     language: LearningLanguage,
     items: List<FlipcardWordUpdate>,

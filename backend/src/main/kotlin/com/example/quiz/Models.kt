@@ -513,6 +513,8 @@ data class FlipcardAsset(
     val normalized: String,
     val conceptKey: String,
     val language: LearningLanguage = LearningLanguage.en,
+    val inFlipcards: Boolean = true,
+    val inSpelling: Boolean = false,
     val imageStatus: FlipcardImageStatus,
     val imageUrl: String? = null,
     val imageError: String? = null,

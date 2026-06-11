@@ -494,6 +494,16 @@
       <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetImages()" [disabled]="missingImageAssetsCount === 0 || bulkImageGenerationActive">
         {{ assetImageBulkEnqueueLoading ? 'Přidávám do fronty...' : 'Stáhnout všechny chybějící obrázky' }}
       </button>
+      <div class="asset-source-filters" aria-label="Filtrovat podle seznamu">
+        <label>
+          <input type="checkbox" [checked]="assetLibraryShowFlipcards" (change)="toggleAssetLibrarySourceFilter('flipcards')">
+          Flipcards {{ flipcardAssetCount }}
+        </label>
+        <label>
+          <input type="checkbox" [checked]="assetLibraryShowSpelling" (change)="toggleAssetLibrarySourceFilter('spelling')">
+          Spelling {{ spellingAssetCount }}
+        </label>
+      </div>
       <button
         class="secondary-button compact-button asset-report-filter"
         type="button"
@@ -585,7 +595,7 @@
       </article>
     </div>
     <p class="settings-note" *ngIf="!assetLibraryLoading && assetLibraryTab === 'images' && visibleFlipcardAssets.length === 0">
-      Žádné nahlášené obrázky.
+      Žádné obrázky pro aktuální filtr.
     </p>
 
     <div class="audio-tts-settings" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">
@@ -664,8 +674,18 @@
       <button class="secondary-button compact-button" type="button" (click)="generateAllMissingAssetAudio()" [disabled]="missingAudioAssetsCount === 0 || bulkAudioGenerationActive">
         {{ assetAudioBulkEnqueueLoading ? 'Přidávám do fronty...' : 'Stáhnout všechna chybějící audia' }}
       </button>
+      <div class="asset-source-filters" aria-label="Filtrovat podle seznamu">
+        <label>
+          <input type="checkbox" [checked]="assetLibraryShowFlipcards" (change)="toggleAssetLibrarySourceFilter('flipcards')">
+          Flipcards {{ flipcardAssetCount }}
+        </label>
+        <label>
+          <input type="checkbox" [checked]="assetLibraryShowSpelling" (change)="toggleAssetLibrarySourceFilter('spelling')">
+          Spelling {{ spellingAssetCount }}
+        </label>
+      </div>
       <div class="asset-counts" aria-label="Souhrn audia">
-        <span>Celkem {{ flipcardAssets.length }}</span>
+        <span>Celkem {{ visibleAudioAssets.length }} / {{ flipcardAssets.length }}</span>
         <span>Hotovo {{ readyAudioAssetsCount }}</span>
         <span>Ve frontě {{ queuedAudioAssetsCount }}</span>
         <span>Chybí {{ missingAudioAssetsCount }}</span>
@@ -673,7 +693,7 @@
     </div>
 
     <div class="asset-list" *ngIf="!assetLibraryLoading && assetLibraryTab === 'audio'">
-      <article class="asset-row" *ngFor="let asset of flipcardAssets">
+      <article class="asset-row" *ngFor="let asset of visibleAudioAssets">
         <strong>{{ asset.word }}</strong>
         <span [class.asset-ready]="asset.audioStatus === 'ready'" [class.asset-missing]="asset.audioStatus !== 'ready'">
           {{ assetAudioStatusLabel(asset) }}

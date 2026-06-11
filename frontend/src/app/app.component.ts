@@ -376,6 +376,8 @@ interface FlipcardAsset {
   normalized: string;
   conceptKey: string;
   language: LearningLanguage;
+  inFlipcards: boolean;
+  inSpelling: boolean;
   imageStatus: ArtifactStatus;
   imageUrl: string | null;
   imageError?: string | null;
@@ -640,6 +642,8 @@ export class AppComponent implements OnInit, OnDestroy {
   assetLibraryLanguage: LearningLanguage = 'en';
   flipcardAssets: FlipcardAsset[] = [];
   assetLibraryShowReportedOnly = false;
+  assetLibraryShowFlipcards = true;
+  assetLibraryShowSpelling = true;
   assetLibraryLoading = false;
   assetLibraryError: string | null = null;
   assetImageGenerating: Record<string, boolean> = {};
@@ -999,9 +1003,29 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get visibleFlipcardAssets(): FlipcardAsset[] {
+    const sourceFilteredAssets = this.sourceFilteredFlipcardAssets;
     return this.assetLibraryShowReportedOnly
-      ? this.flipcardAssets.filter((asset) => asset.imageReported)
-      : this.flipcardAssets;
+      ? sourceFilteredAssets.filter((asset) => asset.imageReported)
+      : sourceFilteredAssets;
+  }
+
+  get visibleAudioAssets(): FlipcardAsset[] {
+    return this.sourceFilteredFlipcardAssets;
+  }
+
+  get sourceFilteredFlipcardAssets(): FlipcardAsset[] {
+    return this.flipcardAssets.filter((asset) => (
+      (this.assetLibraryShowFlipcards && asset.inFlipcards)
+      || (this.assetLibraryShowSpelling && asset.inSpelling)
+    ));
+  }
+
+  get spellingAssetCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.inSpelling).length;
+  }
+
+  get flipcardAssetCount(): number {
+    return this.flipcardAssets.filter((asset) => asset.inFlipcards).length;
   }
 
   get missingAudioAssetsCount(): number {
@@ -1644,6 +1668,14 @@ export class AppComponent implements OnInit, OnDestroy {
 
   toggleAssetLibraryReportedFilter(): void {
     this.assetLibraryShowReportedOnly = !this.assetLibraryShowReportedOnly;
+  }
+
+  toggleAssetLibrarySourceFilter(source: 'flipcards' | 'spelling'): void {
+    if (source === 'flipcards') {
+      this.assetLibraryShowFlipcards = !this.assetLibraryShowFlipcards;
+    } else {
+      this.assetLibraryShowSpelling = !this.assetLibraryShowSpelling;
+    }
   }
 
   selectSettingsLanguage(language: LearningLanguage): void {

@@ -1227,6 +1227,31 @@ textarea:disabled {
   gap: 0.45rem;
 }
 
+.asset-source-filters {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.asset-source-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.6rem;
+  padding: 0.45rem 0.7rem;
+  border: 2px solid rgba(15, 118, 110, 0.14);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.72);
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.asset-source-filters input {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
 .asset-report-filter-active {
   color: #78350f;
   border-color: rgba(245, 158, 11, 0.34);

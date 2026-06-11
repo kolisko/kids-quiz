@@ -443,7 +443,10 @@ object FlipcardStore {
 
     fun readAssets(language: LearningLanguage): FlipcardAssetsResponse = synchronized(lock) {
         Database.useConnection { connection ->
-            FlipcardAssetsResponse(items = connection.readFlipcardWords(language).map { flipcardAsset(it, language) })
+            val spellingNormalizedWords = connection.readSpellingNormalizedWords(language)
+            FlipcardAssetsResponse(
+                items = connection.readFlipcardWords(language).map { flipcardAsset(it, language, spellingNormalizedWords) },
+            )
         }
     }
 
@@ -574,7 +577,11 @@ object FlipcardStore {
         }
     }
 
-    private fun flipcardAsset(word: FlipcardWord, language: LearningLanguage): FlipcardAsset {
+    private fun flipcardAsset(
+        word: FlipcardWord,
+        language: LearningLanguage,
+        spellingNormalizedWords: Set<String> = emptySet(),
+    ): FlipcardAsset {
         val image = FlipcardImageService.status(word.conceptKey)
         val audio = SpellingAudioService.status(
             rawWord = word.text,
@@ -587,6 +594,8 @@ object FlipcardStore {
             normalized = word.normalized,
             conceptKey = word.conceptKey,
             language = language,
+            inFlipcards = true,
+            inSpelling = word.normalized in spellingNormalizedWords,
             imageStatus = image?.status ?: FlipcardImageStatus.missing,
             imageUrl = image?.imageUrl,
             imageError = image?.error,
