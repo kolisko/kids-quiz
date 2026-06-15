@@ -312,9 +312,129 @@ button,
 }
 
 .login-screen {
+  position: relative;
+  isolation: isolate;
   width: min(100%, 26rem);
   margin: 0 auto;
   text-align: center;
+  overflow: hidden;
+}
+
+.login-screen::before,
+.login-screen::after {
+  content: "";
+  position: fixed;
+  z-index: -3;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.login-screen::before {
+  width: min(44rem, 62vw);
+  height: min(44rem, 62vw);
+  left: max(-16rem, -18vw);
+  top: max(-12rem, -16vw);
+  background: rgba(251, 191, 36, 0.2);
+}
+
+.login-screen::after {
+  width: min(42rem, 58vw);
+  height: min(42rem, 58vw);
+  right: max(-15rem, -17vw);
+  bottom: max(-13rem, -16vw);
+  background: rgba(45, 212, 191, 0.18);
+}
+
+.login-panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 27rem);
+  padding: 2.25rem 2rem 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 1.6rem 4rem rgba(15, 23, 42, 0.13);
+  backdrop-filter: blur(14px);
+}
+
+.login-fumfik-background {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.login-fumfik {
+  position: absolute;
+  display: block;
+  width: clamp(6.5rem, 12vw, 11rem);
+  height: auto;
+  border-radius: 1.4rem;
+  filter: drop-shadow(0 1.2rem 1.8rem rgba(15, 23, 42, 0.16));
+  opacity: 0.92;
+  transform-origin: center;
+  animation: login-fumfik-float 8s ease-in-out infinite;
+}
+
+.login-fumfik-1 {
+  left: clamp(1rem, 7vw, 7rem);
+  top: clamp(4.5rem, 13vh, 8rem);
+  transform: rotate(-10deg);
+}
+
+.login-fumfik-2 {
+  right: clamp(1.2rem, 8vw, 8rem);
+  top: clamp(5rem, 11vh, 7.5rem);
+  width: clamp(5.8rem, 10vw, 9rem);
+  transform: rotate(12deg);
+  animation-delay: -2.4s;
+}
+
+.login-fumfik-3 {
+  left: clamp(0.75rem, 12vw, 12rem);
+  bottom: clamp(2rem, 9vh, 6rem);
+  width: clamp(5.7rem, 10vw, 8.5rem);
+  transform: rotate(8deg);
+  animation-delay: -4.5s;
+}
+
+.login-fumfik-4 {
+  right: clamp(0.75rem, 12vw, 13rem);
+  bottom: clamp(2rem, 8vh, 5rem);
+  transform: rotate(-12deg);
+  animation-delay: -1.2s;
+}
+
+.login-fumfik-5 {
+  left: 50%;
+  top: clamp(0.5rem, 3vh, 2rem);
+  width: clamp(5rem, 8vw, 7.2rem);
+  opacity: 0.58;
+  filter: blur(0.7px) drop-shadow(0 1rem 1.5rem rgba(15, 23, 42, 0.08));
+  transform: translateX(-190%) rotate(17deg);
+  animation-delay: -6s;
+}
+
+.login-fumfik-6 {
+  left: 50%;
+  bottom: clamp(0.25rem, 2vh, 1.25rem);
+  width: clamp(5rem, 8vw, 7.5rem);
+  opacity: 0.62;
+  filter: blur(0.7px) drop-shadow(0 1rem 1.5rem rgba(15, 23, 42, 0.08));
+  transform: translateX(115%) rotate(-16deg);
+  animation-delay: -3.2s;
+}
+
+@keyframes login-fumfik-float {
+  0%,
+  100% {
+    margin-top: 0;
+  }
+
+  50% {
+    margin-top: -0.8rem;
+  }
 }
 
 .password-label {
@@ -1990,6 +2110,47 @@ textarea:disabled {
   .settings-panel,
   .trophies-screen {
     padding-top: 7rem;
+  }
+
+  .login-screen {
+    width: min(100%, 25rem);
+    padding-top: 5rem;
+  }
+
+  .login-panel {
+    padding: 1.8rem 1.2rem 1.35rem;
+    border-radius: 1.15rem;
+  }
+
+  .login-fumfik {
+    width: clamp(4.6rem, 18vw, 6.5rem);
+    border-radius: 1rem;
+    opacity: 0.72;
+  }
+
+  .login-fumfik-1 {
+    left: -1.4rem;
+    top: 4.7rem;
+  }
+
+  .login-fumfik-2 {
+    right: -1.2rem;
+    top: 7rem;
+  }
+
+  .login-fumfik-3 {
+    left: -0.8rem;
+    bottom: 3.2rem;
+  }
+
+  .login-fumfik-4 {
+    right: -0.9rem;
+    bottom: 2.8rem;
+  }
+
+  .login-fumfik-5,
+  .login-fumfik-6 {
+    opacity: 0.38;
   }
 
   .settings-grid {

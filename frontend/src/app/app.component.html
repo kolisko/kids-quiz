@@ -65,28 +65,38 @@
   <ng-container *ngTemplateOutlet="accountButtons"></ng-container>
 
   <section class="login-screen" *ngIf="screen === 'login'">
-    <span class="label">Kids Quiz</span>
-    <p class="error login-error" *ngIf="authError">{{ authError }}</p>
-    <button class="google-login-button" type="button" (click)="startGoogleLogin()" [disabled]="authLoading" *ngIf="googleLoginConfigured">
-      <span class="google-mark" aria-hidden="true">G</span>
-      <span>{{ authLoading ? 'Přesměrovávám...' : 'Přihlásit se přes Google' }}</span>
-    </button>
-    <form class="password-fallback-form" (ngSubmit)="submitLogin()" *ngIf="!googleLoginConfigured && passwordLoginConfigured">
-      <label class="password-label">
-        <input
-          name="password"
-          type="password"
-          autocomplete="current-password"
-          [(ngModel)]="password"
-          autofocus>
-      </label>
-      <button class="primary-button login-button" type="submit" [disabled]="authLoading || !password.trim()">
-        {{ authLoading ? 'Ověřuji...' : 'Vstoupit' }}
+    <div class="login-fumfik-background" aria-hidden="true">
+      <img class="login-fumfik login-fumfik-1" src="/assets/animals/animal-01.svg" alt="">
+      <img class="login-fumfik login-fumfik-2" src="/assets/animals/animal-08.svg" alt="">
+      <img class="login-fumfik login-fumfik-3" src="/assets/animals/animal-15.svg" alt="">
+      <img class="login-fumfik login-fumfik-4" src="/assets/animals/animal-22.svg" alt="">
+      <img class="login-fumfik login-fumfik-5" src="/assets/animals/animal-31.svg" alt="">
+      <img class="login-fumfik login-fumfik-6" src="/assets/animals/animal-37.svg" alt="">
+    </div>
+    <div class="login-panel">
+      <span class="label">Kids Quiz</span>
+      <p class="error login-error" *ngIf="authError">{{ authError }}</p>
+      <button class="google-login-button" type="button" (click)="startGoogleLogin()" [disabled]="authLoading" *ngIf="googleLoginConfigured">
+        <span class="google-mark" aria-hidden="true">G</span>
+        <span>{{ authLoading ? 'Přesměrovávám...' : 'Přihlásit se přes Google' }}</span>
       </button>
-    </form>
-    <p class="settings-note" *ngIf="!googleLoginConfigured && !passwordLoginConfigured">
-      Přihlášení není nakonfigurované.
-    </p>
+      <form class="password-fallback-form" (ngSubmit)="submitLogin()" *ngIf="!googleLoginConfigured && passwordLoginConfigured">
+        <label class="password-label">
+          <input
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            [(ngModel)]="password"
+            autofocus>
+        </label>
+        <button class="primary-button login-button" type="submit" [disabled]="authLoading || !password.trim()">
+          {{ authLoading ? 'Ověřuji...' : 'Vstoupit' }}
+        </button>
+      </form>
+      <p class="settings-note" *ngIf="!googleLoginConfigured && !passwordLoginConfigured">
+        Přihlášení není nakonfigurované.
+      </p>
+    </div>
   </section>
 
   <section class="start-screen" *ngIf="screen === 'start'">
