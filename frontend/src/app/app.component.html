@@ -801,6 +801,7 @@
             <span class="audio-prep-fill"></span>
           </div>
           <strong>{{ audioPrepItemStatusLabel(item) }}</strong>
+          <span class="audio-prep-error-detail" *ngIf="item.error">{{ item.error }}</span>
         </div>
       </div>
       <p class="error settings-error" *ngIf="audioPrepError">{{ audioPrepError }}</p>

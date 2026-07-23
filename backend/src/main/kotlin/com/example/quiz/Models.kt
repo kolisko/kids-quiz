@@ -90,6 +90,7 @@ data class QuizAssetPrepareRequest(
     val spellingSetId: Long? = null,
     val spellingWordIds: List<Long> = emptyList(),
     val conceptKeys: List<String> = emptyList(),
+    val answerAudioConceptKeys: List<String> = emptyList(),
 )
 
 @Serializable

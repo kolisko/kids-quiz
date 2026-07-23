@@ -31,7 +31,7 @@ object QuizAssetPreparationService {
     }
 
     private fun prepareSpelling(userId: Long, request: QuizAssetPrepareRequest): List<PreparedAssetStatus> {
-        if (request.conceptKeys.isNotEmpty()) invalidRequest()
+        if (request.conceptKeys.isNotEmpty() || request.answerAudioConceptKeys.isNotEmpty()) invalidRequest()
         val setId = request.spellingSetId ?: invalidRequest()
         val wordIds = validatedSelection(request.spellingWordIds)
         val allowedWords = if (setId == 0L) {
@@ -62,9 +62,19 @@ object QuizAssetPreparationService {
 
     private fun prepareFlipcards(userId: Long, request: QuizAssetPrepareRequest): List<PreparedAssetStatus> {
         if (request.spellingSetId != null || request.spellingWordIds.isNotEmpty()) invalidRequest()
-        val conceptKeys = validatedSelection(request.conceptKeys)
+        val questionConceptKeys = validatedSelection(request.conceptKeys)
+        val requestedAnswerAudioConceptKeys = request.answerAudioConceptKeys
+            .takeIf { it.isNotEmpty() }
+            ?.let(::validatedSelection)
+            ?: questionConceptKeys
+        val answerAudioConceptKeys = validatedSelection(
+            (questionConceptKeys + requestedAnswerAudioConceptKeys).distinct(),
+        )
         val answerWordsByConcept = FlipcardStore.readWords(request.language).items.associateBy { it.conceptKey }
-        val selectedWords = conceptKeys.map { conceptKey ->
+        val selectedWords = questionConceptKeys.map { conceptKey ->
+            answerWordsByConcept[conceptKey] ?: throw QuizAssetPreparationException("concept_not_in_flipcard_test")
+        }
+        val answerAudioWords = answerAudioConceptKeys.map { conceptKey ->
             answerWordsByConcept[conceptKey] ?: throw QuizAssetPreparationException("concept_not_in_flipcard_test")
         }
         val settings = SettingsStore.read(userId)
@@ -85,7 +95,7 @@ object QuizAssetPreparationService {
                 add(enqueueImage(word.conceptKey))
             }
             if (settings.audioSource == AudioSource.backend_mp3) {
-                selectedWords.forEach { word ->
+                answerAudioWords.forEach { word ->
                     add(
                         enqueueAudio(
                             rawWord = word.text,
@@ -94,6 +104,8 @@ object QuizAssetPreparationService {
                             jobKind = ArtifactJobKind.flipcard_audio_word,
                         ),
                     )
+                }
+                selectedWords.forEach { word ->
                     val promptWord = requireNotNull(promptWordsByConcept[word.conceptKey])
                     add(
                         enqueueAudio(

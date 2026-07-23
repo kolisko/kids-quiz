@@ -1901,9 +1901,22 @@ textarea:disabled {
   animation: audioPulse 900ms ease-in-out infinite alternate;
 }
 
+.audio-prep-queued .audio-prep-fill {
+  width: 34%;
+}
+
 .audio-prep-pending .audio-prep-fill {
   width: 16%;
   opacity: 0.42;
+}
+
+.audio-prep-missing .audio-prep-track {
+  background: rgba(217, 119, 6, 0.16);
+}
+
+.audio-prep-missing .audio-prep-fill {
+  width: 22%;
+  background: #d97706;
 }
 
 .audio-prep-ready .audio-prep-fill {
@@ -1917,6 +1930,13 @@ textarea:disabled {
 .audio-prep-error .audio-prep-fill {
   width: 100%;
   background: #dc2626;
+}
+
+.audio-prep-error-detail {
+  grid-column: 1 / -1;
+  color: #991b1b;
+  font-size: 0.9rem;
+  font-weight: 800;
 }
 
 .error {
