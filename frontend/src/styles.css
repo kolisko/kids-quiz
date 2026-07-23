@@ -365,6 +365,106 @@ button,
   pointer-events: none;
 }
 
+.fumfik-reactor {
+  position: relative;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  line-height: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fumfik-reactor:focus,
+.fumfik-reactor:focus-visible,
+.fumfik-reactor:active {
+  outline: none;
+  box-shadow: none;
+}
+
+.fumfik-reactor .fumfik-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+.fumfik-expression,
+.fumfik-wink-mark,
+.fumfik-smile-mark,
+.fumfik-sparkle-mark {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fumfik-expression {
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.fumfik-wink-mark,
+.fumfik-smile-mark,
+.fumfik-sparkle-mark {
+  display: block;
+  opacity: 0;
+}
+
+.fumfik-wink-mark {
+  left: 30%;
+  top: 42%;
+  width: 22%;
+  height: 9%;
+  border-top: 0.5rem solid #111827;
+  border-radius: 999px 999px 0 0;
+  box-shadow: 0 -0.15rem 0 rgba(255, 255, 255, 0.62);
+  transform: rotate(-8deg) scaleX(0.45);
+  transform-origin: center;
+}
+
+.fumfik-smile-mark {
+  left: 33%;
+  top: 55%;
+  width: 34%;
+  height: 18%;
+  border-bottom: 0.56rem solid #7f1d1d;
+  border-radius: 0 0 999px 999px;
+  box-shadow: 0 0.2rem 0 rgba(255, 255, 255, 0.72);
+  transform: scaleX(0.55) translateY(-0.12rem);
+  transform-origin: center;
+}
+
+.fumfik-sparkle-mark {
+  left: 50%;
+  top: 31%;
+  width: 0.62rem;
+  height: 0.62rem;
+  background: #facc15;
+  border-radius: 0.1rem;
+  box-shadow: 0 0 0 0.12rem rgba(255, 255, 255, 0.78), 0 0.28rem 0.8rem rgba(202, 138, 4, 0.28);
+  transform: rotate(45deg) scale(0.45);
+}
+
+.fumfik-reaction-wink .fumfik-wink-mark {
+  animation: fumfik-wink 0.72s ease-out;
+}
+
+.fumfik-reaction-wink .fumfik-sparkle-mark {
+  animation: fumfik-sparkle 0.72s ease-out;
+}
+
+.fumfik-reaction-smile .fumfik-smile-mark {
+  animation: fumfik-smile 0.78s ease-out;
+}
+
+.fumfik-reaction-wink .fumfik-image,
+.fumfik-reaction-smile .fumfik-image {
+  animation: fumfik-hello 0.78s ease-out;
+}
+
 .login-fumfik {
   position: absolute;
   display: block;
@@ -375,6 +475,7 @@ button,
   opacity: 0.92;
   transform-origin: center;
   animation: login-fumfik-float 8s ease-in-out infinite;
+  pointer-events: auto;
 }
 
 .login-fumfik-1 {
@@ -434,6 +535,63 @@ button,
 
   50% {
     margin-top: -0.8rem;
+  }
+}
+
+@keyframes fumfik-wink {
+  0%,
+  100% {
+    opacity: 0;
+    transform: rotate(-8deg) scaleX(0.45);
+  }
+
+  18%,
+  58% {
+    opacity: 1;
+    transform: rotate(-8deg) scaleX(1);
+  }
+}
+
+@keyframes fumfik-smile {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scaleX(0.52) translateY(-0.15rem);
+  }
+
+  20%,
+  68% {
+    opacity: 1;
+    transform: scaleX(1) translateY(0);
+  }
+}
+
+@keyframes fumfik-sparkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: rotate(45deg) scale(0.45);
+  }
+
+  20%,
+  55% {
+    opacity: 1;
+    transform: rotate(45deg) scale(1.05);
+  }
+}
+
+@keyframes fumfik-hello {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+
+  35% {
+    transform: translateY(-0.26rem) rotate(-1.5deg);
+  }
+
+  62% {
+    transform: translateY(0.05rem) rotate(1deg);
   }
 }
 
@@ -642,6 +800,11 @@ button,
   border-radius: 0.5rem;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: 0 14px 34px rgba(31, 41, 55, 0.1);
+}
+
+.trophy-fumfik-button {
+  width: 100%;
+  max-width: 9rem;
 }
 
 .trophy-card img {

@@ -238,6 +238,35 @@ fun Application.module() {
                     call.respond(response)
                 }
             }
+            post("/quiz-assets/prepare") {
+                val user = Auth.requireUser(call) ?: return@post
+                val request = runCatching { call.receive<QuizAssetPrepareRequest>() }.getOrNull()
+                if (request == null) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_quiz_asset_request"))
+                    return@post
+                }
+                try {
+                    val response = QuizAssetPreparationService.prepare(user.id, request)
+                    appLog.info(
+                        "Prepared quiz assets for user={} game={} language={} questions={} assets={} queued={} generating={}",
+                        user.id,
+                        request.game,
+                        request.language,
+                        response.questionCount,
+                        response.assetCount,
+                        response.queuedCount,
+                        response.generatingCount,
+                    )
+                    call.respond(response)
+                } catch (error: QuizAssetPreparationException) {
+                    val status = when (error.code) {
+                        "quiz_asset_rate_limited" -> HttpStatusCode.TooManyRequests
+                        "prompt_translation_missing" -> HttpStatusCode.Conflict
+                        else -> HttpStatusCode.BadRequest
+                    }
+                    call.respond(status, mapOf("error" to error.code))
+                }
+            }
             route("/spelling") {
                 get("/sets") {
                     if (!Auth.requireAuthenticated(call)) return@get

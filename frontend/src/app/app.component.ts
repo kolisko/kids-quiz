@@ -321,6 +321,23 @@ interface AudioPrepItem {
   error: string | null;
 }
 
+interface QuizAssetPrepareRequest {
+  game: 'spelling' | 'flipcards';
+  language: LearningLanguage;
+  spellingSetId?: number;
+  spellingWordIds?: number[];
+  conceptKeys?: string[];
+}
+
+interface QuizAssetPrepareResponse {
+  questionCount: number;
+  assetCount: number;
+  readyCount: number;
+  queuedCount: number;
+  generatingCount: number;
+  errorCount: number;
+}
+
 interface SpellingSession {
   setId: number;
   words: SpellingWord[];
@@ -503,6 +520,7 @@ interface TrophyAwardResponse {
 type CelebrationEffect = 'pop' | 'spin' | 'squash' | 'bounce';
 type CelebrationDirection = 'left' | 'right';
 type CelebrationBurst = 'wide' | 'high' | 'low';
+type FumfikReactionKind = 'wink' | 'smile';
 
 interface CelebrationTapState {
   effect: CelebrationEffect;
@@ -623,6 +641,7 @@ export class AppComponent implements OnInit, OnDestroy {
   spellingImageError: string | null = null;
   flipcardPromptAudioToken = 0;
   spellingWordIndex: number | null = null;
+  spellingSetId = 0;
   spellingPendingIndices: number[] = [];
   score = 0;
   currentIndex: number | null = null;
@@ -682,6 +701,7 @@ export class AppComponent implements OnInit, OnDestroy {
   celebrationPosition: CelebrationPosition = { offsetX: 0, offsetY: 0 };
   celebrationTapCount = 0;
   spellingAnswerWordActive = false;
+  fumfikReactions: Record<string, FumfikReactionKind> = {};
 
   private readonly mathSession = new TestSessionEngine<MathSessionItem>();
   private readonly arithmeticSession = new TestSessionEngine<number>();
@@ -699,6 +719,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private spellingAudioSequenceToken = 0;
   private celebrationTapTimerId: number | null = null;
   private spellingAnswerWordTimerId: number | null = null;
+  private readonly fumfikReactionTimers = new Map<string, number>();
   private lastCelebrationFanfareIndex = -1;
   private finishingSession = false;
   private assetLibraryPollToken: AssetLibraryPollToken | null = null;
@@ -1175,6 +1196,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.destroyTeslaMp3TestAudio();
     this.clearCelebrationTapTimer();
     this.clearSpellingAnswerWordTimer();
+    this.clearFumfikReactionTimers();
   }
 
   startGoogleLogin(): void {
@@ -1326,6 +1348,7 @@ export class AppComponent implements OnInit, OnDestroy {
       questionCount: 0,
     };
     this.spellingStats = launch.spellingStats?.statsByWord ?? {};
+    this.spellingSetId = launch.spellingSession?.setId ?? 0;
     this.spellingWords = launch.spellingSession?.words ?? [];
     this.startSpellingSession();
     await this.prepareSpellingAssets();
@@ -2858,7 +2881,15 @@ export class AppComponent implements OnInit, OnDestroy {
         this.setScreen('audioPrep');
         this.render();
       }
-      await this.generateMissingAudio(missingItems);
+      await this.prepareMissingQuizAssets(
+        missingItems,
+        {
+          game: 'spelling',
+          language: this.selectedLanguage,
+          spellingSetId: this.spellingSetId,
+          spellingWordIds: selectedWords.map((word) => word.id),
+        },
+      );
       if (this.audioPrepItems.some((item) => item.status === 'error')) return;
       await this.preloadSpellingImages();
       this.audioPrepLoading = false;
@@ -2951,7 +2982,14 @@ export class AppComponent implements OnInit, OnDestroy {
         this.setScreen('audioPrep');
         this.render();
       }
-      await this.generateMissingAudio(missingItems);
+      await this.prepareMissingQuizAssets(
+        missingItems,
+        {
+          game: 'flipcards',
+          language: this.selectedLanguage,
+          conceptKeys: selectedWords.map((word) => word.conceptKey),
+        },
+      );
       if (this.audioPrepItems.some((item) => item.status === 'error')) return;
       await this.preloadFlipcardImages();
       this.audioPrepLoading = false;
@@ -3054,53 +3092,48 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  private async generateMissingAudio(items: AudioPrepItem[]): Promise<void> {
+  private async prepareMissingQuizAssets(
+    items: AudioPrepItem[],
+    request: QuizAssetPrepareRequest,
+  ): Promise<void> {
+    if (items.length === 0) return;
     this.cancelAudioPrepPolling();
     const token: PollToken = { cancelled: false };
     this.audioPrepPollToken = token;
-    const queue = [...items];
-    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
-      while (queue.length > 0 && !token.cancelled) {
-        const item = queue.shift();
-        if (!item) return;
-        await this.generateAudioItem(item, token);
-      }
-    });
     try {
+      items.forEach((item) => {
+        if (item.status === 'pending' || item.status === 'error') {
+          this.updateAudioPrepItem(item.normalized, item.kind, { status: 'queued', error: null });
+        }
+      });
+      const needsEnqueue = items.some((item) => item.status === 'pending' || item.status === 'error');
+      if (needsEnqueue) {
+        await this.apiPost<QuizAssetPrepareResponse>('quiz-assets/prepare', request);
+      }
+      const queue = [...items];
+      const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+        while (queue.length > 0 && !token.cancelled) {
+          const item = queue.shift();
+          if (!item) return;
+          await this.pollAudioPrepItemUntilReady(item, token);
+        }
+      });
       await Promise.all(workers);
+    } catch (error) {
+      if (token.cancelled) return;
+      this.audioPrepError = error instanceof Error ? error.message : 'Příprava testu selhala.';
+      items.forEach((item) => {
+        if (item.status !== 'ready') {
+          this.updateAudioPrepItem(item.normalized, item.kind, {
+            status: 'error',
+            error: this.audioPrepError,
+          });
+        }
+      });
     } finally {
       if (this.audioPrepPollToken === token) {
         this.audioPrepPollToken = null;
       }
-    }
-  }
-
-  private async generateAudioItem(item: AudioPrepItem, token: PollToken): Promise<void> {
-    if (token.cancelled) return;
-    this.updateAudioPrepItem(item.normalized, item.kind, { status: 'queued', error: null });
-    try {
-      if (item.kind === 'flipcard_image') {
-        const response = await this.apiPost<FlipcardImageResponse>(this.flipcardImagePath(item.audioWord), {});
-        if (token.cancelled) return;
-        this.applyFlipcardImagePrepResponse(item, response);
-        if (response.status !== 'ready') {
-          await this.pollAudioPrepItemUntilReady(item, token);
-        }
-        return;
-      }
-      const response = await this.apiPost<SpellingAudioWordResponse>(this.audioStatusPath(item.audioWord, item.kind, item.language), {});
-      if (token.cancelled) return;
-      this.applySpellingAudioPrepResponse(item, response);
-      if (response.status !== 'ready') {
-        await this.pollAudioPrepItemUntilReady(item, token);
-      }
-    } catch (error) {
-      if (token.cancelled) return;
-      this.audioPrepError = error instanceof Error ? error.message : 'Generování selhalo.';
-      this.updateAudioPrepItem(item.normalized, item.kind, {
-        status: 'error',
-        error: this.audioPrepError,
-      });
     }
   }
 
@@ -3739,6 +3772,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.score = 0;
     this.currentIndex = null;
     this.spellingWordIndex = null;
+    this.spellingSetId = 0;
     this.flipcardWordIndex = null;
     this.arithmeticMode = null;
     this.arithmeticQuestions = [];
@@ -4448,6 +4482,36 @@ export class AppComponent implements OnInit, OnDestroy {
     }, 0);
   }
 
+  playFumfikReaction(key: string): void {
+    const timerId = this.fumfikReactionTimers.get(key);
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId);
+      this.fumfikReactionTimers.delete(key);
+    }
+    const { [key]: _previous, ...withoutCurrent } = this.fumfikReactions;
+    this.fumfikReactions = withoutCurrent;
+    this.render();
+    window.setTimeout(() => {
+      this.fumfikReactions = {
+        ...this.fumfikReactions,
+        [key]: randomItem<FumfikReactionKind>(['wink', 'smile'], 'smile'),
+      };
+      const clearTimerId = window.setTimeout(() => {
+        const { [key]: _done, ...remaining } = this.fumfikReactions;
+        this.fumfikReactions = remaining;
+        this.fumfikReactionTimers.delete(key);
+        this.render();
+      }, 850);
+      this.fumfikReactionTimers.set(key, clearTimerId);
+      this.render();
+    }, 0);
+  }
+
+  fumfikReactionClass(key: string): string | null {
+    const reaction = this.fumfikReactions[key];
+    return reaction ? `fumfik-reaction-${reaction}` : null;
+  }
+
   celebrationTapClasses(): string[] {
     const tap = this.celebrationTap;
     if (!tap) return [this.surprise.animationClass];
@@ -4683,6 +4747,11 @@ export class AppComponent implements OnInit, OnDestroy {
       window.clearTimeout(this.spellingAnswerWordTimerId);
       this.spellingAnswerWordTimerId = null;
     }
+  }
+
+  private clearFumfikReactionTimers(): void {
+    this.fumfikReactionTimers.forEach((timerId) => window.clearTimeout(timerId));
+    this.fumfikReactionTimers.clear();
   }
 
   private clearTtsVoiceCheck(): void {

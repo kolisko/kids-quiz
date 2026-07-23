@@ -65,13 +65,31 @@
   <ng-container *ngTemplateOutlet="accountButtons"></ng-container>
 
   <section class="login-screen" *ngIf="screen === 'login'">
-    <div class="login-fumfik-background" aria-hidden="true">
-      <img class="login-fumfik login-fumfik-1" src="/assets/animals/animal-01.svg" alt="">
-      <img class="login-fumfik login-fumfik-2" src="/assets/animals/animal-08.svg" alt="">
-      <img class="login-fumfik login-fumfik-3" src="/assets/animals/animal-15.svg" alt="">
-      <img class="login-fumfik login-fumfik-4" src="/assets/animals/animal-22.svg" alt="">
-      <img class="login-fumfik login-fumfik-5" src="/assets/animals/animal-31.svg" alt="">
-      <img class="login-fumfik login-fumfik-6" src="/assets/animals/animal-37.svg" alt="">
+    <div class="login-fumfik-background">
+      <button class="fumfik-reactor login-fumfik login-fumfik-1" type="button" tabindex="-1" (click)="playFumfikReaction('login-1')" [ngClass]="fumfikReactionClass('login-1')" aria-label="Fumfík mrkne nebo se usměje">
+        <img class="fumfik-image" src="/assets/animals/animal-01.svg" alt="">
+        <span class="fumfik-expression" aria-hidden="true"><span class="fumfik-wink-mark"></span><span class="fumfik-smile-mark"></span><span class="fumfik-sparkle-mark"></span></span>
+      </button>
+      <button class="fumfik-reactor login-fumfik login-fumfik-2" type="button" tabindex="-1" (click)="playFumfikReaction('login-2')" [ngClass]="fumfikReactionClass('login-2')" aria-label="Fumfík mrkne nebo se usměje">
+        <img class="fumfik-image" src="/assets/animals/animal-08.svg" alt="">
+        <span class="fumfik-expression" aria-hidden="true"><span class="fumfik-wink-mark"></span><span class="fumfik-smile-mark"></span><span class="fumfik-sparkle-mark"></span></span>
+      </button>
+      <button class="fumfik-reactor login-fumfik login-fumfik-3" type="button" tabindex="-1" (click)="playFumfikReaction('login-3')" [ngClass]="fumfikReactionClass('login-3')" aria-label="Fumfík mrkne nebo se usměje">
+        <img class="fumfik-image" src="/assets/animals/animal-15.svg" alt="">
+        <span class="fumfik-expression" aria-hidden="true"><span class="fumfik-wink-mark"></span><span class="fumfik-smile-mark"></span><span class="fumfik-sparkle-mark"></span></span>
+      </button>
+      <button class="fumfik-reactor login-fumfik login-fumfik-4" type="button" tabindex="-1" (click)="playFumfikReaction('login-4')" [ngClass]="fumfikReactionClass('login-4')" aria-label="Fumfík mrkne nebo se usměje">
+        <img class="fumfik-image" src="/assets/animals/animal-22.svg" alt="">
+        <span class="fumfik-expression" aria-hidden="true"><span class="fumfik-wink-mark"></span><span class="fumfik-smile-mark"></span><span class="fumfik-sparkle-mark"></span></span>
+      </button>
+      <button class="fumfik-reactor login-fumfik login-fumfik-5" type="button" tabindex="-1" (click)="playFumfikReaction('login-5')" [ngClass]="fumfikReactionClass('login-5')" aria-label="Fumfík mrkne nebo se usměje">
+        <img class="fumfik-image" src="/assets/animals/animal-31.svg" alt="">
+        <span class="fumfik-expression" aria-hidden="true"><span class="fumfik-wink-mark"></span><span class="fumfik-smile-mark"></span><span class="fumfik-sparkle-mark"></span></span>
+      </button>
+      <button class="fumfik-reactor login-fumfik login-fumfik-6" type="button" tabindex="-1" (click)="playFumfikReaction('login-6')" [ngClass]="fumfikReactionClass('login-6')" aria-label="Fumfík mrkne nebo se usměje">
+        <img class="fumfik-image" src="/assets/animals/animal-37.svg" alt="">
+        <span class="fumfik-expression" aria-hidden="true"><span class="fumfik-wink-mark"></span><span class="fumfik-smile-mark"></span><span class="fumfik-sparkle-mark"></span></span>
+      </button>
     </div>
     <div class="login-panel">
       <span class="label">Kids Quiz</span>
@@ -152,7 +170,10 @@
     </div>
     <div class="trophy-grid" *ngIf="!trophiesLoading && trophies.length > 0">
       <div class="trophy-card" *ngFor="let trophy of trophies">
-        <img [src]="trophy.imagePath" alt="Vyhraná figurka">
+        <button class="fumfik-reactor trophy-fumfik-button" type="button" (click)="playFumfikReaction(trophy.animalKey)" [ngClass]="fumfikReactionClass(trophy.animalKey)" aria-label="Fumfík mrkne nebo se usměje">
+          <img class="fumfik-image" [src]="trophy.imagePath" alt="Vyhraná figurka">
+          <span class="fumfik-expression" aria-hidden="true"><span class="fumfik-wink-mark"></span><span class="fumfik-smile-mark"></span><span class="fumfik-sparkle-mark"></span></span>
+        </button>
       </div>
     </div>
   </section>

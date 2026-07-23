@@ -78,6 +78,31 @@ enum class SpellingAudioKind {
 }
 
 @Serializable
+enum class QuizAssetGame {
+    spelling,
+    flipcards,
+}
+
+@Serializable
+data class QuizAssetPrepareRequest(
+    val game: QuizAssetGame,
+    val language: LearningLanguage,
+    val spellingSetId: Long? = null,
+    val spellingWordIds: List<Long> = emptyList(),
+    val conceptKeys: List<String> = emptyList(),
+)
+
+@Serializable
+data class QuizAssetPrepareResponse(
+    val questionCount: Int,
+    val assetCount: Int,
+    val readyCount: Int,
+    val queuedCount: Int,
+    val generatingCount: Int,
+    val errorCount: Int,
+)
+
+@Serializable
 enum class FlipcardImageStatus {
     ready,
     missing,
