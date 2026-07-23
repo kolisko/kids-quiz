@@ -16,7 +16,6 @@ concurrency:
 
 env:
   KIDS_QUIZ_HEALTHCHECK_DOMAIN: beatka.eu
-  KIDS_QUIZ_REMOTE_ROOT: /opt/kids-quiz
 
 jobs:
   deploy:
@@ -73,73 +72,33 @@ jobs:
 
       - name: Configure SSH
         shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
+          test -n "${VPS_HOST}"
           install -m 700 -d ~/.ssh
           printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/kids_quiz_vps
           chmod 600 ~/.ssh/kids_quiz_vps
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Upload Compose file
-        shell: bash
-        run: |
-          ssh -i ~/.ssh/kids_quiz_vps "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "mkdir -p '${KIDS_QUIZ_REMOTE_ROOT}/deploy' '${KIDS_QUIZ_REMOTE_ROOT}/data/backups'"
-          scp -i ~/.ssh/kids_quiz_vps deploy/docker-compose.yml \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${KIDS_QUIZ_REMOTE_ROOT}/deploy/docker-compose.yml"
-          scp -i ~/.ssh/kids_quiz_vps deploy/beatka.caddy \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${KIDS_QUIZ_REMOTE_ROOT}/deploy/beatka.caddy"
+          printf '%s %s\n' \
+            "${VPS_HOST}" \
+            'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJVxH5H497HTzA6OhHjE62EZ750q9yAa00SmvgTyPMNt' \
+            > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          test "$(ssh-keygen -lf ~/.ssh/known_hosts | awk 'NR == 1 { print $2 }')" = \
+            'SHA256:CJnOawg534j3npV2l603M7FFHvE4uu0aE3TfXOIw7QQ'
 
       - name: Deploy on VPS
         shell: bash
-        env:
-          IMAGE: ${{ steps.image.outputs.sha }}
         run: |
-          ssh -i ~/.ssh/kids_quiz_vps "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "KIDS_QUIZ_IMAGE='${IMAGE}' KIDS_QUIZ_REMOTE_ROOT='${KIDS_QUIZ_REMOTE_ROOT}' bash -s" <<'REMOTE'
-          set -euo pipefail
-
-          root="${KIDS_QUIZ_REMOTE_ROOT}"
-          image="${KIDS_QUIZ_IMAGE}"
-          mkdir -p "$root/deploy" "$root/data/backups"
-
-          cd "$root/deploy"
-          touch .env
-          chmod 600 .env
-
-          upsert_env() {
-              key="$1"
-              value="$2"
-              if grep -q "^${key}=" .env; then
-                  sed -i "s|^${key}=.*|${key}=${value}|" .env
-              else
-                  printf '%s=%s\n' "$key" "$value" >> .env
-              fi
-          }
-
-          upsert_env KIDS_QUIZ_IMAGE "$image"
-          upsert_env KIDS_QUIZ_AUTH_COOKIE_SECURE true
-
-          if [ -f "$root/data/kids-quiz.sqlite" ]; then
-              cp -p "$root/data/kids-quiz.sqlite" \
-                  "$root/data/backups/kids-quiz.sqlite.pre-deploy-$(date -u +%Y%m%d%H%M%S).bak"
-          fi
-
-          docker compose -p kids-quiz pull app
-          docker compose -p kids-quiz run --interactive=false -T --rm app migrate
-          docker compose -p kids-quiz rm -sf app
-          docker compose -p kids-quiz up -d --remove-orphans app
-
-          running_image="$(docker inspect kids-quiz-app-1 --format '{{.Config.Image}}')"
-          if [ "$running_image" != "$image" ]; then
-              printf 'Expected app image %s, but container is running %s\n' "$image" "$running_image" >&2
-              docker compose -p kids-quiz ps
-              exit 1
-          fi
-
-          install -D -m 644 "$root/deploy/beatka.caddy" /opt/caddy/sites/beatka.caddy
-          docker exec caddy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
-          docker exec caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
-          REMOTE
+          ssh \
+            -i ~/.ssh/kids_quiz_vps \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            "deploy-kids-quiz@${{ secrets.VPS_HOST }}" \
+            "deploy ${GITHUB_SHA}"
 
       - name: Healthcheck
         shell: bash
