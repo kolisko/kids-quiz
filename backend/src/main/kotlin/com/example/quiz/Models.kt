@@ -367,6 +367,17 @@ data class TrophyAwardResponse(
 )
 
 @Serializable
+data class TrophyLeaderboardEntry(
+    val firstName: String,
+    val trophyCount: Int,
+)
+
+@Serializable
+data class TrophyLeaderboardResponse(
+    val items: List<TrophyLeaderboardEntry>,
+)
+
+@Serializable
 data class AnswerResultRequest(
     val questionId: Long,
     val correct: Boolean,

@@ -2480,6 +2480,38 @@ fun Connection.readTrophies(userId: Long): List<TrophyItem> {
     }
 }
 
+fun Connection.readTrophyLeaderboard(limit: Int): List<TrophyLeaderboardEntry> {
+    return prepareStatement(
+        """
+        SELECT users.given_name, users.display_name, COUNT(DISTINCT trophies.animal_key) AS trophy_count
+        FROM users
+        INNER JOIN trophies ON trophies.user_id = users.id
+        WHERE users.status = ?
+        GROUP BY users.id, users.given_name, users.display_name
+        ORDER BY trophy_count DESC, COALESCE(users.given_name, users.display_name, '') COLLATE NOCASE, users.id
+        LIMIT ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, UserStatus.active.name)
+        statement.setInt(2, limit)
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) {
+                    add(
+                        TrophyLeaderboardEntry(
+                            firstName = leaderboardFirstName(
+                                givenName = rows.getString("given_name"),
+                                displayName = rows.getString("display_name"),
+                            ),
+                            trophyCount = rows.getInt("trophy_count"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
 fun Connection.readTrophyKeys(userId: Long): Set<String> {
     return prepareStatement("SELECT animal_key FROM trophies WHERE user_id = ?").use { statement ->
         statement.setLong(1, userId)
@@ -2489,6 +2521,19 @@ fun Connection.readTrophyKeys(userId: Long): Set<String> {
             }
         }
     }
+}
+
+private fun leaderboardFirstName(givenName: String?, displayName: String?): String {
+    return sequenceOf(givenName, displayName)
+        .mapNotNull { value ->
+            value
+                ?.trim()
+                ?.split(Regex("\\s+"))
+                ?.firstOrNull()
+                ?.takeIf { it.isNotEmpty() && '@' !in it }
+        }
+        .firstOrNull()
+        ?: "Hráč"
 }
 
 fun Connection.insertTrophy(userId: Long, animalKey: String) {

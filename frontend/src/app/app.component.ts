@@ -546,6 +546,15 @@ interface TrophyAwardResponse {
   trophies: TrophyItem[];
 }
 
+interface TrophyLeaderboardEntry {
+  firstName: string;
+  trophyCount: number;
+}
+
+interface TrophyLeaderboardResponse {
+  items: TrophyLeaderboardEntry[];
+}
+
 type CelebrationEffect = 'pop' | 'spin' | 'squash' | 'bounce';
 type CelebrationDirection = 'left' | 'right';
 type CelebrationBurst = 'wide' | 'high' | 'low';
@@ -717,6 +726,9 @@ export class AppComponent implements OnInit, OnDestroy {
   trophies: TrophyItem[] = [];
   trophiesLoading = false;
   trophiesError: string | null = null;
+  trophyLeaderboard: TrophyLeaderboardEntry[] = [];
+  trophyLeaderboardLoading = false;
+  trophyLeaderboardError = false;
   translationBackfillStatusByLanguage: Record<LearningLanguage, FlipcardTranslationBackfillStatusResponse | null> = { en: null, de: null, es: null, cs: null };
   translationBackfillLoading = false;
   translationBackfillError: string | null = null;
@@ -1227,6 +1239,12 @@ export class AppComponent implements OnInit, OnDestroy {
     return 'Kontroluji';
   }
 
+  fumfikCountLabel(count: number): string {
+    if (count === 1) return '1 fumfík';
+    if (count >= 2 && count <= 4) return `${count} fumfíci`;
+    return `${count} fumfíků`;
+  }
+
   async ngOnInit(): Promise<void> {
     void this.loadSnapshotNumber();
     await this.loadGameData();
@@ -1298,7 +1316,10 @@ export class AppComponent implements OnInit, OnDestroy {
       this.spellingStats = {};
       this.flipcardStats = {};
       this.authLoading = false;
-      await this.loadAuthProviders();
+      await Promise.all([
+        this.loadAuthProviders(),
+        this.loadTrophyLeaderboard(),
+      ]);
       this.setScreen('login');
       this.render();
     }
@@ -2598,7 +2619,10 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const auth = await this.apiGet<AuthStatusResponse>('auth/status');
       if (!auth.authenticated) {
-        await this.loadAuthProviders();
+        await Promise.all([
+          this.loadAuthProviders(),
+          this.loadTrophyLeaderboard(),
+        ]);
         this.currentUser = null;
         this.profileMenuVisible = false;
         this.testMenuRoot = null;
@@ -2640,7 +2664,10 @@ export class AppComponent implements OnInit, OnDestroy {
       this.flipcardStats = {};
       this.setScreen(this.testMenuRoot.children.length > 0 ? 'start' : 'settings');
     } catch {
-      await this.loadAuthProviders();
+      await Promise.all([
+        this.loadAuthProviders(),
+        this.loadTrophyLeaderboard(),
+      ]);
       this.currentUser = null;
       this.setScreen('login');
     } finally {
@@ -2672,6 +2699,21 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch {
       this.googleLoginConfigured = true;
       this.passwordLoginConfigured = false;
+    }
+  }
+
+  private async loadTrophyLeaderboard(): Promise<void> {
+    this.trophyLeaderboardLoading = true;
+    this.trophyLeaderboardError = false;
+    try {
+      const response = await this.apiGet<TrophyLeaderboardResponse>('public/trophy-leaderboard', false);
+      this.trophyLeaderboard = response.items;
+    } catch {
+      this.trophyLeaderboard = [];
+      this.trophyLeaderboardError = true;
+    } finally {
+      this.trophyLeaderboardLoading = false;
+      this.render();
     }
   }
 
@@ -4863,6 +4905,10 @@ export class AppComponent implements OnInit, OnDestroy {
   private async readApiResponse<T>(response: Response, redirectOnUnauthorized: boolean): Promise<T> {
     if (response.status === 401 && redirectOnUnauthorized) {
       this.setScreen('login');
+      void Promise.all([
+        this.loadAuthProviders(),
+        this.loadTrophyLeaderboard(),
+      ]);
     }
     if (!response.ok) {
       const body = await response.text();

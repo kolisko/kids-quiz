@@ -115,6 +115,10 @@ fun Application.module() {
             get("/auth/providers") {
                 call.respond(AuthProvidersResponse(googleConfigured = Auth.googleConfigured, passwordLoginConfigured = Auth.passwordLoginConfigured))
             }
+            get("/public/trophy-leaderboard") {
+                call.response.headers.append(HttpHeaders.CacheControl, "no-store")
+                call.respond(TrophyStore.leaderboard())
+            }
             get("/auth/google/start") {
                 Auth.startGoogleLogin(call)
             }

@@ -115,6 +115,40 @@
         Přihlášení není nakonfigurované.
       </p>
     </div>
+    <section class="login-leaderboard" aria-label="Žebříček podle počtu fumfíků">
+      <div class="login-leaderboard-heading">
+        <lucide-icon [img]="trophyIcon" [size]="22" [strokeWidth]="2.5" aria-hidden="true"></lucide-icon>
+        <strong>Top 5 sběratelů</strong>
+      </div>
+      <p class="login-leaderboard-note" *ngIf="trophyLeaderboardLoading">Načítám žebříček...</p>
+      <p class="login-leaderboard-note" *ngIf="!trophyLeaderboardLoading && trophyLeaderboardError">
+        Žebříček teď není dostupný.
+      </p>
+      <p class="login-leaderboard-note" *ngIf="!trophyLeaderboardLoading && !trophyLeaderboardError && trophyLeaderboard.length === 0">
+        Zatím tu není žádný vítěz.
+      </p>
+      <div class="login-leaderboard-list" *ngIf="!trophyLeaderboardLoading && trophyLeaderboard.length > 0">
+        <div class="login-leaderboard-row" *ngFor="let entry of trophyLeaderboard; let index = index">
+          <span
+            class="login-leaderboard-rank"
+            [class.login-leaderboard-rank-gold]="index === 0"
+            [class.login-leaderboard-rank-silver]="index === 1"
+            [class.login-leaderboard-rank-bronze]="index === 2">
+            <lucide-icon
+              *ngIf="index < 3"
+              [img]="trophyIcon"
+              [size]="18"
+              [strokeWidth]="2.7"
+              aria-hidden="true"></lucide-icon>
+            <span *ngIf="index >= 3">{{ index + 1 }}</span>
+          </span>
+          <strong class="login-leaderboard-name">{{ entry.firstName }}</strong>
+          <span class="login-leaderboard-count" [attr.aria-label]="fumfikCountLabel(entry.trophyCount)">
+            {{ entry.trophyCount }}
+          </span>
+        </div>
+      </div>
+    </section>
   </section>
 
   <section class="start-screen" *ngIf="screen === 'start'">

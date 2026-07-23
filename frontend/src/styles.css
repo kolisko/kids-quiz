@@ -316,6 +316,7 @@ button,
   isolation: isolate;
   width: min(100%, 26rem);
   margin: 0 auto;
+  gap: 0.8rem;
   text-align: center;
   overflow: hidden;
 }
@@ -355,6 +356,90 @@ button,
   background: rgba(255, 255, 255, 0.74);
   box-shadow: 0 1.6rem 4rem rgba(15, 23, 42, 0.13);
   backdrop-filter: blur(14px);
+}
+
+.login-leaderboard {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 27rem);
+  padding: 0.85rem 1rem 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 1.1rem 2.6rem rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(14px);
+}
+
+.login-leaderboard-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+  color: #7c5a09;
+}
+
+.login-leaderboard-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.login-leaderboard-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 2.15rem;
+  padding: 0.25rem 0.55rem 0.25rem 0.35rem;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.13);
+}
+
+.login-leaderboard-row:last-child {
+  border-bottom: 0;
+}
+
+.login-leaderboard-rank {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.login-leaderboard-rank-gold {
+  color: #d49a00;
+}
+
+.login-leaderboard-rank-silver {
+  color: #778391;
+}
+
+.login-leaderboard-rank-bronze {
+  color: #b66a2c;
+}
+
+.login-leaderboard-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #1f2937;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-leaderboard-count {
+  display: inline-flex;
+  align-items: center;
+  color: #0f766e;
+  font-weight: 900;
+}
+
+.login-leaderboard-note {
+  margin: 0.35rem 0 0.1rem;
+  color: #64748b;
+  font-size: 0.88rem;
+  font-weight: 750;
 }
 
 .login-fumfik-background {
@@ -2329,6 +2414,14 @@ textarea:disabled {
   .login-panel {
     padding: 1.8rem 1.2rem 1.35rem;
     border-radius: 1.15rem;
+  }
+
+  .login-leaderboard {
+    padding: 0.72rem 0.8rem 0.8rem;
+  }
+
+  .login-leaderboard-row {
+    min-height: 1.95rem;
   }
 
   .login-fumfik {
