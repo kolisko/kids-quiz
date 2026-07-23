@@ -2611,6 +2611,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearFlipcardPreloads();
     this.testMenuPath = [];
     this.setScreen(this.testMenuRoot?.children.length ? 'start' : 'settings');
+    void this.loadTrophyLeaderboard();
     this.render();
   }
 
@@ -2647,6 +2648,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.apiGet<TestMenuNode>('test-menu'),
         this.apiGet<GameSettings>('settings'),
         this.isAdmin ? this.loadAllLanguageSettings() : Promise.resolve(),
+        this.loadTrophyLeaderboard(),
       ]);
       this.applySettings(settings);
       this.testMenuRoot = normalizeTestMenuNode(testMenu);

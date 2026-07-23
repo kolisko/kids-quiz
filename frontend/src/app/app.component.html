@@ -29,6 +29,62 @@
       </div>
     </div>
   </ng-template>
+  <ng-template
+    #trophyLeaderboardPanel
+    let-panelClass="panelClass"
+    let-showCollectionButton="showCollectionButton">
+    <section
+      class="trophy-leaderboard"
+      [ngClass]="panelClass"
+      aria-label="Žebříček podle počtu fumfíků">
+      <div class="trophy-leaderboard-heading">
+        <button
+          class="trophy-entry-button trophy-leaderboard-entry-button"
+          type="button"
+          *ngIf="showCollectionButton"
+          (click)="openTrophies()"
+          title="Sbírka fumfíků"
+          aria-label="Sbírka fumfíků">
+          <lucide-icon [img]="trophyIcon" [size]="26"></lucide-icon>
+        </button>
+        <lucide-icon
+          *ngIf="!showCollectionButton"
+          [img]="trophyIcon"
+          [size]="22"
+          [strokeWidth]="2.5"
+          aria-hidden="true"></lucide-icon>
+        <strong>Top 5 sběratelů</strong>
+      </div>
+      <p class="trophy-leaderboard-note" *ngIf="trophyLeaderboardLoading">Načítám žebříček...</p>
+      <p class="trophy-leaderboard-note" *ngIf="!trophyLeaderboardLoading && trophyLeaderboardError">
+        Žebříček teď není dostupný.
+      </p>
+      <p class="trophy-leaderboard-note" *ngIf="!trophyLeaderboardLoading && !trophyLeaderboardError && trophyLeaderboard.length === 0">
+        Zatím tu není žádný vítěz.
+      </p>
+      <div class="trophy-leaderboard-list" *ngIf="!trophyLeaderboardLoading && trophyLeaderboard.length > 0">
+        <div class="trophy-leaderboard-row" *ngFor="let entry of trophyLeaderboard; let index = index">
+          <span
+            class="trophy-leaderboard-rank"
+            [class.trophy-leaderboard-rank-gold]="index === 0"
+            [class.trophy-leaderboard-rank-silver]="index === 1"
+            [class.trophy-leaderboard-rank-bronze]="index === 2">
+            <lucide-icon
+              *ngIf="index < 3"
+              [img]="trophyIcon"
+              [size]="18"
+              [strokeWidth]="2.7"
+              aria-hidden="true"></lucide-icon>
+            <span *ngIf="index >= 3">{{ index + 1 }}</span>
+          </span>
+          <strong class="trophy-leaderboard-name">{{ entry.firstName }}</strong>
+          <span class="trophy-leaderboard-count" [attr.aria-label]="fumfikCountLabel(entry.trophyCount)">
+            {{ entry.trophyCount }}
+          </span>
+        </div>
+      </div>
+    </section>
+  </ng-template>
 
   <div class="top-bar app-header" *ngIf="screen === 'play'">
     <div class="score-pill">
@@ -115,52 +171,15 @@
         Přihlášení není nakonfigurované.
       </p>
     </div>
-    <section class="login-leaderboard" aria-label="Žebříček podle počtu fumfíků">
-      <div class="login-leaderboard-heading">
-        <lucide-icon [img]="trophyIcon" [size]="22" [strokeWidth]="2.5" aria-hidden="true"></lucide-icon>
-        <strong>Top 5 sběratelů</strong>
-      </div>
-      <p class="login-leaderboard-note" *ngIf="trophyLeaderboardLoading">Načítám žebříček...</p>
-      <p class="login-leaderboard-note" *ngIf="!trophyLeaderboardLoading && trophyLeaderboardError">
-        Žebříček teď není dostupný.
-      </p>
-      <p class="login-leaderboard-note" *ngIf="!trophyLeaderboardLoading && !trophyLeaderboardError && trophyLeaderboard.length === 0">
-        Zatím tu není žádný vítěz.
-      </p>
-      <div class="login-leaderboard-list" *ngIf="!trophyLeaderboardLoading && trophyLeaderboard.length > 0">
-        <div class="login-leaderboard-row" *ngFor="let entry of trophyLeaderboard; let index = index">
-          <span
-            class="login-leaderboard-rank"
-            [class.login-leaderboard-rank-gold]="index === 0"
-            [class.login-leaderboard-rank-silver]="index === 1"
-            [class.login-leaderboard-rank-bronze]="index === 2">
-            <lucide-icon
-              *ngIf="index < 3"
-              [img]="trophyIcon"
-              [size]="18"
-              [strokeWidth]="2.7"
-              aria-hidden="true"></lucide-icon>
-            <span *ngIf="index >= 3">{{ index + 1 }}</span>
-          </span>
-          <strong class="login-leaderboard-name">{{ entry.firstName }}</strong>
-          <span class="login-leaderboard-count" [attr.aria-label]="fumfikCountLabel(entry.trophyCount)">
-            {{ entry.trophyCount }}
-          </span>
-        </div>
-      </div>
-    </section>
+    <ng-container
+      *ngTemplateOutlet="trophyLeaderboardPanel; context: {
+        panelClass: 'login-trophy-leaderboard',
+        showCollectionButton: false
+      }">
+    </ng-container>
   </section>
 
   <section class="start-screen" *ngIf="screen === 'start'">
-    <button
-      class="trophy-entry-button"
-      type="button"
-      *ngIf="currentTestMenuIsRoot"
-      (click)="openTrophies()"
-      title="Sbírka fumfíků"
-      aria-label="Sbírka fumfíků">
-      <lucide-icon [img]="trophyIcon" [size]="38"></lucide-icon>
-    </button>
     <div class="settings-header test-menu-header" *ngIf="!currentTestMenuIsRoot">
       <button
         class="icon-button"
@@ -174,6 +193,14 @@
       <span class="header-left-slot" aria-hidden="true"></span>
     </div>
     <h1 *ngIf="currentTestMenuIsRoot">{{ currentTestMenuTitle }}</h1>
+    <ng-container
+      *ngIf="currentTestMenuIsRoot"
+      [ngTemplateOutlet]="trophyLeaderboardPanel"
+      [ngTemplateOutletContext]="{
+        panelClass: 'home-trophy-leaderboard',
+        showCollectionButton: true
+      }">
+    </ng-container>
     <p class="settings-note" *ngIf="!hasVisibleTestMenu">
       Žádné testy nejsou zobrazené.
     </p>

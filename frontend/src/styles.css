@@ -358,7 +358,7 @@ button,
   backdrop-filter: blur(14px);
 }
 
-.login-leaderboard {
+.trophy-leaderboard {
   position: relative;
   z-index: 1;
   width: min(100%, 27rem);
@@ -370,7 +370,7 @@ button,
   backdrop-filter: blur(14px);
 }
 
-.login-leaderboard-heading {
+.trophy-leaderboard-heading {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -379,12 +379,12 @@ button,
   color: #7c5a09;
 }
 
-.login-leaderboard-list {
+.trophy-leaderboard-list {
   display: grid;
   gap: 0.35rem;
 }
 
-.login-leaderboard-row {
+.trophy-leaderboard-row {
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr) auto;
   align-items: center;
@@ -393,11 +393,11 @@ button,
   border-bottom: 1px solid rgba(100, 116, 139, 0.13);
 }
 
-.login-leaderboard-row:last-child {
+.trophy-leaderboard-row:last-child {
   border-bottom: 0;
 }
 
-.login-leaderboard-rank {
+.trophy-leaderboard-rank {
   display: inline-grid;
   place-items: center;
   width: 1.7rem;
@@ -407,19 +407,19 @@ button,
   font-weight: 900;
 }
 
-.login-leaderboard-rank-gold {
+.trophy-leaderboard-rank-gold {
   color: #d49a00;
 }
 
-.login-leaderboard-rank-silver {
+.trophy-leaderboard-rank-silver {
   color: #778391;
 }
 
-.login-leaderboard-rank-bronze {
+.trophy-leaderboard-rank-bronze {
   color: #b66a2c;
 }
 
-.login-leaderboard-name {
+.trophy-leaderboard-name {
   min-width: 0;
   overflow: hidden;
   color: #1f2937;
@@ -428,18 +428,66 @@ button,
   white-space: nowrap;
 }
 
-.login-leaderboard-count {
+.trophy-leaderboard-count {
   display: inline-flex;
   align-items: center;
   color: #0f766e;
   font-weight: 900;
 }
 
-.login-leaderboard-note {
+.trophy-leaderboard-note {
   margin: 0.35rem 0 0.1rem;
   color: #64748b;
   font-size: 0.88rem;
   font-weight: 750;
+}
+
+.home-trophy-leaderboard {
+  position: fixed;
+  top: 50%;
+  left: 1rem;
+  width: clamp(11rem, calc((100vw - 50rem) / 2 - 2rem), 14rem);
+  padding: 0.7rem;
+  transform: translateY(-50%);
+}
+
+.home-trophy-leaderboard .trophy-leaderboard-heading {
+  font-size: 0.88rem;
+}
+
+.home-trophy-leaderboard .trophy-leaderboard-row {
+  grid-template-columns: 1.7rem minmax(0, 1fr) auto;
+  padding-right: 0.25rem;
+  padding-left: 0.15rem;
+}
+
+@media (max-width: 1199px) {
+  .home-trophy-leaderboard {
+    position: static;
+    width: min(100%, 50rem);
+    padding: 0.55rem 0.7rem 0.65rem;
+    transform: none;
+  }
+
+  .home-trophy-leaderboard .trophy-leaderboard-heading {
+    margin-bottom: 0.35rem;
+  }
+
+  .home-trophy-leaderboard .trophy-leaderboard-list {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  .home-trophy-leaderboard .trophy-leaderboard-row {
+    grid-template-columns: 1.55rem minmax(0, 1fr) auto;
+    min-height: 1.9rem;
+    border-right: 1px solid rgba(100, 116, 139, 0.13);
+    border-bottom: 0;
+  }
+
+  .home-trophy-leaderboard .trophy-leaderboard-row:last-child {
+    border-right: 0;
+  }
 }
 
 .login-fumfik-background {
@@ -872,6 +920,14 @@ button,
 .trophy-entry-button lucide-icon {
   color: #78350f;
   filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.34));
+}
+
+.trophy-leaderboard-entry-button {
+  flex: 0 0 3.2rem;
+  width: 3.2rem;
+  height: 3.2rem;
+  border-width: 2px;
+  box-shadow: 0 9px 18px rgba(146, 64, 14, 0.2);
 }
 
 .trophies-screen {
@@ -2416,12 +2472,38 @@ textarea:disabled {
     border-radius: 1.15rem;
   }
 
-  .login-leaderboard {
+  .login-trophy-leaderboard {
     padding: 0.72rem 0.8rem 0.8rem;
   }
 
-  .login-leaderboard-row {
+  .login-trophy-leaderboard .trophy-leaderboard-row {
     min-height: 1.95rem;
+  }
+
+  .home-trophy-leaderboard {
+    padding-right: 0.4rem;
+    padding-left: 0.4rem;
+  }
+
+  .home-trophy-leaderboard .trophy-leaderboard-heading {
+    font-size: 0.8rem;
+  }
+
+  .home-trophy-leaderboard .trophy-leaderboard-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 0.15rem;
+  }
+
+  .home-trophy-leaderboard .trophy-leaderboard-row {
+    grid-template-columns: 1.35rem minmax(0, 1fr) auto;
+    padding-right: 0.2rem;
+    padding-left: 0.1rem;
+    font-size: 0.8rem;
+  }
+
+  .home-trophy-leaderboard .trophy-leaderboard-rank {
+    width: 1.3rem;
+    height: 1.3rem;
   }
 
   .login-fumfik {
