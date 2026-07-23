@@ -289,6 +289,18 @@ object UserAdminStore {
     fun updateStatus(userId: Long, status: UserStatus): AuthUser? = synchronized(lock) {
         Database.useConnection { connection -> connection.updateUserStatus(userId, status) }
     }
+
+    fun readTestErrors(userId: Long, limit: Int): AdminTestErrorsResponse = synchronized(lock) {
+        Database.useConnection { connection -> connection.readUserTestErrors(userId, limit) }
+    }
+}
+
+object UserTestErrorStore {
+    private val lock = Any()
+
+    fun record(userId: Long, request: TestErrorReportRequest) = synchronized(lock) {
+        Database.useConnection { connection -> connection.recordUserTestError(userId, request) }
+    }
 }
 
 object TrophyStore {

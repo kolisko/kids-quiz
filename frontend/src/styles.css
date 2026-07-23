@@ -704,6 +704,8 @@ button,
 .admin-user-main {
   display: grid;
   gap: 0.25rem;
+  min-width: 0;
+  flex: 1;
   color: #374151;
   text-align: left;
 }
@@ -711,6 +713,30 @@ button,
 .admin-user-main strong {
   color: #111827;
   font-size: 1.1rem;
+}
+
+.admin-user-errors-toggle {
+  justify-self: start;
+  margin-top: 0.5rem;
+}
+
+.admin-user-errors {
+  display: grid;
+  gap: 0;
+  margin-top: 0.35rem;
+  border-top: 2px solid #d1d5db;
+}
+
+.admin-user-error-row {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid #d1d5db;
+  overflow-wrap: anywhere;
+}
+
+.admin-user-error-row strong {
+  font-size: 0.95rem;
 }
 
 .start-screen h1 {

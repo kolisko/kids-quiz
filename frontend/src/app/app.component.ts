@@ -246,10 +246,38 @@ interface AdminUserSummary extends AuthUser {
   spellingStatsCount: number;
   flipcardStatsCount: number;
   trophyCount: number;
+  testErrorCount: number;
+  lastTestErrorAt?: string | null;
 }
 
 interface AdminUsersResponse {
   users: AdminUserSummary[];
+}
+
+type TestErrorStage = 'launch' | 'selection' | 'asset_preparation';
+
+interface TestErrorReportRequest {
+  testKey: string;
+  game: ActiveGame;
+  language?: LearningLanguage;
+  stage: TestErrorStage;
+  errorCode: string;
+}
+
+interface AdminTestError {
+  id: number;
+  testKey: string;
+  game: ActiveGame;
+  language?: LearningLanguage | null;
+  stage: TestErrorStage;
+  errorCode: string;
+  occurrenceCount: number;
+  firstOccurredAt: string;
+  lastOccurredAt: string;
+}
+
+interface AdminTestErrorsResponse {
+  items: AdminTestError[];
 }
 
 interface AnswerResultResponse {
@@ -583,6 +611,10 @@ export class AppComponent implements OnInit, OnDestroy {
   adminUsers: AdminUserSummary[] = [];
   adminUsersLoading = false;
   adminUsersError: string | null = null;
+  adminUserErrorsById: Record<number, AdminTestError[]> = {};
+  adminUserErrorsExpanded: Record<number, boolean> = {};
+  adminUserErrorsLoading: Record<number, boolean> = {};
+  adminUserErrorsError: Record<number, string | null> = {};
   settingsSaved = false;
   settingsError: string | null = null;
   testMenuVisibilityDraftKeys: string[] = [];
@@ -603,6 +635,7 @@ export class AppComponent implements OnInit, OnDestroy {
   testMenuRoot: TestMenuNode | null = null;
   testMenuSettingsRoot: TestMenuNode | null = null;
   testMenuPath: string[] = [];
+  currentTestMenuKey: string | null = null;
   selectedTest: QuizTest | null = null;
   selectedLanguage: LearningLanguage = 'en';
   settingsLanguage: LearningLanguage = 'en';
@@ -1003,6 +1036,12 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.audioPrepItems.some((item) => item.status === 'error') || this.audioPrepError !== null;
   }
 
+  get canRetryAudioPrep(): boolean {
+    if (this.activeGame === 'spelling') return this.spellingWords.length > 0;
+    if (this.activeGame === 'flipcards') return this.flipcardWords.length >= 3;
+    return false;
+  }
+
   get audioPrepActionsVisible(): boolean {
     return !this.audioPrepLoading || this.hasAudioPrepErrors;
   }
@@ -1283,6 +1322,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!node.launchable || this.loading) return;
     this.loading = true;
     this.resetRoundState();
+    this.currentTestMenuKey = node.key;
     this.render();
     try {
       const launch = await this.apiPost<TestMenuLaunchResponse>('test-menu/launch', { key: node.key });
@@ -1296,7 +1336,8 @@ export class AppComponent implements OnInit, OnDestroy {
       } else if (launch.kind === 'flipcards') {
         await this.startLaunchedFlipcards(launch);
       }
-    } catch {
+    } catch (error) {
+      this.reportTestStartError('launch', error, 'test_launch_failed', node.key, this.testErrorGameForKey(node.key));
       this.audioPrepError = 'Test se nepodařilo spustit.';
       this.setScreen('start');
     } finally {
@@ -1314,6 +1355,10 @@ export class AppComponent implements OnInit, OnDestroy {
       product_to_factors: launch.mathStats?.product_to_factors?.statsByQuestionId ?? {},
       factors_to_product: launch.mathStats?.factors_to_product?.statsByQuestionId ?? {},
     };
+    if (this.questions.length === 0) {
+      this.failTestStart('selection', 'no_math_questions', 'Pro tento test nejsou dostupné žádné příklady.');
+      return;
+    }
     void this.startTeslaMp3AudioForTest();
     this.startMathSession();
     this.setScreen('play');
@@ -1331,6 +1376,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.arithmeticMode = launch.arithmeticMode ?? 'mix';
     this.arithmeticQuestions = launch.arithmeticQuestions ?? [];
     this.arithmeticStats = launch.arithmeticStats?.statsByKey ?? {};
+    if (this.arithmeticQuestions.length === 0) {
+      this.failTestStart('selection', 'no_arithmetic_questions', 'Pro tento test nejsou dostupné žádné příklady.');
+      return;
+    }
     void this.startTeslaMp3AudioForTest();
     this.startArithmeticSession();
     this.setScreen('play');
@@ -1350,6 +1399,10 @@ export class AppComponent implements OnInit, OnDestroy {
     this.spellingStats = launch.spellingStats?.statsByWord ?? {};
     this.spellingSetId = launch.spellingSession?.setId ?? 0;
     this.spellingWords = launch.spellingSession?.words ?? [];
+    if (this.spellingWords.length === 0) {
+      this.failTestStart('selection', 'no_spelling_words', 'Pro tento test nejsou dostupná žádná slovíčka.');
+      return;
+    }
     this.startSpellingSession();
     await this.prepareSpellingAssets();
   }
@@ -1367,19 +1420,23 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.startTeslaMp3AudioForTest();
     this.flipcardStats = launch.flipcardStats?.statsByWord ?? {};
     await this.loadFlipcardWords(this.settings.flipcardPromptLanguage);
-    const answerPool = await this.loadFlipcardAnswerPool();
+    const promptConceptKeys = new Set(
+      this.flipcardWordsByLanguage[this.settings.flipcardPromptLanguage]
+        .map((word) => word.conceptKey),
+    );
+    const answerPool = (await this.loadFlipcardAnswerPool())
+      .filter((word) => promptConceptKeys.has(word.conceptKey));
     this.flipcardWords = answerPool;
     this.flipcardAnswerPool = answerPool;
     this.startFlipcardSession();
     this.flipcardOptionsByIndex = this.flipcardWords.map((_, index) => this.buildFlipcardOptions(index));
     if (this.flipcardWords.length < 1 || this.flipcardAnswerPool.length < 3 || this.flipcardOptionsByIndex.some((options) => options.length < 3)) {
-      if (this.settings.flipcardSource === 'ready_only') {
-        this.audioPrepItems = [];
-        this.audioPrepError = 'Pro ready-only test jsou potřeba aspoň 3 připravená slovíčka.';
-        this.setScreen('audioPrep');
-      } else {
-        this.setScreen('play');
-      }
+      this.reportTestStartError('selection', new Error('not_enough_compatible_flipcards'));
+      this.audioPrepItems = [];
+      this.audioPrepError = this.settings.flipcardSource === 'ready_only'
+        ? 'Pro ready-only test jsou potřeba aspoň 3 připravená slovíčka.'
+        : `Pro test jsou potřeba aspoň 3 slovíčka dostupná v jazyce odpovědí i v jazyce otázky (${this.languageLabel(this.settings.flipcardPromptLanguage)}).`;
+      this.setScreen('audioPrep');
       return;
     }
     await this.prepareFlipcardAssets();
@@ -1603,10 +1660,45 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const response = await this.apiGet<AdminUsersResponse>('admin/users');
       this.adminUsers = response.users ?? [];
+      this.adminUserErrorsById = {};
+      this.adminUserErrorsExpanded = {};
+      this.adminUserErrorsLoading = {};
+      this.adminUserErrorsError = {};
     } catch {
       this.adminUsersError = 'Uživatele se nepodařilo načíst.';
     } finally {
       this.adminUsersLoading = false;
+    }
+  }
+
+  async toggleAdminUserErrors(user: AdminUserSummary): Promise<void> {
+    if (!this.isAdmin || user.testErrorCount < 1) return;
+    const expanded = !this.adminUserErrorsExpanded[user.id];
+    this.adminUserErrorsExpanded = {
+      ...this.adminUserErrorsExpanded,
+      [user.id]: expanded,
+    };
+    if (!expanded || this.adminUserErrorsById[user.id]) {
+      this.render();
+      return;
+    }
+    this.adminUserErrorsLoading = { ...this.adminUserErrorsLoading, [user.id]: true };
+    this.adminUserErrorsError = { ...this.adminUserErrorsError, [user.id]: null };
+    this.render();
+    try {
+      const response = await this.apiGet<AdminTestErrorsResponse>(`admin/users/${user.id}/test-errors?limit=30`);
+      this.adminUserErrorsById = {
+        ...this.adminUserErrorsById,
+        [user.id]: response.items ?? [],
+      };
+    } catch {
+      this.adminUserErrorsError = {
+        ...this.adminUserErrorsError,
+        [user.id]: 'Chyby uživatele se nepodařilo načíst.',
+      };
+    } finally {
+      this.adminUserErrorsLoading = { ...this.adminUserErrorsLoading, [user.id]: false };
+      this.render();
     }
   }
 
@@ -2895,6 +2987,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.audioPrepLoading = false;
       this.startSpellingGame();
     } catch (error) {
+      this.reportTestStartError('asset_preparation', error, 'spelling_asset_preparation_failed');
       this.setScreen('audioPrep');
       this.audioPrepError = error instanceof Error ? error.message : 'Test se nepodařilo připravit.';
     } finally {
@@ -2973,6 +3066,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
       const missingItems = this.audioPrepItems.filter((item) => item.status !== 'ready');
       if (this.settings.flipcardSource === 'ready_only' && missingItems.length > 0) {
+        this.reportTestStartError('asset_preparation', new Error('ready_only_assets_missing'));
         this.setScreen('audioPrep');
         this.audioPrepError = 'Pro test z připravených slov chybí obrázek nebo audio.';
         this.render();
@@ -2995,6 +3089,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.audioPrepLoading = false;
       this.startFlipcardGame();
     } catch (error) {
+      this.reportTestStartError('asset_preparation', error, 'flipcard_asset_preparation_failed');
       this.setScreen('audioPrep');
       this.audioPrepError = error instanceof Error ? error.message : 'Obrázky se nepodařilo připravit.';
     } finally {
@@ -3121,7 +3216,8 @@ export class AppComponent implements OnInit, OnDestroy {
       await Promise.all(workers);
     } catch (error) {
       if (token.cancelled) return;
-      this.audioPrepError = error instanceof Error ? error.message : 'Příprava testu selhala.';
+      this.reportTestStartError('asset_preparation', error, 'quiz_asset_preparation_failed');
+      this.audioPrepError = quizAssetPreparationErrorMessage(error);
       items.forEach((item) => {
         if (item.status !== 'ready') {
           this.updateAudioPrepItem(item.normalized, item.kind, {
@@ -3794,6 +3890,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.audioPrepItems = [];
     this.audioPrepError = null;
     this.audioPrepLoading = false;
+    this.currentTestMenuKey = null;
     this.backendAudioUrls = {};
     this.backendSpellingAudioUrls = {};
     this.flipcardImageUrls = {};
@@ -3807,6 +3904,47 @@ export class AppComponent implements OnInit, OnDestroy {
     this.arithmeticSession.clear();
     this.spellingSession.clear();
     this.flipcardSession.clear();
+  }
+
+  private reportTestStartError(
+    stage: TestErrorStage,
+    error: unknown,
+    fallbackCode = 'test_start_failed',
+    testKey = this.currentTestMenuKey ?? 'unknown',
+    game = this.activeGame,
+  ): void {
+    if (!this.currentUser) return;
+    const language = game === 'spelling' || game === 'flipcards'
+      ? this.testErrorLanguageForKey(testKey) ?? this.selectedLanguage
+      : undefined;
+    const request: TestErrorReportRequest = {
+      testKey,
+      game,
+      language,
+      stage,
+      errorCode: testErrorCode(error, fallbackCode),
+    };
+    void this.apiPost<{ ok: boolean }>('test-errors', request, false).catch(() => undefined);
+  }
+
+  private failTestStart(stage: TestErrorStage, errorCode: string, message: string): void {
+    this.reportTestStartError(stage, new Error(errorCode));
+    this.audioPrepItems = [];
+    this.audioPrepLoading = false;
+    this.audioPrepError = message;
+    this.setScreen('audioPrep');
+  }
+
+  private testErrorGameForKey(testKey: string): ActiveGame {
+    if (testKey.includes('.flipcards')) return 'flipcards';
+    if (testKey.includes('.spelling.')) return 'spelling';
+    if (testKey.includes('.arithmetic.')) return 'arithmetic';
+    return 'multiplication';
+  }
+
+  private testErrorLanguageForKey(testKey: string): LearningLanguage | null {
+    const match = /^tests\.language\.(en|de|es|cs)\./.exec(testKey);
+    return (match?.[1] as LearningLanguage | undefined) ?? null;
   }
 
   private pickDirection(): PracticeDirection {
@@ -5767,6 +5905,27 @@ function parseApiError(body: string): string | null {
   } catch {
     return body.slice(0, 160);
   }
+}
+
+function quizAssetPreparationErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : null;
+  switch (message) {
+    case 'prompt_translation_missing':
+      return 'U některého slovíčka chybí překlad v nastaveném jazyce otázky. Spusť test znovu.';
+    case 'quiz_asset_rate_limited':
+      return 'Probíhá příliš mnoho příprav testů. Chvíli počkej a zkus to znovu.';
+    case 'word_not_in_spelling_test':
+    case 'concept_not_in_flipcard_test':
+      return 'Seznam slovíček se mezitím změnil. Spusť test znovu.';
+    default:
+      return message ?? 'Příprava testu selhala.';
+  }
+}
+
+function testErrorCode(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  const code = error.message.trim().replace(/\s+/g, ' ');
+  return code ? code.slice(0, 200) : fallback;
 }
 
 function normalizeTestMenuNode(node: TestMenuNode): TestMenuNode {

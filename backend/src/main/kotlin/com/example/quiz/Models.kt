@@ -205,11 +205,60 @@ data class AdminUserSummary(
     val spellingStatsCount: Int = 0,
     val flipcardStatsCount: Int = 0,
     val trophyCount: Int = 0,
+    val testErrorCount: Int = 0,
+    val lastTestErrorAt: String? = null,
 )
 
 @Serializable
 data class AdminUsersResponse(
     val users: List<AdminUserSummary>,
+)
+
+@Serializable
+enum class TestErrorGame {
+    multiplication,
+    arithmetic,
+    spelling,
+    flipcards,
+}
+
+@Serializable
+enum class TestErrorStage {
+    launch,
+    selection,
+    asset_preparation,
+}
+
+@Serializable
+data class TestErrorReportRequest(
+    val testKey: String,
+    val game: TestErrorGame,
+    val language: LearningLanguage? = null,
+    val stage: TestErrorStage,
+    val errorCode: String,
+)
+
+@Serializable
+data class TestErrorReportResponse(
+    val ok: Boolean = true,
+)
+
+@Serializable
+data class AdminTestError(
+    val id: Long,
+    val testKey: String,
+    val game: TestErrorGame,
+    val language: LearningLanguage? = null,
+    val stage: TestErrorStage,
+    val errorCode: String,
+    val occurrenceCount: Int,
+    val firstOccurredAt: String,
+    val lastOccurredAt: String,
+)
+
+@Serializable
+data class AdminTestErrorsResponse(
+    val items: List<AdminTestError>,
 )
 
 @Serializable

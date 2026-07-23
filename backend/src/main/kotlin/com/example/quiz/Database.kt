@@ -310,6 +310,12 @@ object DatabaseMigrator {
                     recordMigration(28, "add_flipcard_image_version")
                 }
             }
+            if (29 !in applied) {
+                connection.transaction {
+                    addUserTestErrors()
+                    recordMigration(29, "add_user_test_errors")
+                }
+            }
         }
         migrated = true
     }
@@ -866,6 +872,34 @@ object DatabaseMigrator {
                     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                     PRIMARY KEY(user_id, item_key)
                 )
+                """.trimIndent(),
+            )
+        }
+    }
+
+    private fun Connection.addUserTestErrors() {
+        createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS user_test_errors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    test_key TEXT NOT NULL,
+                    game TEXT NOT NULL,
+                    language TEXT,
+                    stage TEXT NOT NULL,
+                    error_code TEXT NOT NULL,
+                    occurrence_count INTEGER NOT NULL DEFAULT 1 CHECK(occurrence_count >= 1),
+                    first_occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            statement.executeUpdate(
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_test_errors_user_last
+                ON user_test_errors(user_id, last_occurred_at DESC, id DESC)
                 """.trimIndent(),
             )
         }
@@ -2078,7 +2112,9 @@ fun Connection.readAdminUsers(): AdminUsersResponse {
             (SELECT COUNT(*) FROM question_stats WHERE question_stats.user_id = users.id) AS stats_count,
             (SELECT COUNT(*) FROM spelling_word_stats WHERE spelling_word_stats.user_id = users.id) AS spelling_stats_count,
             (SELECT COUNT(*) FROM flipcard_word_stats WHERE flipcard_word_stats.user_id = users.id) AS flipcard_stats_count,
-            (SELECT COUNT(*) FROM trophies WHERE trophies.user_id = users.id) AS trophy_count
+            (SELECT COUNT(*) FROM trophies WHERE trophies.user_id = users.id) AS trophy_count,
+            COALESCE((SELECT SUM(occurrence_count) FROM user_test_errors WHERE user_test_errors.user_id = users.id), 0) AS test_error_count,
+            (SELECT MAX(last_occurred_at) FROM user_test_errors WHERE user_test_errors.user_id = users.id) AS last_test_error_at
         FROM users
         ORDER BY users.registered_at DESC, users.id DESC
         """.trimIndent(),
@@ -2106,6 +2142,126 @@ fun Connection.readAdminUsers(): AdminUsersResponse {
                                 spellingStatsCount = rows.getInt("spelling_stats_count"),
                                 flipcardStatsCount = rows.getInt("flipcard_stats_count"),
                                 trophyCount = rows.getInt("trophy_count"),
+                                testErrorCount = rows.getInt("test_error_count"),
+                                lastTestErrorAt = rows.getString("last_test_error_at"),
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+    }
+}
+
+fun Connection.recordUserTestError(userId: Long, request: TestErrorReportRequest) {
+    val testKey = request.testKey.trim()
+    require(testKey.matches(Regex("""[A-Za-z0-9._:-]{1,160}"""))) { "invalid_test_error_key" }
+    val errorCode = request.errorCode.trim().replace(Regex("""\s+"""), " ")
+    require(errorCode.isNotEmpty() && errorCode.length <= 200) { "invalid_test_error_code" }
+    val expectsLanguage = request.game == TestErrorGame.spelling || request.game == TestErrorGame.flipcards
+    require(expectsLanguage == (request.language != null)) { "invalid_test_error_language" }
+
+    transaction {
+        val recentId = prepareStatement(
+            """
+            SELECT id
+            FROM user_test_errors
+            WHERE user_id = ?
+              AND test_key = ?
+              AND game = ?
+              AND ((language IS NULL AND ? IS NULL) OR language = ?)
+              AND stage = ?
+              AND error_code = ?
+              AND last_occurred_at >= datetime('now', '-5 minutes')
+            ORDER BY last_occurred_at DESC, id DESC
+            LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setLong(1, userId)
+            statement.setString(2, testKey)
+            statement.setString(3, request.game.name)
+            statement.setString(4, request.language?.name)
+            statement.setString(5, request.language?.name)
+            statement.setString(6, request.stage.name)
+            statement.setString(7, errorCode)
+            statement.executeQuery().use { rows -> if (rows.next()) rows.getLong("id") else null }
+        }
+        if (recentId != null) {
+            prepareStatement(
+                """
+                UPDATE user_test_errors
+                SET occurrence_count = occurrence_count + 1,
+                    last_occurred_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setLong(1, recentId)
+                statement.executeUpdate()
+            }
+        } else {
+            prepareStatement(
+                """
+                INSERT INTO user_test_errors(user_id, test_key, game, language, stage, error_code)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setLong(1, userId)
+                statement.setString(2, testKey)
+                statement.setString(3, request.game.name)
+                statement.setString(4, request.language?.name)
+                statement.setString(5, request.stage.name)
+                statement.setString(6, errorCode)
+                statement.executeUpdate()
+            }
+        }
+        prepareStatement(
+            """
+            DELETE FROM user_test_errors
+            WHERE user_id = ?
+              AND id NOT IN (
+                  SELECT id
+                  FROM user_test_errors
+                  WHERE user_id = ?
+                  ORDER BY last_occurred_at DESC, id DESC
+                  LIMIT 200
+              )
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setLong(1, userId)
+            statement.setLong(2, userId)
+            statement.executeUpdate()
+        }
+    }
+}
+
+fun Connection.readUserTestErrors(userId: Long, limit: Int): AdminTestErrorsResponse {
+    return prepareStatement(
+        """
+        SELECT id, test_key, game, language, stage, error_code, occurrence_count,
+            first_occurred_at, last_occurred_at
+        FROM user_test_errors
+        WHERE user_id = ?
+        ORDER BY last_occurred_at DESC, id DESC
+        LIMIT ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setLong(1, userId)
+        statement.setInt(2, limit.coerceIn(1, 100))
+        statement.executeQuery().use { rows ->
+            AdminTestErrorsResponse(
+                items = buildList {
+                    while (rows.next()) {
+                        add(
+                            AdminTestError(
+                                id = rows.getLong("id"),
+                                testKey = rows.getString("test_key"),
+                                game = TestErrorGame.valueOf(rows.getString("game")),
+                                language = rows.getString("language")?.let(LearningLanguage::valueOf),
+                                stage = TestErrorStage.valueOf(rows.getString("stage")),
+                                errorCode = rows.getString("error_code"),
+                                occurrenceCount = rows.getInt("occurrence_count"),
+                                firstOccurredAt = rows.getString("first_occurred_at"),
+                                lastOccurredAt = rows.getString("last_occurred_at"),
                             ),
                         )
                     }

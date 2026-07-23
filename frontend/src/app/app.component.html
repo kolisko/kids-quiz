@@ -477,7 +477,24 @@
             <span>{{ user.email }}</span>
             <span>Role {{ user.role }} · Stav {{ user.status }} · Provider {{ user.providers.join(', ') || 'žádný' }}</span>
             <span>Registrace {{ user.registeredAt }} · Poslední login {{ user.lastLoginAt || 'nikdy' }}</span>
-            <span>Data: matika {{ user.statsCount }}, spelling {{ user.spellingStatsCount }}, flipcards {{ user.flipcardStatsCount }}, fumfíci {{ user.trophyCount }}</span>
+            <span>Data: matika {{ user.statsCount }}, spelling {{ user.spellingStatsCount }}, flipcards {{ user.flipcardStatsCount }}, fumfíci {{ user.trophyCount }}, chyby testů {{ user.testErrorCount }}</span>
+            <span *ngIf="user.lastTestErrorAt">Poslední chyba testu {{ user.lastTestErrorAt }}</span>
+            <button
+              class="secondary-button compact-button admin-user-errors-toggle"
+              type="button"
+              *ngIf="user.testErrorCount > 0"
+              (click)="toggleAdminUserErrors(user)">
+              {{ adminUserErrorsExpanded[user.id] ? 'Skrýt chyby' : 'Zobrazit chyby' }}
+            </button>
+            <div class="admin-user-errors" *ngIf="adminUserErrorsExpanded[user.id]">
+              <span *ngIf="adminUserErrorsLoading[user.id]">Načítám chyby...</span>
+              <span class="error" *ngIf="adminUserErrorsError[user.id]">{{ adminUserErrorsError[user.id] }}</span>
+              <div class="admin-user-error-row" *ngFor="let error of adminUserErrorsById[user.id]">
+                <strong>{{ error.lastOccurredAt }} · {{ error.game }}{{ error.language ? ' · ' + error.language : '' }}</strong>
+                <span>{{ error.testKey }} · {{ error.stage }}</span>
+                <span>{{ error.errorCode }}{{ error.occurrenceCount > 1 ? ' · ' + error.occurrenceCount + '×' : '' }}</span>
+              </div>
+            </div>
           </div>
           <button
             class="danger-button compact-button"
@@ -787,7 +804,7 @@
         </div>
       </div>
       <p class="error settings-error" *ngIf="audioPrepError">{{ audioPrepError }}</p>
-      <button class="primary-button compact-button" type="button" *ngIf="hasAudioPrepErrors" (click)="retryAudioGeneration()" [disabled]="audioPrepLoading">
+      <button class="primary-button compact-button" type="button" *ngIf="hasAudioPrepErrors && canRetryAudioPrep" (click)="retryAudioGeneration()" [disabled]="audioPrepLoading">
         Zkusit znovu
       </button>
       <p class="audio-prep-note" *ngIf="audioPrepLoading && !hasAudioPrepErrors">

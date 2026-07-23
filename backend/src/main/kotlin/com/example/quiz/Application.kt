@@ -139,6 +139,16 @@ fun Application.module() {
                     if (Auth.requireAdmin(call) == null) return@get
                     call.respond(UserAdminStore.readUsers())
                 }
+                get("/users/{userId}/test-errors") {
+                    if (Auth.requireAdmin(call) == null) return@get
+                    val userId = call.parameters["userId"]?.toLongOrNull()
+                    if (userId == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_user_id"))
+                        return@get
+                    }
+                    val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 100) ?: 30
+                    call.respond(UserAdminStore.readTestErrors(userId, limit))
+                }
                 put("/users/{userId}/status") {
                     val admin = Auth.requireAdmin(call) ?: return@put
                     val userId = call.parameters["userId"]?.toLongOrNull()
@@ -157,6 +167,20 @@ fun Application.module() {
                         return@put
                     }
                     call.respond(user)
+                }
+            }
+            post("/test-errors") {
+                val user = Auth.requireUser(call) ?: return@post
+                val request = runCatching { call.receive<TestErrorReportRequest>() }.getOrNull()
+                if (request == null) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_test_error"))
+                    return@post
+                }
+                try {
+                    UserTestErrorStore.record(user.id, request)
+                    call.respond(TestErrorReportResponse())
+                } catch (error: IllegalArgumentException) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to (error.message ?: "invalid_test_error")))
                 }
             }
             get("/tests") {
