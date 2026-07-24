@@ -386,7 +386,7 @@ button,
 
 .trophy-leaderboard-row {
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  grid-template-columns: 2rem minmax(0, 1fr) 1.7rem auto;
   align-items: center;
   min-height: 2.15rem;
   padding: 0.25rem 0.55rem 0.25rem 0.35rem;
@@ -407,15 +407,23 @@ button,
   font-weight: 900;
 }
 
-.trophy-leaderboard-rank-gold {
+.trophy-leaderboard-award {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  color: #64748b;
+}
+
+.trophy-leaderboard-award-gold {
   color: #d49a00;
 }
 
-.trophy-leaderboard-rank-silver {
+.trophy-leaderboard-award-silver {
   color: #778391;
 }
 
-.trophy-leaderboard-rank-bronze {
+.trophy-leaderboard-award-bronze {
   color: #b66a2c;
 }
 
@@ -423,15 +431,24 @@ button,
   min-width: 0;
   overflow: hidden;
   color: #1f2937;
+  font-weight: 500;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.trophy-leaderboard-row-current .trophy-leaderboard-name {
+  font-weight: 900;
 }
 
 .trophy-leaderboard-count {
   display: inline-flex;
   align-items: center;
   color: #0f766e;
+  font-weight: 700;
+}
+
+.trophy-leaderboard-row-current .trophy-leaderboard-count {
   font-weight: 900;
 }
 
@@ -456,7 +473,7 @@ button,
 }
 
 .home-trophy-leaderboard .trophy-leaderboard-row {
-  grid-template-columns: 1.7rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.45rem minmax(0, 1fr) 1.45rem auto;
   padding-right: 0.25rem;
   padding-left: 0.15rem;
 }
@@ -479,7 +496,7 @@ button,
   }
 
   .home-trophy-leaderboard .trophy-leaderboard-row {
-    grid-template-columns: 1.55rem minmax(0, 1fr) auto;
+    grid-template-columns: 1.4rem minmax(0, 1fr) 1.4rem auto;
     min-height: 1.9rem;
     border-right: 1px solid rgba(100, 116, 139, 0.13);
     border-bottom: 0;
@@ -2495,13 +2512,14 @@ textarea:disabled {
   }
 
   .home-trophy-leaderboard .trophy-leaderboard-row {
-    grid-template-columns: 1.35rem minmax(0, 1fr) auto;
+    grid-template-columns: 1.25rem minmax(0, 1fr) 1.25rem auto;
     padding-right: 0.2rem;
     padding-left: 0.1rem;
     font-size: 0.8rem;
   }
 
-  .home-trophy-leaderboard .trophy-leaderboard-rank {
+  .home-trophy-leaderboard .trophy-leaderboard-rank,
+  .home-trophy-leaderboard .trophy-leaderboard-award {
     width: 1.3rem;
     height: 1.3rem;
   }

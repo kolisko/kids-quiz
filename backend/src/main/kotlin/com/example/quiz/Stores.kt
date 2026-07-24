@@ -306,9 +306,14 @@ object UserTestErrorStore {
 object TrophyStore {
     private val lock = Any()
 
-    fun leaderboard(limit: Int = 5): TrophyLeaderboardResponse = synchronized(lock) {
+    fun leaderboard(currentUserId: Long? = null, limit: Int = 5): TrophyLeaderboardResponse = synchronized(lock) {
         Database.useConnection { connection ->
-            TrophyLeaderboardResponse(items = connection.readTrophyLeaderboard(limit.coerceIn(1, 20)))
+            TrophyLeaderboardResponse(
+                items = connection.readTrophyLeaderboard(
+                    limit = limit.coerceIn(1, 20),
+                    currentUserId = currentUserId,
+                ),
+            )
         }
     }
 

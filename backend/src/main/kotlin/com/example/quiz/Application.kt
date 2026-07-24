@@ -117,7 +117,7 @@ fun Application.module() {
             }
             get("/public/trophy-leaderboard") {
                 call.response.headers.append(HttpHeaders.CacheControl, "no-store")
-                call.respond(TrophyStore.leaderboard())
+                call.respond(TrophyStore.leaderboard(currentUserId = Auth.currentUser(call)?.id))
             }
             get("/auth/google/start") {
                 Auth.startGoogleLogin(call)

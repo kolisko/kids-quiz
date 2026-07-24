@@ -370,6 +370,7 @@ data class TrophyAwardResponse(
 data class TrophyLeaderboardEntry(
     val firstName: String,
     val trophyCount: Int,
+    val isCurrentUser: Boolean = false,
 )
 
 @Serializable

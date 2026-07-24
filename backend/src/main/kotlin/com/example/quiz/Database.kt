@@ -2480,10 +2480,10 @@ fun Connection.readTrophies(userId: Long): List<TrophyItem> {
     }
 }
 
-fun Connection.readTrophyLeaderboard(limit: Int): List<TrophyLeaderboardEntry> {
+fun Connection.readTrophyLeaderboard(limit: Int, currentUserId: Long?): List<TrophyLeaderboardEntry> {
     return prepareStatement(
         """
-        SELECT users.given_name, users.display_name, COUNT(DISTINCT trophies.animal_key) AS trophy_count
+        SELECT users.id AS user_id, users.given_name, users.display_name, COUNT(DISTINCT trophies.animal_key) AS trophy_count
         FROM users
         INNER JOIN trophies ON trophies.user_id = users.id
         WHERE users.status = ?
@@ -2504,6 +2504,7 @@ fun Connection.readTrophyLeaderboard(limit: Int): List<TrophyLeaderboardEntry> {
                                 displayName = rows.getString("display_name"),
                             ),
                             trophyCount = rows.getInt("trophy_count"),
+                            isCurrentUser = currentUserId == rows.getLong("user_id"),
                         ),
                     )
                 }

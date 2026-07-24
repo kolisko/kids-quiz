@@ -63,21 +63,26 @@
         Zatím tu není žádný vítěz.
       </p>
       <div class="trophy-leaderboard-list" *ngIf="!trophyLeaderboardLoading && trophyLeaderboard.length > 0">
-        <div class="trophy-leaderboard-row" *ngFor="let entry of trophyLeaderboard; let index = index">
+        <div
+          class="trophy-leaderboard-row"
+          *ngFor="let entry of trophyLeaderboard; let index = index"
+          [class.trophy-leaderboard-row-current]="entry.isCurrentUser"
+          [attr.aria-current]="entry.isCurrentUser ? 'true' : null">
+          <span class="trophy-leaderboard-rank">{{ index + 1 }}.</span>
+          <span class="trophy-leaderboard-name">{{ entry.firstName }}</span>
           <span
-            class="trophy-leaderboard-rank"
-            [class.trophy-leaderboard-rank-gold]="index === 0"
-            [class.trophy-leaderboard-rank-silver]="index === 1"
-            [class.trophy-leaderboard-rank-bronze]="index === 2">
+            class="trophy-leaderboard-award"
+            [class.trophy-leaderboard-award-gold]="index === 0"
+            [class.trophy-leaderboard-award-silver]="index === 1"
+            [class.trophy-leaderboard-award-bronze]="index === 2"
+            aria-hidden="true">
             <lucide-icon
               *ngIf="index < 3"
               [img]="trophyIcon"
               [size]="18"
               [strokeWidth]="2.7"
               aria-hidden="true"></lucide-icon>
-            <span *ngIf="index >= 3">{{ index + 1 }}</span>
           </span>
-          <strong class="trophy-leaderboard-name">{{ entry.firstName }}</strong>
           <span class="trophy-leaderboard-count" [attr.aria-label]="fumfikCountLabel(entry.trophyCount)">
             {{ entry.trophyCount }}
           </span>

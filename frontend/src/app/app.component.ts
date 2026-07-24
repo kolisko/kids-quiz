@@ -549,6 +549,7 @@ interface TrophyAwardResponse {
 interface TrophyLeaderboardEntry {
   firstName: string;
   trophyCount: number;
+  isCurrentUser?: boolean;
 }
 
 interface TrophyLeaderboardResponse {
