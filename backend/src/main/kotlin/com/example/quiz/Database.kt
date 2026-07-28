@@ -316,6 +316,20 @@ object DatabaseMigrator {
                     recordMigration(29, "add_user_test_errors")
                 }
             }
+            if (30 !in applied) {
+                connection.transaction {
+                    addFlipcardImageMetadata()
+                    recordMigration(30, "add_flipcard_image_metadata")
+                }
+            }
+            if (31 !in applied) {
+                val candidates = connection.readFlipcardImageMigrationCandidates()
+                val migratedImages = FlipcardImageService.migrateLegacyCache(candidates)
+                connection.transaction {
+                    migratedImages.forEach { storeMigratedFlipcardImage(it) }
+                    recordMigration(31, "migrate_flipcard_images_to_stable_storage")
+                }
+            }
         }
         migrated = true
     }
@@ -817,6 +831,28 @@ object DatabaseMigrator {
                 WHERE image_version IS NULL OR image_version < 1
                 """.trimIndent(),
             )
+        }
+    }
+
+    private fun Connection.addFlipcardImageMetadata() {
+        createStatement().use { statement ->
+            val columns = statement.executeQuery("PRAGMA table_info(flipcard_concepts)").use { rows ->
+                buildSet {
+                    while (rows.next()) add(rows.getString("name"))
+                }
+            }
+            listOf(
+                "image_format" to "TEXT",
+                "image_model" to "TEXT",
+                "image_size" to "TEXT",
+                "image_quality" to "TEXT",
+                "image_prompt_hash" to "TEXT",
+                "image_generated_at" to "TEXT",
+            ).forEach { (name, type) ->
+                if (name !in columns) {
+                    statement.executeUpdate("ALTER TABLE flipcard_concepts ADD COLUMN $name $type")
+                }
+            }
         }
     }
 
@@ -1497,6 +1533,12 @@ object DatabaseMigrator {
                     sort_order INTEGER NOT NULL,
                     image_reported INTEGER NOT NULL DEFAULT 0 CHECK(image_reported IN (0, 1)),
                     image_version INTEGER NOT NULL DEFAULT 1 CHECK(image_version >= 1),
+                    image_format TEXT,
+                    image_model TEXT,
+                    image_size TEXT,
+                    image_quality TEXT,
+                    image_prompt_hash TEXT,
+                    image_generated_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
@@ -2962,19 +3004,122 @@ fun Connection.readFlipcardImageVersion(conceptKey: String): Long? {
     }
 }
 
-fun Connection.incrementFlipcardImageVersion(conceptKey: String): Long? {
-    prepareStatement(
+fun Connection.readFlipcardImageMetadata(conceptKey: String): FlipcardImageMetadata? {
+    return prepareStatement(
         """
-        UPDATE flipcard_concepts
-        SET image_version = image_version + 1,
-            updated_at = CURRENT_TIMESTAMP
+        SELECT
+            concept_key,
+            image_version,
+            image_format,
+            image_model,
+            image_size,
+            image_quality,
+            image_prompt_hash,
+            image_generated_at
+        FROM flipcard_concepts
         WHERE concept_key = ?
         """.trimIndent(),
     ).use { statement ->
         statement.setString(1, conceptKey)
+        statement.executeQuery().use { rows ->
+            if (!rows.next()) return null
+            val format = rows.getString("image_format")?.takeIf { it.isNotBlank() } ?: return null
+            FlipcardImageMetadata(
+                conceptKey = rows.getString("concept_key"),
+                imageVersion = rows.getLong("image_version"),
+                format = format,
+                model = rows.getString("image_model"),
+                size = rows.getString("image_size"),
+                quality = rows.getString("image_quality"),
+                promptHash = rows.getString("image_prompt_hash"),
+                generatedAt = rows.getString("image_generated_at"),
+            )
+        }
+    }
+}
+
+fun Connection.activateFlipcardImage(
+    conceptKey: String,
+    expectedVersion: Long,
+    format: String,
+    model: String,
+    size: String,
+    quality: String,
+    promptHash: String,
+): Long? {
+    val updated = prepareStatement(
+        """
+        UPDATE flipcard_concepts
+        SET image_version = image_version + 1,
+            image_format = ?,
+            image_model = ?,
+            image_size = ?,
+            image_quality = ?,
+            image_prompt_hash = ?,
+            image_generated_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE concept_key = ? AND image_version = ?
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, format)
+        statement.setString(2, model)
+        statement.setString(3, size)
+        statement.setString(4, quality)
+        statement.setString(5, promptHash)
+        statement.setString(6, conceptKey)
+        statement.setLong(7, expectedVersion)
         statement.executeUpdate()
     }
-    return readFlipcardImageVersion(conceptKey)
+    return if (updated == 1) expectedVersion + 1 else null
+}
+
+fun Connection.readFlipcardImageMigrationCandidates(): List<FlipcardImageMigrationCandidate> {
+    return prepareStatement(
+        """
+        SELECT concept_key, image_version
+        FROM flipcard_concepts
+        WHERE image_format IS NULL OR TRIM(image_format) = ''
+        ORDER BY sort_order, id
+        """.trimIndent(),
+    ).use { statement ->
+        statement.executeQuery().use { rows ->
+            buildList {
+                while (rows.next()) {
+                    add(
+                        FlipcardImageMigrationCandidate(
+                            conceptKey = rows.getString("concept_key"),
+                            imageVersion = rows.getLong("image_version"),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun Connection.storeMigratedFlipcardImage(image: MigratedFlipcardImage) {
+    prepareStatement(
+        """
+        UPDATE flipcard_concepts
+        SET image_format = ?,
+            image_model = ?,
+            image_size = ?,
+            image_quality = ?,
+            image_prompt_hash = ?,
+            image_generated_at = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE concept_key = ? AND (image_format IS NULL OR TRIM(image_format) = '')
+        """.trimIndent(),
+    ).use { statement ->
+        statement.setString(1, image.format)
+        statement.setString(2, image.model)
+        statement.setString(3, image.size)
+        statement.setString(4, image.quality)
+        statement.setString(5, image.promptHash)
+        statement.setString(6, image.generatedAt)
+        statement.setString(7, image.conceptKey)
+        statement.executeUpdate()
+    }
 }
 
 fun Connection.readFlipcardTranslationBackfillProgress(language: LearningLanguage): FlipcardTranslationBackfillProgress {

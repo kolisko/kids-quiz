@@ -1,5 +1,5 @@
 beatka.eu {
-    @noStore not path_regexp ^/api/flipcards/images/.+\.(webp|png|jpe?g)$
+    @noStore not path_regexp ^/api/flipcards/images/.+\.(image|webp|png|jpe?g)$
     header @noStore Cache-Control "no-store"
     reverse_proxy beatka-app:8080
 }

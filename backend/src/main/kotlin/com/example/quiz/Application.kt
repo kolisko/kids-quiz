@@ -603,15 +603,15 @@ fun Application.module() {
                     val rawWord = call.requireFlipcardImageWord() ?: return@get
                     val assetWord = rawWord.flipcardAssetWordOrNull()
                     if (assetWord != null) {
-                        val imageFile = FlipcardImageService.imageFile(assetWord)
-                        if (imageFile == null) {
+                        val imageAsset = FlipcardImageService.imageAsset(assetWord)
+                        if (imageAsset == null) {
                             call.respond(HttpStatusCode.NotFound, mapOf("error" to "image_not_found"))
                             return@get
                         }
                         call.response.headers.append(HttpHeaders.CacheControl, "public, max-age=31536000, immutable")
                         call.respondBytes(
-                            bytes = java.nio.file.Files.readAllBytes(imageFile),
-                            contentType = ContentType.parse(FlipcardImageService.imageContentType()),
+                            bytes = java.nio.file.Files.readAllBytes(imageAsset.path),
+                            contentType = ContentType.parse(imageAsset.contentType),
                         )
                         return@get
                     }
@@ -844,7 +844,7 @@ private suspend fun ApplicationCall.requirePracticeDirection(): PracticeDirectio
 
 private fun String.flipcardAssetWordOrNull(): String? {
     val extension = substringAfterLast('.', missingDelimiterValue = "").lowercase()
-    if (extension !in setOf("webp", "png", "jpeg", "jpg")) return null
+    if (extension !in setOf("image", "webp", "png", "jpeg", "jpg")) return null
     return substringBeforeLast('.').takeIf { it.isNotBlank() }
 }
 
