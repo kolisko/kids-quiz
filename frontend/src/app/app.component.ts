@@ -2903,12 +2903,14 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private startArithmeticSession(): void {
+    const difficultyOrder: Record<ArithmeticDifficulty, number> = { easy: 0, normal: 1, hard: 2 };
     this.arithmeticSession.startBalanced(
       this.arithmeticQuestions.map((question, index) => ({
         key: question.key,
         value: index,
         weight: statsWeight(this.arithmeticStats[question.key]),
         group: this.arithmeticSelectionGroup(question),
+        order: difficultyOrder[question.difficulty],
       })),
       this.settings.targetScore,
     );

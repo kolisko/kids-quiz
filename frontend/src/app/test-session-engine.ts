@@ -10,6 +10,8 @@ export interface WeightedSessionItem<T> {
   value: T;
   weight: number;
   group?: string;
+  // Lower values are asked first; selection weights are independent of this order.
+  order?: number;
 }
 
 export class TestSessionEngine<T> {
@@ -142,7 +144,9 @@ export class TestSessionEngine<T> {
     const candidates = this.queue
       .map((item, index) => ({ item, index }))
       .filter((candidate) => candidate.item.key !== this.lastKey);
-    return randomChoice(candidates, { item: this.queue[0], index: 0 }).index;
+    const firstOrder = Math.min(...candidates.map(({ item }) => item.order ?? 0));
+    const orderedCandidates = candidates.filter(({ item }) => (item.order ?? 0) === firstOrder);
+    return randomChoice(orderedCandidates, { item: this.queue[0], index: 0 }).index;
   }
 
   private requeueCurrent(): void {
