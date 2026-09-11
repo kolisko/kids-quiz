@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, CarFront, Flag, Info, ListRestart, LogOut, LucideAngularModule, MessageCircleOff, Play, RefreshCw, Settings, Trophy, UserCircle } from 'lucide-angular';
+import { LucideArrowLeft as ArrowLeft, LucideCarFront as CarFront, LucideFlag as Flag, LucideInfo as Info, LucideListRestart as ListRestart, LucideLogOut as LogOut, LucideDynamicIcon, LucideMessageCircleOff as MessageCircleOff, LucidePlay as Play, LucideRefreshCw as RefreshCw, LucideSettings as Settings, LucideTrophy as Trophy, LucideUserCircle as UserCircle } from '@lucide/angular';
 import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
 
 type Screen = 'login' | 'start' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
@@ -587,7 +587,8 @@ interface TtsDiagnostics {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule],
+  imports: [CommonModule, FormsModule, LucideDynamicIcon],
+  changeDetection: ChangeDetectionStrategy.Eager,
   templateUrl: './app.component.html',
 })
 export class AppComponent implements OnInit, OnDestroy {
