@@ -23,7 +23,7 @@ body {
 button,
 input,
 textarea,
-lucide-icon {
+svg.lucide {
   font: inherit;
 }
 
@@ -934,7 +934,7 @@ button,
   cursor: pointer;
 }
 
-.trophy-entry-button lucide-icon {
+.trophy-entry-button svg.lucide {
   color: #78350f;
   filter: drop-shadow(0 2px 0 rgba(255, 255, 255, 0.34));
 }
@@ -1792,7 +1792,7 @@ textarea:disabled {
   height: 3.15rem;
 }
 
-.audio-tts-preview-generating lucide-icon {
+.audio-tts-preview-generating svg.lucide {
   animation: spinny 900ms linear infinite;
 }
 

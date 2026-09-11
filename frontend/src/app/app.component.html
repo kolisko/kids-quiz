@@ -8,19 +8,19 @@
     [class.tesla-audio-badge-error]="teslaMp3PlayerState === 'error'"
     [title]="teslaMp3AudioBadgeLabel"
     [attr.aria-label]="teslaMp3AudioBadgeLabel">
-    <lucide-icon [img]="teslaAudioIcon" [size]="17"></lucide-icon>
+    <svg [lucideIcon]="teslaAudioIcon" [size]="17"></svg>
     <span class="tesla-audio-state-dot" aria-hidden="true"></span>
   </span>
   <ng-template #accountButtons>
     <div class="account-actions" *ngIf="currentUser">
       <button class="icon-button account-icon-button" type="button" (click)="openSettings()" title="Nastavení" aria-label="Nastavení">
-        <lucide-icon [img]="settingsIcon" [size]="24"></lucide-icon>
+        <svg [lucideIcon]="settingsIcon" [size]="24"></svg>
       </button>
       <button class="icon-button account-icon-button" type="button" (click)="toggleProfileMenu()" title="Profil" aria-label="Profil">
-        <lucide-icon [img]="profileIcon" [size]="24"></lucide-icon>
+        <svg [lucideIcon]="profileIcon" [size]="24"></svg>
       </button>
       <button class="icon-button account-icon-button" type="button" (click)="logout()" title="Odhlásit" aria-label="Odhlásit">
-        <lucide-icon [img]="logoutIcon" [size]="24"></lucide-icon>
+        <svg [lucideIcon]="logoutIcon" [size]="24"></svg>
       </button>
       <div class="profile-popover" *ngIf="profileMenuVisible" role="status">
         <strong>{{ currentUser.displayName || currentUser.email }}</strong>
@@ -45,14 +45,14 @@
           (click)="openTrophies()"
           title="Sbírka fumfíků"
           aria-label="Sbírka fumfíků">
-          <lucide-icon [img]="trophyIcon" [size]="26"></lucide-icon>
+          <svg [lucideIcon]="trophyIcon" [size]="26"></svg>
         </button>
-        <lucide-icon
+        <svg
           *ngIf="!showCollectionButton"
-          [img]="trophyIcon"
+          [lucideIcon]="trophyIcon"
           [size]="22"
           [strokeWidth]="2.5"
-          aria-hidden="true"></lucide-icon>
+          aria-hidden="true"></svg>
         <strong>Top 5 sběratelů</strong>
       </div>
       <p class="trophy-leaderboard-note" *ngIf="trophyLeaderboardLoading">Načítám žebříček...</p>
@@ -76,12 +76,12 @@
             [class.trophy-leaderboard-award-silver]="index === 1"
             [class.trophy-leaderboard-award-bronze]="index === 2"
             aria-hidden="true">
-            <lucide-icon
+            <svg
               *ngIf="index < 3"
-              [img]="trophyIcon"
+              [lucideIcon]="trophyIcon"
               [size]="18"
               [strokeWidth]="2.7"
-              aria-hidden="true"></lucide-icon>
+              aria-hidden="true"></svg>
           </span>
           <span class="trophy-leaderboard-count" [attr.aria-label]="fumfikCountLabel(entry.trophyCount)">
             {{ entry.trophyCount }}
@@ -105,7 +105,7 @@
           title="TTS není dostupné"
           aria-label="TTS není dostupné"
           [attr.aria-expanded]="ttsDetailsVisible">
-          <lucide-icon [img]="ttsUnavailableIcon" [size]="26"></lucide-icon>
+          <svg [lucideIcon]="ttsUnavailableIcon" [size]="26"></svg>
         </button>
         <div class="tts-details" *ngIf="ttsDetailsVisible" role="status">
           <span class="tts-details-title">TTS není dostupné</span>
@@ -113,7 +113,7 @@
         </div>
       </div>
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
-        <lucide-icon [img]="newTestIcon" [size]="26"></lucide-icon>
+        <svg [lucideIcon]="newTestIcon" [size]="26"></svg>
       </button>
     </div>
   </div>
@@ -192,7 +192,7 @@
         (click)="backInTestMenu()"
         title="Zpět"
         aria-label="Zpět">
-        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+        <svg [lucideIcon]="backIcon" [size]="26"></svg>
       </button>
       <h1>{{ currentTestMenuTitle }}</h1>
       <span class="header-left-slot" aria-hidden="true"></span>
@@ -224,7 +224,7 @@
   <section class="trophies-screen" *ngIf="screen === 'trophies'">
     <div class="settings-header">
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
-        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+        <svg [lucideIcon]="backIcon" [size]="26"></svg>
       </button>
       <h1>Sbírka {{ trophies.length }} fumfíků</h1>
       <span class="header-left-slot" aria-hidden="true"></span>
@@ -247,7 +247,7 @@
   <section class="settings-panel" *ngIf="screen === 'settings'">
     <div class="settings-header">
       <button class="icon-button" type="button" (click)="returnToTestSelection()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu">
-        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+        <svg [lucideIcon]="backIcon" [size]="26"></svg>
       </button>
       <h1>Nastavení</h1>
       <span class="header-left-slot" aria-hidden="true"></span>
@@ -508,7 +508,7 @@
           {{ translationBackfillActive ? 'Doplňuji...' : 'Doplnit překlady' }}
         </button>
         <p class="error settings-error" *ngIf="translationBackfillError">{{ translationBackfillError }}</p>
-        <p class="error settings-error" *ngIf="currentTranslationBackfillStatus?.error">{{ currentTranslationBackfillStatus?.error }}</p>
+        <p class="error settings-error" *ngIf="currentTranslationBackfillStatus?.error">{{ currentTranslationBackfillStatus.error }}</p>
       </div>
       <label *ngIf="isAdmin">
         Slovíčka oddělená čárkou
@@ -590,7 +590,7 @@
   <section class="settings-panel" *ngIf="screen === 'assetLibrary'">
     <div class="settings-header">
       <button class="icon-button" type="button" (click)="openSettings()" title="Zpět do nastavení" aria-label="Zpět do nastavení">
-        <lucide-icon [img]="backIcon" [size]="26"></lucide-icon>
+        <svg [lucideIcon]="backIcon" [size]="26"></svg>
       </button>
       <h1>{{ assetLibraryLanguageLabel }} - Flipcards knihovna</h1>
       <span class="header-left-slot" aria-hidden="true"></span>
@@ -623,7 +623,7 @@
         type="button"
         (click)="toggleAssetLibraryReportedFilter()"
         [class.asset-report-filter-active]="assetLibraryShowReportedOnly">
-        <lucide-icon [img]="flagIcon" [size]="18"></lucide-icon>
+        <svg [lucideIcon]="flagIcon" [size]="18"></svg>
         Jen nahlášené {{ reportedImageAssetsCount }}
       </button>
       <div class="asset-counts" aria-label="Souhrn obrázků">
@@ -639,7 +639,7 @@
       <article class="asset-card" [class.asset-card-reported]="asset.imageReported" *ngFor="let asset of visibleFlipcardAssets">
         <strong>{{ asset.word }}</strong>
         <span class="asset-report-badge" *ngIf="asset.imageReported">
-          <lucide-icon [img]="flagIcon" [size]="14"></lucide-icon>
+          <svg [lucideIcon]="flagIcon" [size]="14"></svg>
           Nahlášeno
         </span>
         <span [class.asset-ready]="asset.imageStatus === 'ready'" [class.asset-missing]="asset.imageStatus !== 'ready'">
@@ -664,7 +664,7 @@
             [disabled]="assetImageIsGenerating(asset)"
             title="Přegenerovat obrázek"
             aria-label="Přegenerovat obrázek">
-            <lucide-icon [img]="refreshIcon" [size]="20"></lucide-icon>
+            <svg [lucideIcon]="refreshIcon" [size]="20"></svg>
           </button>
           <div class="asset-info-action" *ngIf="asset.imageUrl">
             <button
@@ -674,7 +674,7 @@
               [class.asset-action-button-active]="assetTranslationInfoVisible(asset)"
               title="Jazykové mutace"
               aria-label="Jazykové mutace">
-              <lucide-icon [img]="infoIcon" [size]="20"></lucide-icon>
+              <svg [lucideIcon]="infoIcon" [size]="20"></svg>
             </button>
             <div class="asset-info-tooltip" *ngIf="assetTranslationInfoVisible(asset)">
               <div class="asset-info-row" *ngFor="let variant of assetLanguageVariants(asset)">
@@ -691,7 +691,7 @@
             [disabled]="!asset.audioUrl"
             title="Přehrát audio"
             aria-label="Přehrát audio">
-            <lucide-icon [img]="playIcon" [size]="20"></lucide-icon>
+            <svg [lucideIcon]="playIcon" [size]="20"></svg>
           </button>
           <button
             class="icon-button asset-action-button asset-report-button"
@@ -702,7 +702,7 @@
             [title]="assetImageReportTitle(asset)"
             [attr.aria-label]="assetImageReportTitle(asset)"
             [attr.aria-pressed]="asset.imageReported">
-            <lucide-icon [img]="flagIcon" [size]="20"></lucide-icon>
+            <svg [lucideIcon]="flagIcon" [size]="20"></svg>
           </button>
         </div>
         <span class="asset-error" *ngIf="assetImageError(asset)">{{ assetImageError(asset) }}</span>
@@ -768,7 +768,7 @@
             [ngClass]="'audio-tts-preview-' + audioTtsPreviewStatus"
             [title]="audioTtsPreviewTitle"
             [attr.aria-label]="audioTtsPreviewTitle">
-            <lucide-icon [img]="audioTtsPreviewIcon" [size]="24"></lucide-icon>
+            <svg [lucideIcon]="audioTtsPreviewIcon" [size]="24"></svg>
           </button>
           <button
             class="secondary-button compact-button"
@@ -820,7 +820,7 @@
             [disabled]="assetAudioIsGenerating(asset)"
             title="Přegenerovat audio"
             aria-label="Přegenerovat audio">
-            <lucide-icon [img]="refreshIcon" [size]="20"></lucide-icon>
+            <svg [lucideIcon]="refreshIcon" [size]="20"></svg>
           </button>
           <div class="asset-info-action">
             <button
@@ -830,7 +830,7 @@
               [class.asset-action-button-active]="assetTranslationInfoVisible(asset)"
               title="Jazykové mutace"
               aria-label="Jazykové mutace">
-              <lucide-icon [img]="infoIcon" [size]="20"></lucide-icon>
+              <svg [lucideIcon]="infoIcon" [size]="20"></svg>
             </button>
             <div class="asset-info-tooltip" *ngIf="assetTranslationInfoVisible(asset)">
               <div class="asset-info-row" *ngFor="let variant of assetLanguageVariants(asset)">
@@ -846,7 +846,7 @@
             [disabled]="!asset.audioUrl"
             title="Přehrát audio"
             aria-label="Přehrát audio">
-            <lucide-icon [img]="playIcon" [size]="20"></lucide-icon>
+            <svg [lucideIcon]="playIcon" [size]="20"></svg>
           </button>
         </div>
         <span class="asset-error" *ngIf="assetAudioError(asset)">{{ assetAudioError(asset) }}</span>
@@ -894,7 +894,7 @@
           (click)="answerVisible ? replaySpellingAnswerAudio() : replaySpellingAudio()"
           title="Přehrát znovu"
           aria-label="Přehrát znovu">
-          <lucide-icon [img]="playIcon" [size]="26"></lucide-icon>
+          <svg [lucideIcon]="playIcon" [size]="26"></svg>
         </button>
         <span class="label">{{ answerVisible ? 'Odpověď' : 'Otázka' }}</span>
         <div class="spelling-image-frame" *ngIf="activeGame === 'spelling' && currentSpellingConceptKey">
@@ -910,7 +910,7 @@
             [title]="currentSpellingImageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek'"
             [attr.aria-label]="currentSpellingImageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek'"
             [attr.aria-pressed]="currentSpellingImageReported">
-            <lucide-icon [img]="flagIcon" [size]="22"></lucide-icon>
+            <svg [lucideIcon]="flagIcon" [size]="22"></svg>
           </button>
           <img
             *ngIf="currentSpellingImageUrl"
@@ -950,7 +950,7 @@
               [title]="currentFlipcardImageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek'"
               [attr.aria-label]="currentFlipcardImageReported ? 'Obrázek nahlášen' : 'Nahlásit obrázek'"
               [attr.aria-pressed]="currentFlipcardImageReported">
-              <lucide-icon [img]="flagIcon" [size]="22"></lucide-icon>
+              <svg [lucideIcon]="flagIcon" [size]="22"></svg>
             </button>
             <img
               *ngIf="currentFlipcardImageUrl"
