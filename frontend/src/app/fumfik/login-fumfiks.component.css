@@ -1,0 +1,39 @@
+:host { display: contents; }
+
+.login-fumfik-background { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+.login-fumfik {
+  position: absolute;
+  width: clamp(6.5rem, 12vw, 11rem);
+  opacity: 0.92;
+  filter: drop-shadow(0 1.2rem 1.8rem rgba(15, 23, 42, 0.16));
+  transform-origin: center;
+  transition: translate 1100ms cubic-bezier(.22,.61,.36,1);
+  pointer-events: auto;
+}
+.fumfik-reactor, .fumfik-reactor:hover, .fumfik-reactor:active {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  transform: none;
+  opacity: 1;
+  cursor: pointer;
+}
+.fumfik-reactor:focus-visible { outline: 2px solid #0f766e; outline-offset: 4px; border-radius: 6px; }
+.login-fumfik-1 { left: clamp(1rem, 7vw, 7rem); top: clamp(4.5rem, 13vh, 8rem); transform: rotate(-10deg); }
+.login-fumfik-2 { right: clamp(1.2rem, 8vw, 8rem); top: clamp(5rem, 11vh, 7.5rem); width: clamp(5.8rem, 10vw, 9rem); transform: rotate(12deg); }
+.login-fumfik-3 { left: clamp(0.75rem, 12vw, 12rem); bottom: clamp(2rem, 9vh, 6rem); width: clamp(5.7rem, 10vw, 8.5rem); transform: rotate(8deg); }
+.login-fumfik-4 { right: clamp(0.75rem, 12vw, 13rem); bottom: clamp(2rem, 8vh, 5rem); transform: rotate(-12deg); }
+.login-fumfik-5 { left: 50%; top: clamp(0.5rem, 3vh, 2rem); width: clamp(5rem, 8vw, 7.2rem); opacity: 0.7; transform: translateX(-190%) rotate(17deg); }
+.login-fumfik-6 { left: 50%; bottom: clamp(0.25rem, 2vh, 1.25rem); width: clamp(5rem, 8vw, 7.5rem); opacity: 0.7; transform: translateX(115%) rotate(-16deg); }
+
+@media (max-width: 700px) {
+  .login-fumfik { width: clamp(4.6rem, 18vw, 6.5rem); opacity: 0.72; }
+  .login-fumfik-1 { left: -1.4rem; top: 4.7rem; }
+  .login-fumfik-2 { right: -1.2rem; top: 7rem; }
+  .login-fumfik-3 { left: -0.8rem; bottom: 3.2rem; }
+  .login-fumfik-4 { right: -0.9rem; bottom: 2.8rem; }
+  .login-fumfik-5, .login-fumfik-6 { opacity: 0.38; }
+}
+@media (prefers-reduced-motion: reduce) { .login-fumfik { transition: none; } }

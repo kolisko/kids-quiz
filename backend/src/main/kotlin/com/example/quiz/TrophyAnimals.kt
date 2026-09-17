@@ -55,6 +55,7 @@ enum class TrophyAnimalBackground {
     stars,
 }
 
+@Serializable
 data class TrophyAnimalSpec(
     val body: TrophyAnimalBody,
     val ears: TrophyAnimalEars,
@@ -71,6 +72,7 @@ data class TrophyAnimalSpec(
 
 object TrophyAnimalService {
     private const val generatedAnimalKeyPrefix = "generated:"
+    private const val generatedV2AnimalKeyPrefix = "generated-v2:"
     private const val generatedAnimalImagePath = "/api/trophy-animals/generated.svg"
     val staticAnimalKeys: Set<String> = (1..40).map { "animal-${it.toString().padStart(2, '0')}" }.toSet()
     private val requiredParams = listOf("body", "ears", "eyes", "nose", "mouth", "palette", "background")
@@ -139,22 +141,47 @@ object TrophyAnimalService {
 
     fun imagePathForAnimalKey(animalKey: String): String? {
         if (animalKey in staticAnimalKeys) return "/assets/animals/$animalKey.svg"
+        if (versionForAnimalKey(animalKey) != 1) return null
         val spec = parseGeneratedAnimalKey(animalKey) ?: return null
         return "$generatedAnimalImagePath?${canonicalQuery(spec)}"
     }
 
     fun normalizedAnimalKey(animalKey: String): String? {
         if (animalKey in staticAnimalKeys) return animalKey
-        return parseGeneratedAnimalKey(animalKey)?.let { generatedAnimalKey(it) }
+        val version = versionForAnimalKey(animalKey) ?: return null
+        return parseGeneratedAnimalKey(animalKey)?.let { generatedAnimalKey(it, version) }
     }
 
-    fun generatedAnimalKey(spec: TrophyAnimalSpec): String {
-        return "$generatedAnimalKeyPrefix${canonicalQuery(spec)}"
+    fun versionForAnimalKey(animalKey: String): Int? = when {
+        animalKey in staticAnimalKeys -> 0
+        animalKey.startsWith(generatedAnimalKeyPrefix) -> 1
+        animalKey.startsWith(generatedV2AnimalKeyPrefix) -> 2
+        else -> null
+    }
+
+    // Keep the legacy selector above unchanged: old duplicate-repair migrations use it.
+    fun nextUnwonV2AnimalKey(wonKeys: Set<String>): String? {
+        val normalizedWonKeys = wonKeys.mapNotNull { normalizedAnimalKey(it) }.toSet()
+        val available = allGeneratedSpecs.filter { generatedAnimalKey(it, 2) !in normalizedWonKeys }
+        return randomItem(available)?.let { generatedAnimalKey(it, 2) }
+    }
+
+    fun generatedAnimalKey(spec: TrophyAnimalSpec, version: Int = 1): String {
+        val prefix = when (version) {
+            1 -> generatedAnimalKeyPrefix
+            2 -> generatedV2AnimalKeyPrefix
+            else -> throw IllegalArgumentException("Unsupported generated animal version")
+        }
+        return "$prefix${canonicalQuery(spec)}"
     }
 
     fun parseGeneratedAnimalKey(animalKey: String): TrophyAnimalSpec? {
-        if (!animalKey.startsWith(generatedAnimalKeyPrefix)) return null
-        val query = animalKey.removePrefix(generatedAnimalKeyPrefix)
+        val prefix = when (versionForAnimalKey(animalKey)) {
+            1 -> generatedAnimalKeyPrefix
+            2 -> generatedV2AnimalKeyPrefix
+            else -> return null
+        }
+        val query = animalKey.removePrefix(prefix)
         if (query.isBlank()) return null
         val values = mutableMapOf<String, String>()
         for (part in query.split("&")) {

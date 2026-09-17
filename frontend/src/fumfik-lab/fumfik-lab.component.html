@@ -1,0 +1,56 @@
+<header class="topbar">
+  <div class="brand"><span class="brand-mark"><svg [lucideIcon]="icons.Smile" [size]="24"></svg></span><h1>Fumfík <span>Laboratoř</span></h1><span class="version">v2</span></div>
+  <a class="icon-button back-button" href="/" title="Zpět do aplikace" aria-label="Zpět do aplikace"><svg [lucideIcon]="icons.ArrowLeft" [size]="20"></svg></a>
+</header>
+<div class="error" role="alert" *ngIf="error">{{ error }}</div>
+<main class="workspace">
+  <aside class="parameters" aria-label="Parametry fumfíka">
+    <div class="section-heading"><h2>Podoba</h2><div class="icon-actions">
+      <button type="button" class="icon-button" title="Náhodný fumfík" aria-label="Náhodný fumfík" (click)="shuffle()"><svg [lucideIcon]="icons.Shuffle" [size]="18"></svg></button>
+      <button type="button" class="icon-button" title="Výchozí fumfík" aria-label="Výchozí fumfík" (click)="reset()"><svg [lucideIcon]="icons.RotateCcw" [size]="18"></svg></button>
+    </div></div>
+    <fieldset *ngFor="let field of fields">
+      <legend>{{ field.label }}</legend>
+      <div class="options" [class.swatches]="field.key === 'palette'">
+        <button type="button" *ngFor="let option of field.options" [attr.aria-pressed]="spec[field.key] === option.value" [class.selected]="spec[field.key] === option.value" [attr.aria-label]="field.label + ': ' + option.label" [title]="option.label" (click)="choose(field.key, option.value)">
+          <span *ngIf="field.key === 'palette'; else optionText" class="swatch" [style.background]="swatch(option.value)"></span>
+          <ng-template #optionText>{{ option.label }}</ng-template>
+        </button>
+      </div>
+    </fieldset>
+  </aside>
+  <section class="preview" aria-label="Náhled fumfíka">
+    <div class="preview-heading"><span>FUMFÍK / 02</span><span class="status" [class.playing]="animating">{{ status }}</span></div>
+    <button type="button" class="character" (click)="play()" aria-label="Přehrát reakci fumfíka">
+      <app-fumfik-v2 [spec]="spec" [pose]="pose" [background]="background" [guides]="guides"/>
+    </button>
+    <div class="transport">
+      <button type="button" class="icon-button" [attr.aria-label]="animating ? 'Pozastavit' : 'Přehrát reakci'" [title]="animating ? 'Pozastavit' : 'Přehrát reakci'" (click)="animating ? pause() : play()"><svg [lucideIcon]="animating ? icons.Pause : icons.Play" [size]="19"></svg></button>
+      <input type="range" aria-label="Průběh reakce" min="0" max="1" step="0.01" [ngModel]="progress" (ngModelChange)="scrub($event)">
+      <output>{{ progress * 100 | number:'1.0-0' }} %</output>
+      <button type="button" class="icon-button" title="Klidový výraz" aria-label="Klidový výraz" (click)="stop()"><svg [lucideIcon]="icons.RotateCcw" [size]="18"></svg></button>
+    </div>
+    <code class="spec-code">{{ query }}</code>
+  </section>
+  <aside class="reactions" aria-label="Reakce a animace">
+    <div class="section-heading"><h2>Reakce</h2>
+      <button type="button" class="icon-button" title="Náhodná reakce" aria-label="Náhodná reakce" (click)="shuffleReaction()"><svg [lucideIcon]="icons.Shuffle" [size]="18"></svg></button>
+    </div>
+    <div class="reaction-list">
+      <button type="button" *ngFor="let item of reactions" [class.selected]="reaction === item.id" [attr.aria-pressed]="reaction === item.id" (click)="play(item.id)"><svg [lucideIcon]="item.icon" [size]="18"></svg><span>{{ item.label }}</span><svg class="play-mark" [lucideIcon]="icons.Play" [size]="14"></svg></button>
+    </div>
+    <div class="animation-settings">
+      <label class="check"><input type="checkbox" [(ngModel)]="animate" (ngModelChange)="animationChanged()">Animovat</label>
+      <label class="check"><input type="checkbox" [(ngModel)]="hold" (ngModelChange)="holdChanged()">Držet vrchol výrazu</label>
+      <label class="slider-label" for="duration">Délka <output>{{ duration / 1000 | number:'1.1-1' }} s</output></label>
+      <input id="duration" type="range" min="400" max="4000" step="100" [(ngModel)]="duration">
+      <label class="slider-label" for="intensity">Intenzita výrazu <output>{{ intensity * 100 | number:'1.0-0' }} %</output></label>
+      <input id="intensity" type="range" min="0.2" max="1" step="0.05" [(ngModel)]="intensity" (ngModelChange)="intensityChanged()">
+    </div>
+    <div class="display-settings">
+      <h2>Náhled</h2>
+      <label class="check"><input type="checkbox" [(ngModel)]="background">Pozadí</label>
+      <label class="check"><input type="checkbox" [(ngModel)]="guides">Vodicí linie obličeje</label>
+    </div>
+  </aside>
+</main>

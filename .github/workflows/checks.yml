@@ -27,9 +27,11 @@ jobs:
           node-version: "24"
       - run: npm ci
         working-directory: frontend
-      - run: node --test tests/test-session-engine.test.mjs
+      - run: node --test tests/test-session-engine.test.mjs tests/fumfik.test.mjs
         working-directory: frontend
       - run: npm run build
+        working-directory: frontend
+      - run: npm run build:fumfik-lab
         working-directory: frontend
 
   backend:
@@ -43,10 +45,14 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-provider: basic
       - run: ./gradlew :backend:build --no-daemon
+      - run: node --test backend/tests/fumfik-lab-access.test.mjs
 
   dependency-review:
     if: github.event_name == 'pull_request'

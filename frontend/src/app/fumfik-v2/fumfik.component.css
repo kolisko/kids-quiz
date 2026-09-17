@@ -1,0 +1,3 @@
+:host { display: block; width: 100%; aspect-ratio: 1; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+.guides { fill: none; stroke: #c02665; stroke-width: 1; stroke-dasharray: 4 4; pointer-events: none; }

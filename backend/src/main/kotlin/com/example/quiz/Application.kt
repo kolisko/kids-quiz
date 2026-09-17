@@ -20,6 +20,7 @@ import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondFile
+import io.ktor.server.response.respondRedirect
 import io.ktor.server.routing.get
 import io.ktor.server.routing.head
 import io.ktor.server.routing.patch
@@ -852,6 +853,31 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondStaticOrIn
     val root = staticDir.canonicalFile
     val requestedPath = request.path().trimStart('/').ifBlank { "index.html" }
     val requestedFile = root.resolve(requestedPath).canonicalFile
+    val labRoot = root.resolve("fumfik-lab").canonicalFile
+    val labRequest = requestedPath.substringBefore('/') == "fumfik-lab" || requestedFile.toPath().startsWith(labRoot.toPath())
+    if (labRequest) {
+        response.headers.append(HttpHeaders.CacheControl, "no-store")
+        val user = Auth.currentUser(this)
+        if (user == null) {
+            respondRedirect("/")
+            return
+        }
+        if (user.role != UserRole.admin) {
+            respond(HttpStatusCode.Forbidden, mapOf("error" to "admin_required"))
+            return
+        }
+        if (!requestedFile.toPath().startsWith(labRoot.toPath())) {
+            respond(HttpStatusCode.NotFound)
+            return
+        }
+        if (requestedFile == labRoot && !request.path().endsWith('/')) {
+            respondRedirect("/fumfik-lab/")
+            return
+        }
+        val labFile = if (requestedFile == labRoot) labRoot.resolve("index.html") else requestedFile
+        if (labFile.isFile) respondFile(labFile) else respond(HttpStatusCode.NotFound)
+        return
+    }
     if (requestedFile.isFile && requestedFile.toPath().startsWith(root.toPath())) {
         respondFile(requestedFile)
         return

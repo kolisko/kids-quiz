@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "ng build",
-    "start": "ng serve --host 0.0.0.0"
+    "build": "ng build kids-quiz",
+    "start": "ng serve kids-quiz --host 0.0.0.0",
+    "build:fumfik-lab": "ng build fumfik-lab",
+    "test:fumfik": "node --test tests/fumfik.test.mjs"
   },
   "dependencies": {
     "@angular/animations": "22.1.6",

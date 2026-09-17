@@ -19,6 +19,7 @@ val imageContextDir = deployDir.map { it.dir("image-context") }
 val remoteFilesDir = deployDir.map { it.dir("remote") }
 val frontendDir = layout.projectDirectory.dir("frontend")
 val frontendDistDir = frontendDir.dir("dist/kids-quiz/browser")
+val fumfikLabDistDir = frontendDir.dir("dist/fumfik-lab/browser")
 val snapshotFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(ZoneOffset.UTC)
 val snapshotNumber = providers.provider { snapshotFormatter.format(Instant.now()) }
 
@@ -39,11 +40,19 @@ tasks.register<Exec>("frontendBuild") {
     commandLine("npm", "run", "build")
 }
 
+tasks.register<Exec>("fumfikLabBuild") {
+    group = "build"
+    description = "Builds the separate administrator-only Fumfik lab."
+    dependsOn("frontendNpmInstall")
+    workingDir(frontendDir)
+    commandLine("npm", "run", "build:fumfik-lab")
+}
+
 tasks.register<Sync>("stageDockerImageContext") {
     group = "deployment"
     description = "Stages the Kotlin backend jar and Angular static files for the runtime Docker image."
 
-    dependsOn("frontendBuild", ":backend:jar")
+    dependsOn("frontendBuild", "fumfikLabBuild", ":backend:jar")
 
     into(imageContextDir)
 
@@ -56,6 +65,9 @@ tasks.register<Sync>("stageDockerImageContext") {
     }
     from(frontendDistDir) {
         into("public")
+    }
+    from(fumfikLabDistDir) {
+        into("public/fumfik-lab")
     }
     doLast {
         imageContextDir.get().file("public/snapshot.txt").asFile.writeText("${snapshotNumber.get()}\n")

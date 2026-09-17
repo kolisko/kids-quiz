@@ -1,8 +1,10 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { LucideArrowLeft as ArrowLeft, LucideCarFront as CarFront, LucideFlag as Flag, LucideInfo as Info, LucideListRestart as ListRestart, LucideLogOut as LogOut, LucideDynamicIcon, LucideMessageCircleOff as MessageCircleOff, LucidePlay as Play, LucideRefreshCw as RefreshCw, LucideSettings as Settings, LucideTrophy as Trophy, LucideUserCircle as UserCircle } from '@lucide/angular';
+import { LucideArrowLeft as ArrowLeft, LucideCarFront as CarFront, LucideFlag as Flag, LucideFlaskConical as FlaskConical, LucideInfo as Info, LucideListRestart as ListRestart, LucideLogOut as LogOut, LucideDynamicIcon, LucideMessageCircleOff as MessageCircleOff, LucidePlay as Play, LucideRefreshCw as RefreshCw, LucideSettings as Settings, LucideTrophy as Trophy, LucideUserCircle as UserCircle } from '@lucide/angular';
 import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
+import { FumfikAppearance, FumfikAvatarComponent } from './fumfik/fumfik.component';
+import { LoginFumfiksComponent } from './fumfik/login-fumfiks.component';
 
 type Screen = 'login' | 'start' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
 type QuizTestType = 'multiplication' | 'arithmetic' | 'english';
@@ -529,15 +531,13 @@ interface WordSessionSaveRequest {
   results: WordSessionSaveResult[];
 }
 
-interface AnimalSurprise {
+interface AnimalSurprise extends FumfikAppearance {
   animalKey: string;
-  imagePath: string;
   animationClass: string;
 }
 
-interface TrophyItem {
+interface TrophyItem extends FumfikAppearance {
   animalKey: string;
-  imagePath: string;
   wonAt: string;
 }
 
@@ -587,13 +587,14 @@ interface TtsDiagnostics {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideDynamicIcon],
+  imports: [CommonModule, FormsModule, LucideDynamicIcon, FumfikAvatarComponent, LoginFumfiksComponent],
   changeDetection: ChangeDetectionStrategy.Eager,
   templateUrl: './app.component.html',
 })
 export class AppComponent implements OnInit, OnDestroy {
   readonly backIcon = ArrowLeft;
   readonly settingsIcon = Settings;
+  readonly fumfikLabIcon = FlaskConical;
   readonly newTestIcon = ListRestart;
   readonly ttsUnavailableIcon = MessageCircleOff;
   readonly playIcon = Play;
@@ -1012,6 +1013,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   get isAdmin(): boolean {
     return this.currentUser?.role === 'admin';
+  }
+
+  openFumfikLab(): void {
+    if (this.isAdmin) window.location.assign('/fumfik-lab/');
   }
 
   get assetLibraryLanguageLabel(): string {
@@ -4765,6 +4770,8 @@ export class AppComponent implements OnInit, OnDestroy {
     return {
       animalKey: trophy.animalKey,
       imagePath: trophy.imagePath,
+      version: trophy.version,
+      spec: trophy.spec,
       animationClass: this.animationClassForAnimalKey(trophy.animalKey),
     };
   }
@@ -6006,6 +6013,8 @@ function sameStringList(first: string[], second: string[]): boolean {
 }
 
 const surprises: AnimalSurprise[] = Array.from({ length: 40 }, (_, index) => ({
+  version: 0,
+  spec: null,
   animalKey: `animal-${String(index + 1).padStart(2, '0')}`,
   imagePath: `/assets/animals/animal-${String(index + 1).padStart(2, '0')}.svg`,
   animationClass: ['pop', 'floaty', 'wiggle', 'spinny', 'bounce'][index % 5],

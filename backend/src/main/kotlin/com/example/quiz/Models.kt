@@ -356,8 +356,10 @@ data class AudioTtsPreviewRequest(
 @Serializable
 data class TrophyItem(
     val animalKey: String,
-    val imagePath: String,
+    val imagePath: String?,
     val wonAt: String,
+    val version: Int,
+    val spec: TrophyAnimalSpec?,
 )
 
 @Serializable

@@ -2509,11 +2509,14 @@ fun Connection.readTrophies(userId: Long): List<TrophyItem> {
             buildList {
                 while (rows.next()) {
                     val animalKey = rows.getString("animal_key")
+                    val version = TrophyAnimalService.versionForAnimalKey(animalKey) ?: 0
                     add(
                         TrophyItem(
                             animalKey = animalKey,
-                            imagePath = TrophyAnimalService.imagePathForAnimalKey(animalKey) ?: "/assets/animals/$animalKey.svg",
+                            imagePath = if (version == 2) null else TrophyAnimalService.imagePathForAnimalKey(animalKey) ?: "/assets/animals/$animalKey.svg",
                             wonAt = rows.getString("won_at"),
+                            version = version,
+                            spec = TrophyAnimalService.parseGeneratedAnimalKey(animalKey),
                         ),
                     )
                 }

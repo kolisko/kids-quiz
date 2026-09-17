@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Fumfík verze 2">
+  <defs>
+    <clipPath [attr.id]="id + '-mouth'"><path [attr.d]="mouth.path" /></clipPath>
+    <clipPath [attr.id]="id + '-tongue'"><path [attr.d]="mouth.path"/><path [attr.d]="mouth.tongueExtension"/></clipPath>
+    <clipPath *ngFor="let eye of eyes; let i = index; trackBy: trackEye" [attr.id]="id + '-eye-' + i"><path [attr.d]="eye.path" /></clipPath>
+  </defs>
+  <g *ngIf="background">
+    <rect x="8" y="8" width="384" height="384" rx="56" [attr.fill]="colors.background" />
+    <g [attr.fill]="colors.accent" opacity="0.35" [ngSwitch]="spec.background">
+      <g *ngSwitchCase="'dots'"><circle cx="53" cy="63" r="14"/><circle cx="340" cy="71" r="22"/><circle cx="341" cy="328" r="12"/></g>
+      <path *ngSwitchCase="'waves'" d="M47 343 Q72 320 98 342 T150 342 T202 342 T254 342 T306 342 T358 342" fill="none" [attr.stroke]="colors.accent" stroke-width="9" stroke-linecap="round"/>
+      <g *ngSwitchCase="'stars'"><path d="M58 44 L64 58 80 61 68 72 70 88 57 80 44 88 47 72 35 61 51 58Z"/><path d="M343 300 L348 312 363 314 352 324 355 339 342 332 329 339 332 324 322 314 337 312Z"/></g>
+    </g>
+  </g>
+  <ellipse cx="200" cy="345" [attr.rx]="head.shadowRadius" ry="9" fill="#24414e" [attr.opacity]="head.shadowOpacity" />
+  <g data-part="head-rig" [attr.transform]="head.transform">
+  <g *ngFor="let direction of [-1, 1]" [attr.transform]="'translate(' + (200 + direction * rig.earX) + ' ' + rig.earY + ') scale(' + -direction + ' 1)'">
+    <g [attr.data-part]="direction === -1 ? 'right-ear' : 'left-ear'" [attr.transform]="earMotion">
+      <path [attr.d]="ears" [attr.fill]="colors.ear"/>
+      <path [attr.d]="ears" [attr.fill]="colors.inner" transform="scale(.57 .66)"/>
+    </g>
+  </g>
+  <path data-part="body" [attr.d]="rig.path" [attr.fill]="colors.body"/>
+  <g [attr.transform]="'translate(' + (rig.faceX + head.faceX) + ' ' + (rig.faceY + head.faceY) + ') scale(' + rig.scale + ')'">
+    <g *ngFor="let eye of eyes; let i = index; trackBy: trackEye" [attr.transform]="'translate(' + (i === 0 ? -eyeSpacing : eyeSpacing) + ' 0)'">
+      <path [attr.data-part]="i === 0 ? 'right-eye' : 'left-eye'" [attr.d]="eye.path" fill="#25323e" stroke="#25323e" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+      <g [attr.clip-path]="'url(#' + id + '-eye-' + i + ')'" [attr.opacity]="eye.highlight">
+        <circle cx="-5" cy="-7" r="5.5" fill="#fff"/><circle cx="5" cy="6" r="2.5" fill="#fff" opacity=".6"/>
+      </g>
+    </g>
+    <g data-part="nose-rig" [attr.transform]="noseMotion">
+      <path data-part="nose" [attr.d]="nose" fill="#25323e"/>
+      <ellipse *ngIf="spec.nose === 'button'" cx="-4" cy="-5" rx="4" ry="2.5" fill="#fff" opacity=".35"/>
+    </g>
+    <g [attr.transform]="'translate(0 ' + mouth.offset + ')'">
+      <path data-part="mouth" [attr.d]="mouth.path" fill="#652c42" stroke="#652c42" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+      <g [attr.clip-path]="'url(#' + id + '-mouth)'">
+        <path d="M-52 -20 H52 V9 Q0 18 -52 9Z" fill="#fffaf9" [attr.opacity]="mouth.teeth"/>
+      </g>
+      <g [attr.clip-path]="'url(#' + id + '-tongue)'" [attr.opacity]="mouth.tongue">
+        <path data-part="tongue" [attr.d]="mouth.tonguePath" fill="#f799b0"/>
+        <path d="M0 16 Q-2 22 0 29" fill="none" stroke="#d9678a" stroke-width="2" stroke-linecap="round" [attr.opacity]="mouth.tongueOut"/>
+      </g>
+    </g>
+    <g *ngIf="spec.mouth === 'shy' || pose.smile > 0" fill="#eb6880" [attr.opacity]="spec.mouth === 'shy' ? 0.24 : pose.smile * 0.24">
+      <ellipse cx="-64" cy="48" rx="14" ry="7"/><ellipse cx="64" cy="48" rx="14" ry="7"/>
+    </g>
+    <g *ngIf="guides" class="guides">
+      <path d="M-94 0H94 M-94 35H94 M-94 78H94 M0 -44V122"/><rect x="-91" y="-32" width="182" height="142"/>
+    </g>
+  </g>
+  </g>
+</svg>
