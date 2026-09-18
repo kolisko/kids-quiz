@@ -1,0 +1,54 @@
+<div class="house-canvas" [class.locked]="locked">
+  <svg viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Otevřený domek s místnostmi">
+    <defs>
+      <pattern [id]="id + '-wall'" width="22" height="22" patternUnits="userSpaceOnUse">
+        @if (spec.wallpaper === 'dots') { <circle cx="11" cy="11" r="1.5" [attr.fill]="spec.roof" opacity=".3"/> }
+        @if (spec.wallpaper === 'stripes') { <path d="M11 0 V22" [attr.stroke]="spec.roof" opacity=".13" stroke-width="5"/> }
+      </pattern>
+      <linearGradient [id]="id + '-glass'" x2="1" y2="1"><stop stop-color="#c6dce1"/><stop offset="1" stop-color="#e8f1e9"/></linearGradient>
+    </defs>
+    <ellipse cx="300" cy="564" rx="263" ry="19" fill="#7c9a7d" opacity=".13"/>
+    <rect x="56" y="161" width="488" height="391" rx="5" [attr.fill]="spec.wall"/>
+    @for (floor of floors; track floor) {
+      @for (room of rooms; track room) {
+        <g [attr.transform]="'translate(' + (66 + room * 468 / spec.rooms) + ' ' + (171 + floor * 373 / spec.floors) + ')'">
+          <rect [attr.width]="468 / spec.rooms" [attr.height]="373 / spec.floors" [attr.fill]="'url(#' + id + '-wall)'"/>
+          <g [attr.transform]="'translate(' + (234 / spec.rooms - 26) + ' 19)'">
+            <rect width="52" [attr.height]="spec.floors === 3 ? 45 : 62" [attr.rx]="spec.kind === 'castle' ? 20 : 4" [attr.fill]="'url(#' + id + '-glass)'" stroke="#fffaf0" stroke-width="6"/>
+            <path [attr.d]="'M26 1 V' + (spec.floors === 3 ? 44 : 61) + ' M1 ' + (spec.floors === 3 ? 23 : 31) + ' H51'" stroke="#fffaf0" stroke-width="4"/>
+            <path d="M7 17 L19 5 M10 30 L34 6" stroke="#fff" opacity=".4" stroke-width="3"/>
+          </g>
+          <rect [attr.y]="373 / spec.floors - 28" [attr.width]="468 / spec.rooms" height="28" [attr.fill]="spec.floor" opacity=".3"/>
+          <path [attr.d]="'M0 ' + (373 / spec.floors - 28) + ' H' + (468 / spec.rooms)" [attr.stroke]="spec.floor" opacity=".6"/>
+          @if (room > 0) { <rect x="-4" y="0" width="8" [attr.height]="373 / spec.floors" fill="#fffaf2"/> }
+        </g>
+      }
+      <rect x="56" [attr.y]="171 + (floor + 1) * 373 / spec.floors - 5" width="488" height="10" [attr.fill]="spec.floor"/>
+      <rect x="56" [attr.y]="171 + (floor + 1) * 373 / spec.floors - 5" width="488" height="3" fill="#fff" opacity=".3"/>
+    }
+    <path d="M61 550 V164 H539 V550" fill="none" stroke="#fffaf2" stroke-width="12"/>
+    @switch (spec.kind) {
+      @case ('cottage') {
+        <path d="M424 111 V50 H457 V135" [attr.fill]="spec.floor"/>
+        <path d="M35 168 L300 26 L565 168Z" [attr.fill]="spec.roof" stroke="#fffaf2" stroke-width="10" stroke-linejoin="round"/>
+        <path d="M97 143 L299 38 L503 143 M153 143 L300 68 L448 143 M210 143 L300 100 L391 143" fill="none" stroke="#fff" opacity=".2" stroke-width="3"/>
+        <circle cx="300" cy="111" r="25" fill="#fff8e8"/><circle cx="300" cy="111" r="18" [attr.fill]="'url(#' + id + '-glass)'"/><path d="M300 93 V129 M282 111 H318" stroke="#fff8e8" stroke-width="4"/>
+      }
+      @case ('townhouse') {
+        <path d="M41 167 L82 82 H518 L559 167Z" [attr.fill]="spec.roof" stroke="#fffaf2" stroke-width="9"/>
+        <path d="M85 107 H516 M72 132 H530" stroke="#fff" opacity=".2" stroke-width="3"/>
+        <path d="M240 164 V108 L300 67 L360 108 V164" [attr.fill]="spec.wall" stroke="#fffaf2" stroke-width="7"/><circle cx="300" cy="126" r="23" [attr.fill]="'url(#' + id + '-glass)'" stroke="#fffaf2" stroke-width="5"/>
+      }
+      @case ('castle') {
+        <path d="M50 169 V89 H91 V117 H130 V89 H172 V117 H213 V89 H256 V117 H300 V89 H343 V117 H385 V89 H429 V117 H469 V89 H550 V169Z" [attr.fill]="spec.roof" stroke="#fffaf2" stroke-width="8"/>
+        <path d="M300 88 V32 L350 49 L300 66" [attr.fill]="spec.roof" stroke="#9b785b" stroke-width="3" stroke-linejoin="round"/>
+      }
+    }
+    <rect x="48" y="549" width="504" height="12" rx="4" [attr.fill]="spec.floor"/>
+  </svg>
+  @for (item of placements; track item.id) {
+    <button type="button" class="placed-item" [class.selected]="selectedId === item.id" [style.left.%]="item.x" [style.top.%]="item.y" [style.width.%]="item.size" [style.height.%]="item.size" [style.z-index]="selectedId === item.id ? 50 : $index + 1" [attr.aria-label]="item.name + ' – přesunout tažením nebo šipkami'" [attr.aria-pressed]="selectedId === item.id" [disabled]="locked" (focus)="selectedIdChange.emit(item.id)" (pointerdown)="startDrag($event, item)" (pointermove)="moveDrag($event)" (pointerup)="endDrag($event)" (pointercancel)="endDrag($event, true)" (lostpointercapture)="endDrag($event, true)" (keydown)="keyMove($event, item)">
+      <div [style.transform]="item.flipped ? 'scaleX(-1)' : null"><app-collectible [reward]="item.reward" [label]="item.name"/></div>
+    </button>
+  }
+</div>

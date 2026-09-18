@@ -55,6 +55,15 @@ object TestMenuStore {
             val visibleTree = buildTree(tests, settings.hiddenTestMenuKeys.toSet()).onlyVisible()
             if (visibleTree?.find(key)?.launchable != true) return@useConnection null
 
+            if (key == timedArithmeticMenuKey) {
+                return@useConnection TestMenuLaunchResponse(
+                    key = key,
+                    kind = TestMenuLaunchKind.timed_arithmetic,
+                    settings = settings,
+                    timedArithmetic = connection.timedArithmeticSummary(userId, settings.timedArithmeticSeconds),
+                )
+            }
+
             mathLaunchKey.matchEntire(key)?.let { match ->
                 val testId = match.groupValues[1].toLongOrNull() ?: return@useConnection null
                 val mode = PracticeMode.valueOf(match.groupValues[2])
@@ -215,7 +224,12 @@ object TestMenuStore {
                     key = mathKey,
                     label = "Matematika",
                     visible = mathKey !in hiddenKeys,
-                    children = mathTests + arithmeticNode,
+                    children = mathTests + arithmeticNode + TestMenuNode(
+                        key = timedArithmeticMenuKey,
+                        label = "Počítání na čas do 20",
+                        launchable = true,
+                        visible = timedArithmeticMenuKey !in hiddenKeys,
+                    ),
                 ),
             ) + languageNodes,
         )
@@ -265,6 +279,7 @@ object SettingsStore {
         Database.useConnection { connection ->
             val current = connection.readAppSettings(userId)
             val merged = current.copy(
+                timedArithmeticSeconds = request.timedArithmeticSeconds ?: current.timedArithmeticSeconds,
                 secondsLimit = request.secondsLimit ?: current.secondsLimit,
                 targetScore = request.targetScore ?: current.targetScore,
                 celebrationTapLimit = request.celebrationTapLimit ?: current.celebrationTapLimit,

@@ -27,7 +27,7 @@ jobs:
           node-version: "24"
       - run: npm ci
         working-directory: frontend
-      - run: node --test tests/test-session-engine.test.mjs tests/fumfik.test.mjs
+      - run: node --test tests/test-session-engine.test.mjs tests/fumfik.test.mjs tests/timed-arithmetic.test.mjs tests/superbox.test.mjs
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
@@ -52,7 +52,7 @@ jobs:
         with:
           cache-provider: basic
       - run: ./gradlew :backend:build --no-daemon
-      - run: node --test backend/tests/fumfik-lab-access.test.mjs
+      - run: node --test backend/tests/fumfik-lab-access.test.mjs backend/tests/timed-arithmetic.test.mjs
 
   dependency-review:
     if: github.event_name == 'pull_request'

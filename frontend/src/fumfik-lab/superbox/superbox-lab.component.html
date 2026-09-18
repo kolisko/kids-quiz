@@ -1,0 +1,119 @@
+<div class="lab-page">
+  <div class="page-heading">
+    <div><p class="eyebrow">MALÝ SVĚT, VELKÁ PŘEKVAPENÍ</p><h2>Superbox <span>& domečky</span></h2><p class="subtitle">Dílna balíčků, obyvatel a jejich malých světů.</p></div>
+    <div class="file-actions">
+      <input #importFile type="file" accept=".json,application/json" hidden (change)="importDocument($event)">
+      <button class="quiet-button" type="button" title="Načíst JSON a nahradit aktuální dílnu" (click)="importFile.click()"><svg [lucideIcon]="icons.Upload" [size]="15"></svg>Import</button>
+      <button class="quiet-button" type="button" (click)="exportDocument()"><svg [lucideIcon]="icons.Download" [size]="15"></svg>Export JSON</button>
+    </div>
+  </div>
+  <nav class="editor-tabs" aria-label="Editory Superboxu">
+    @for (tab of tabs; track tab.id) { <button type="button" [class.active]="section === tab.id" [attr.aria-pressed]="section === tab.id" (click)="setSection(tab.id)"><svg [lucideIcon]="tab.icon" [size]="18"></svg>{{ tab.label }}<span class="tab-number">0{{ $index + 1 }}</span></button> }
+    <span class="local-status"><span></span>{{ saveStatus }}</span>
+  </nav>
+  @if (error) { <div class="notice error" role="alert">{{ error }}<button type="button" aria-label="Zavřít upozornění" (click)="error = ''">×</button></div> }
+  <div class="notice success" role="status" [class.empty]="!message">{{ message }}</div>
+  <div class="editor-grid">
+    <aside class="settings panel" aria-label="Parametry návrhu">
+      <div class="panel-heading"><h3>{{ section === 'box' ? 'Podoba balíčku' : section === 'person' ? 'Podoba postavy' : section === 'furniture' ? 'Podoba nábytku' : 'Podoba domku' }}</h3><button type="button" class="icon-button" title="Výchozí parametry návrhu" aria-label="Výchozí parametry návrhu" (click)="resetDesign()"><svg [lucideIcon]="icons.RotateCcw" [size]="16"></svg></button></div>
+      @switch (section) {
+        @case ('box') {
+          <div class="color-fields">
+            <label class="color-field"><input type="color" aria-label="Barva balíčku" [(ngModel)]="doc.box.color" (ngModelChange)="changed()"><span>Balíček<small>{{ doc.box.color }}</small></span></label>
+            <label class="color-field"><input type="color" aria-label="Barva stužky" [(ngModel)]="doc.box.ribbon" (ngModelChange)="changed()"><span>Stužka<small>{{ doc.box.ribbon }}</small></span></label>
+          </div>
+          <fieldset><legend>Vzor papíru</legend><div class="option-grid">@for (option of patterns; track option.value) { <button type="button" [class.selected]="doc.box.pattern === option.value" [attr.aria-pressed]="doc.box.pattern === option.value" (click)="setBox('pattern', option.value)">{{ option.label }}</button> }</div></fieldset>
+          @if (doc.box.pattern !== 'plain') { <label class="color-field compact"><input type="color" aria-label="Barva vzoru" [(ngModel)]="doc.box.patternColor" (ngModelChange)="changed()"><span>Barva vzoru<small>{{ doc.box.patternColor }}</small></span></label> }
+          <div class="divider"></div><p class="control-heading"><span>01</span>Před prasknutím</p>
+          <div class="motion-options">@for (option of inflations; track option.value) { <button type="button" [class.selected]="doc.box.inflation === option.value" [attr.aria-pressed]="doc.box.inflation === option.value" (click)="setBox('inflation', option.value)"><span class="radio-dot"></span><span>{{ option.label }}<small>{{ option.hint }}</small></span></button> }</div>
+          <label class="slider-label" for="box-intensity">Intenzita <output>{{ doc.box.intensity * 100 | number:'1.0-0' }} %</output></label><input id="box-intensity" type="range" min="0.3" max="1.5" step="0.1" [(ngModel)]="doc.box.intensity" (ngModelChange)="changed()">
+          <div class="divider"></div><p class="control-heading"><span>02</span>Po prasknutí</p>
+          <div class="option-grid">@for (option of bursts; track option.value) { <button type="button" [class.selected]="doc.box.burst === option.value" [attr.aria-pressed]="doc.box.burst === option.value" (click)="setBox('burst', option.value)">{{ option.label }}</button> }</div>
+          @if (doc.box.burst !== 'none') { <label class="slider-label" for="box-particles">Počet částic <output>{{ doc.box.particles }}</output></label><input id="box-particles" type="range" min="12" max="80" step="1" [(ngModel)]="doc.box.particles" (ngModelChange)="changed()"> }
+          <details class="timing-settings"><summary>Časování a přístupnost</summary>
+            <label class="slider-label" for="box-delay">Čekání <output>{{ doc.box.delay / 1000 | number:'1.1-1' }} s</output></label><input id="box-delay" type="range" min="0" max="3000" step="100" [(ngModel)]="doc.box.delay" (ngModelChange)="changed()">
+            <label class="slider-label" for="box-duration">Nafukování <output>{{ doc.box.duration / 1000 | number:'1.1-1' }} s</output></label><input id="box-duration" type="range" min="600" max="5000" step="100" [(ngModel)]="doc.box.duration" (ngModelChange)="changed()">
+            <label class="checkbox"><input type="checkbox" [(ngModel)]="reducedMotion" (ngModelChange)="motionChanged()">Omezit pohyb</label><p class="hint">Odměna se při přehrání zobrazí rovnou. Výchozí volba respektuje nastavení zařízení.</p>
+          </details>
+        }
+        @case ('person') {
+          <label class="field">Postava<select aria-label="Postava" [(ngModel)]="doc.person.kind" (ngModelChange)="changed()">@for (kind of personKinds; track kind[0]) { <option [value]="kind[0]">{{ kind[1] }}</option> }</select></label>
+          <div class="color-fields"><label class="color-field"><input type="color" aria-label="Barva pleti" [(ngModel)]="doc.person.skin" (ngModelChange)="changed()"><span>Pleť<small>{{ doc.person.skin }}</small></span></label><label class="color-field"><input type="color" aria-label="Barva vlasů" [(ngModel)]="doc.person.hair" (ngModelChange)="changed()"><span>Vlasy<small>{{ doc.person.hair }}</small></span></label></div>
+          <label class="field">Účes<select aria-label="Účes" [(ngModel)]="doc.person.hairStyle" (ngModelChange)="changed()"><option value="short">Krátké vlasy</option><option value="bob">Mikádo</option><option value="long">Dlouhé vlasy</option><option value="buns">Dva drdůlky</option></select></label>
+          <div class="divider"></div><p class="control-heading"><span>02</span>Šatník</p>
+          <label class="field">Oblečení<select aria-label="Oblečení" [(ngModel)]="doc.person.outfit" (ngModelChange)="changed()"><option value="casual">Tričko a kalhoty</option><option value="dress">Šaty s mašlí</option><option value="overalls">Lacláče</option><option value="royal">Královské šaty a korunka</option></select></label>
+          <div class="color-fields"><label class="color-field"><input type="color" aria-label="Barva oblečení" [(ngModel)]="doc.person.clothing" (ngModelChange)="changed()"><span>Oblečení<small>{{ doc.person.clothing }}</small></span></label><label class="color-field"><input type="color" aria-label="Barva doplňků" [(ngModel)]="doc.person.accent" (ngModelChange)="changed()"><span>Doplňky<small>{{ doc.person.accent }}</small></span></label></div>
+          <p class="hint info-hint">Každou variantu můžete uložit pod vlastním jménem. Uložené postavy pak najdete mezi odměnami Superboxu.</p>
+        }
+        @case ('furniture') {
+          <label class="field">Druh vybavení<select aria-label="Druh vybavení" [(ngModel)]="doc.furniture.kind" (ngModelChange)="changed()">@for (kind of furnitureKinds; track kind[0]) { <option [value]="kind[0]">{{ kind[1] }}</option> }</select></label>
+          @if (doc.furniture.kind === 'toy') { <label class="field">Hračka<select aria-label="Hračka" [(ngModel)]="doc.furniture.toy" (ngModelChange)="changed()"><option value="bear">Medvídek</option><option value="blocks">Stavební kostky</option><option value="car">Autíčko</option></select></label> }
+          <div class="color-fields"><label class="color-field"><input type="color" aria-label="Hlavní barva nábytku" [(ngModel)]="doc.furniture.color" (ngModelChange)="changed()"><span>Základ<small>{{ doc.furniture.color }}</small></span></label><label class="color-field"><input type="color" aria-label="Barva detailů nábytku" [(ngModel)]="doc.furniture.accent" (ngModelChange)="changed()"><span>Detaily<small>{{ doc.furniture.accent }}</small></span></label></div>
+          <label class="field">Tvar hran<select aria-label="Tvar hran" [(ngModel)]="doc.furniture.style" (ngModelChange)="changed()"><option value="round">Oblé</option><option value="square">Hranaté</option></select></label>
+          <label class="field">Ozdoba<select aria-label="Ozdoba" [(ngModel)]="doc.furniture.detail" (ngModelChange)="changed()"><option value="plain">Bez ozdoby</option><option value="stars">Hvězdička</option><option value="hearts">Srdíčko</option></select></label>
+          <p class="hint info-hint">Ukládejte barevné varianty a kombinujte je v domku. Velikost každého kusu upravíte při zařizování.</p>
+        }
+        @case ('house') {
+          <label class="field">Typ domku<select aria-label="Typ domku" [(ngModel)]="doc.house.kind" (ngModelChange)="changed()"><option value="cottage">Útulný domeček</option><option value="townhouse">Městský dům</option><option value="castle">Pohádkový zámek</option></select></label>
+          <div class="color-fields"><label class="color-field"><input type="color" aria-label="Barva stěn" [(ngModel)]="doc.house.wall" (ngModelChange)="changed()"><span>Stěny<small>{{ doc.house.wall }}</small></span></label><label class="color-field"><input type="color" aria-label="Barva střechy" [(ngModel)]="doc.house.roof" (ngModelChange)="changed()"><span>Střecha<small>{{ doc.house.roof }}</small></span></label></div>
+          <label class="color-field compact"><input type="color" aria-label="Barva podlahy" [(ngModel)]="doc.house.floor" (ngModelChange)="changed()"><span>Podlaha<small>{{ doc.house.floor }}</small></span></label>
+          <label class="field">Tapeta<select aria-label="Tapeta" [(ngModel)]="doc.house.wallpaper" (ngModelChange)="changed()"><option value="plain">Jednobarevná</option><option value="dots">Jemné tečky</option><option value="stripes">Pruhy</option></select></label>
+          <div class="paired-fields"><label class="field">Podlaží<select aria-label="Podlaží" [(ngModel)]="doc.house.floors" (ngModelChange)="changed()"><option [ngValue]="1">1</option><option [ngValue]="2">2</option><option [ngValue]="3">3</option></select></label><label class="field">Pokojů na patro<select aria-label="Pokojů na patro" [(ngModel)]="doc.house.rooms" (ngModelChange)="changed()"><option [ngValue]="1">1</option><option [ngValue]="2">2</option><option [ngValue]="3">3</option></select></label></div>
+          <div class="divider"></div><p class="control-heading"><span>02</span>Odemčení domku</p>
+          <label class="field">Cena ve fumfících<input type="number" min="1" max="1000" step="1" [(ngModel)]="doc.house.cost" (change)="changed()"></label>
+          <label class="slider-label" for="fumfiks">Zkušební počet fumfíků <output>{{ doc.fumfiks }}</output></label><input id="fumfiks" type="range" min="0" max="1000" step="1" [(ngModel)]="doc.fumfiks" (ngModelChange)="fumfiksChanged()">
+          <div class="unlock-meter"><div [style.width.%]="(doc.fumfiks / doc.house.cost * 100) > 100 ? 100 : doc.fumfiks / doc.house.cost * 100"></div></div>
+          <p class="unlock-label" [class.is-locked]="locked"><svg [lucideIcon]="locked ? icons.Lock : icons.Check" [size]="14"></svg>{{ locked ? 'Chybí ' + (doc.house.cost - doc.fumfiks) + ' fumfíků' : 'Domek je odemčený' }}</p>
+          <p class="hint">Zkušební stav labu. Skutečné herní odměny tím neměníte.</p>
+        }
+      }
+      <div class="save-design"><label class="field" for="design-name">Jméno návrhu<input id="design-name" type="text" maxlength="80" [(ngModel)]="designName" (keydown.enter)="saveDesign()"></label><button type="button" class="primary-button full-width" (click)="saveDesign()"><svg [lucideIcon]="icons.Plus" [size]="16"></svg>Uložit do knihovny</button></div>
+    </aside>
+    <main class="preview-column">
+      <div class="preview-title"><h3>{{ currentTitle }}</h3><p>{{ currentHint }}</p></div>
+      @if (section === 'box') {
+        <section class="black-stage" aria-label="Náhled animace Superboxu">
+          <div class="stage-topline"><span><span class="live-dot"></span>ŽIVÝ NÁHLED</span><span>SUPERBOX / 01</span></div>
+          <app-superbox [spec]="doc.box" [reward]="rewardDesign" [elapsed]="elapsed" [reducedMotion]="reducedMotion"/>
+          <div class="stage-caption" aria-live="polite"><p>{{ phaseLabel }}</p><h4>{{ phase === 'reward' || phase === 'burst' ? rewardDesign.name : 'Co se skrývá uvnitř?' }}</h4></div>
+          <button type="button" class="stage-play" (click)="play()"><svg [lucideIcon]="icons.Gift" [size]="17"></svg>{{ phase === 'reward' ? 'Rozbalit znovu' : 'Rozbalit Superbox' }}</button>
+        </section>
+        <div class="playback panel">
+          <div class="transport"><button type="button" class="play-button" [attr.aria-label]="playing ? 'Pozastavit animaci' : 'Přehrát animaci'" (click)="playing ? pause() : play(false)"><svg [lucideIcon]="playing ? icons.Pause : icons.Play" [size]="17"></svg></button><input type="range" aria-label="Průběh rozbalení" min="0" max="1" step="0.001" [ngModel]="progress" (ngModelChange)="scrub($event)"><output>{{ elapsed / 1000 | number:'1.1-1' }} / {{ total / 1000 | number:'1.1-1' }} s</output><button type="button" class="icon-button" aria-label="Vrátit balíček na začátek" title="Vrátit na začátek" (click)="resetAnimation()"><svg [lucideIcon]="icons.RotateCcw" [size]="16"></svg></button></div>
+          <div class="phase-steps"><span [class.current]="phase === 'waiting'">01 · Čekání</span><span [class.current]="phase === 'inflating'">02 · Nafukování</span><span [class.current]="phase === 'burst'">03 · Prasknutí</span><span [class.current]="phase === 'reward'">04 · Odměna</span></div>
+        </div>
+        <div class="reward-strip panel"><span class="reward-icon"><svg [lucideIcon]="icons.Sparkles" [size]="22"></svg></span><div><small>UVNITŘ SUPERBOXU</small><strong>{{ rewardDesign.name }}</strong></div><button type="button" class="text-button" [disabled]="phase !== 'reward'" (click)="placeReward()">Do domečku<svg [lucideIcon]="icons.ArrowRight" [size]="16"></svg></button></div>
+        <p class="preview-note">Odměnu vyberte v knihovně. Nebo <button type="button" class="inline-button" (click)="randomReward()">rozbalte náhodný obsah</button>.</p>
+      } @else if (section === 'house') {
+        <section class="house-stage panel" aria-label="Zařizování domku"><div class="light-topline"><span>DOMEČEK / {{ doc.house.floors * doc.house.rooms }} POKOJŮ</span><span>{{ doc.placements.length }} / 40 prvků</span></div><app-superbox-house [spec]="doc.house" [placements]="doc.placements" (placementsChange)="doc.placements = $event" [(selectedId)]="selectedPlacementId" [locked]="locked" (interactionEnd)="persist()"/>
+          @if (locked) { <div class="lock-overlay"><svg [lucideIcon]="icons.Lock" [size]="28"></svg><h4>Tenhle domek ještě čeká</h4><p>Chybí {{ doc.house.cost - doc.fumfiks }} fumfíků do odemčení.</p><button class="primary-button" type="button" (click)="doc.fumfiks = doc.house.cost; fumfiksChanged()">Vyzkoušet odemčení</button></div> }
+        </section>
+        <div class="drag-help"><svg [lucideIcon]="icons.Move" [size]="17"></svg><span>Přesuňte obyvatele i nábytek prstem nebo myší. Klávesnicí použijte šipky, se Shiftem větší krok.</span></div>
+        @if (selectedPlacement; as item) { <div class="placement-settings panel"><div><small>VYBRANÝ PRVEK</small><strong>{{ item.name }}</strong></div><label>Velikost<input type="range" min="10" max="28" step="1" aria-label="Velikost prvku v domku" [disabled]="locked" [ngModel]="item.size" (ngModelChange)="updatePlacement('size', $event)"></label><button class="quiet-button" type="button" [disabled]="locked" (click)="updatePlacement('flipped', !item.flipped)">Otočit</button><button class="icon-button delete-button" type="button" [disabled]="locked" aria-label="Odebrat vybraný prvek z domku" (click)="removePlacement()"><svg [lucideIcon]="icons.Trash2" [size]="17"></svg></button></div> }
+      } @else {
+        <section class="asset-stage panel" aria-label="Náhled vytvořené odměny"><div class="light-topline"><span>{{ section === 'person' ? 'OBYVATEL DOMKU' : 'VYBAVENÍ DOMKU' }}</span><span>ŽIVÝ NÁHLED</span></div><div class="asset-orbit"><div class="orbit-ring"></div><app-collectible [reward]="section === 'person' ? personReward : furnitureReward"/></div><span class="asset-chip">{{ section === 'person' ? 'Postava do Superboxu' : 'Vybavení do Superboxu' }}</span></section>
+        <div class="creation-tip panel"><svg [lucideIcon]="icons.Gift" [size]="22"></svg><div><strong>Od návrhu k překvapení</strong><p>Uložte návrh do knihovny a na záložce Superbox ho vyberte jako odměnu. V Domcích ho můžete rovnou přidat do pokoje.</p></div></div>
+      }
+    </main>
+    <aside class="library panel" aria-label="Knihovna návrhů">
+      <div class="panel-heading"><h3>{{ section === 'house' ? 'Zabydlete domeček' : section === 'box' ? 'Co bude uvnitř?' : 'Knihovna návrhů' }}</h3><span class="count-badge">{{ visibleDesigns.length }}</span></div>
+      <p class="library-hint">{{ section === 'box' ? 'Vyberte odměnu, která se objeví po rozbalení.' : section === 'house' ? 'Klepnutím přidejte prvek, potom ho přesuňte na své místo.' : 'Klepnutím načtěte návrh a vytvořte jeho další variantu.' }}</p>
+      <div class="library-filters"><button type="button" [class.selected]="libraryFilter === 'rewards'" (click)="libraryFilter = 'rewards'">Odměny</button><button type="button" [class.selected]="libraryFilter === 'box'" (click)="libraryFilter = 'box'">Balíčky</button><button type="button" [class.selected]="libraryFilter === 'house'" (click)="libraryFilter = 'house'">Domky</button></div>
+      <div class="design-grid">
+        @for (design of visibleDesigns; track design.id) {
+          <div class="design-card" [class.chosen]="section === 'box' && doc.rewardId === design.id">
+            <button type="button" class="design-button" [attr.aria-label]="designAction(design) + ': ' + design.name" [attr.aria-pressed]="section === 'box' && doc.rewardId === design.id" (click)="useDesign(design)">
+              <div class="design-art" [class.box-art]="design.kind === 'box'">
+                @switch (design.kind) { @case ('person') { <app-collectible [reward]="design"/> } @case ('furniture') { <app-collectible [reward]="design"/> } @case ('box') { <app-superbox [spec]="design.spec"/> } @case ('house') { <app-superbox-house [spec]="design.spec"/> } }
+                @if (section === 'box' && doc.rewardId === design.id) { <span class="chosen-mark"><svg [lucideIcon]="icons.Check" [size]="12"></svg></span> }
+                @if (section === 'house' && libraryFilter === 'rewards') { <span class="add-mark"><svg [lucideIcon]="icons.Plus" [size]="13"></svg></span> }
+              </div><span class="design-name">{{ design.name }}</span>
+            </button><button type="button" class="delete-design" [attr.aria-label]="'Odebrat návrh: ' + design.name" title="Odebrat z knihovny" (click)="deleteDesign(design)">×</button>
+          </div>
+        } @empty { <p class="empty-library">Tady je místo pro vaše návrhy. Pojmenujte návrh a uložte ho do knihovny.</p> }
+      </div>
+      <div class="library-footer"><svg [lucideIcon]="icons.House" [size]="20"></svg><p>Malé odměny.<br><strong>Velký svět k objevování.</strong></p></div>
+    </aside>
+  </div>
+  <footer class="lab-footer"><span>SUPERBOX LAB <span class="footer-dot">·</span> EXPERIMENTÁLNÍ DÍLNA</span><span>Návrhy zůstávají v tomto prohlížeči. Přeneste je pomocí JSON.</span></footer>
+</div>

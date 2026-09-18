@@ -57,3 +57,44 @@ and a complete 360-degree spin. One parent SVG group moves the head, ears and
 face together while the background stays still. All animations return to rest;
 the spin completes its forward turn instead of unwinding backwards. The lab's
 hold option freezes a representative pose (half a turn for the spin).
+
+## Superbox workshop
+
+The **Superbox a domečky** navigation link opens `/fumfik-lab/?page=superbox`.
+It uses the existing administrator guard, with no additional public entry point.
+The Fumfik editor and its appearance fragment URLs remain available unchanged.
+
+The workshop has four editors:
+
+- **Superbox:** wrapping, ribbon and pattern colors; plain, dots, stars or stripes;
+  puff, accelerating spin, shape wobble or bounce; confetti, bubbles, stars or no
+  particles. Delay, inflation duration, intensity and particle count are adjustable.
+  The deterministic timeline supports playback, pause, seeking and replay. Reduced
+  motion respects the device preference and can also be selected in the editor.
+- **Osoby:** children, princesses, dads and moms, with skin/hair colors, four
+  hairstyles, four outfits and separately colored clothing and accessories.
+- **Nábytek:** chairs, tables, wardrobes and toys (bear, blocks, car), with colors,
+  rounded/square edges where applicable and optional stars/hearts.
+- **Domky:** cottage, townhouse or castle, one to three floors/rooms, wall/roof/floor
+  colors, wallpaper and a fumfik unlock threshold. The fumfik balance is a lab-only
+  simulation. Furniture and people support pointer capture for touch/mouse dragging,
+  arrow-key movement (Shift for larger steps), resizing, mirroring and removal.
+
+Named designs can be saved as independent variants in a local library. Select a
+saved person/furniture design as a Superbox reward, or choose a random reward.
+After revealing it, **Do domečku** adds an independent copy to the room. Existing
+placements are not altered when editing or deleting their original library design.
+
+Drafts, library and placements automatically persist in localStorage under
+`fumfik-superbox-lab-v1`. JSON export/import transfers a versioned whole-workshop
+snapshot; import validates colors, variants, limits, identities and selected reward
+before replacing the current state. Import replaces the current workshop; export
+first to keep both. There are limits of 100 designs and 40 placed objects.
+
+Reusable SVG renderers and their models are in `src/app/superbox/`. The workshop is
+not connected to actual game awards, user balances or backend persistence yet.
+
+```sh
+npm run test:superbox
+npm run build:fumfik-lab
+```

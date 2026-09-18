@@ -1,0 +1,71 @@
+<div class="stage">
+  <div class="aura" [style.opacity]="frame.opened ? 1 : .55"></div>
+  <svg viewBox="0 0 600 500" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient [id]="id + '-front'" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#1c1020" stop-opacity=".12"/></linearGradient>
+      <linearGradient [id]="id + '-ribbon'" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff" stop-opacity=".5"/><stop offset=".4" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#713f28" stop-opacity=".22"/></linearGradient>
+      <radialGradient [id]="id + '-floor'"><stop [attr.stop-color]="spec.color" stop-opacity=".16"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+      <pattern [id]="id + '-pattern'" width="37" height="37" patternUnits="userSpaceOnUse" patternTransform="rotate(-12)">
+        @switch (spec.pattern) {
+          @case ('dots') { <circle cx="18" cy="18" r="3" [attr.fill]="spec.patternColor" opacity=".7"/> }
+          @case ('stars') { <polygon [attr.points]="starPoints" transform="translate(18 18) scale(.65)" [attr.fill]="spec.patternColor" opacity=".75"/> }
+          @case ('stripes') { <path d="M10 0 V37" [attr.stroke]="spec.patternColor" stroke-width="6" opacity=".35"/> }
+        }
+      </pattern>
+    </defs>
+    <ellipse cx="300" cy="429" rx="176" ry="42" [attr.fill]="'url(#' + id + '-floor)'"/>
+    @if (!frame.opened || (!reducedMotion && frame.burst < .5)) {
+      <g [attr.transform]="frame.opened ? null : frame.transform" [attr.opacity]="frame.opened ? 1 - frame.burst * 2 : 1">
+        <g [attr.transform]="frame.opened ? 'translate(' + (-frame.burst * 230) + ' ' + (frame.burst * 120) + ') rotate(' + (-frame.burst * 60) + ' 180 320)' : null">
+          <path d="M180 247 L298 281 V402 L180 361Z" [attr.fill]="spec.color"/>
+          <path d="M180 247 L298 281 V402 L180 361Z" [attr.fill]="'url(#' + id + '-front)'"/>
+          <path d="M180 247 L298 281 V402 L180 361Z" [attr.fill]="'url(#' + id + '-pattern)'"/>
+          <path d="M226 260 L251 268 V386 L226 377Z" [attr.fill]="spec.ribbon"/>
+          <path d="M226 260 L251 268 V386 L226 377Z" [attr.fill]="'url(#' + id + '-ribbon)'"/>
+          <path d="M183 272 L295 305" stroke="#47231e" opacity=".09" stroke-width="7"/>
+        </g>
+        <g [attr.transform]="frame.opened ? 'translate(' + (frame.burst * 230) + ' ' + (frame.burst * 120) + ') rotate(' + (frame.burst * 60) + ' 415 320)' : null">
+          <path d="M298 281 L416 242 V361 L298 402Z" [attr.fill]="spec.color"/>
+          <path d="M298 281 L416 242 V361 L298 402Z" fill="#402431" opacity=".24"/>
+          <path d="M298 281 L416 242 V361 L298 402Z" [attr.fill]="'url(#' + id + '-pattern)'"/>
+          <path d="M347 265 L373 256 V376 L347 385Z" [attr.fill]="spec.ribbon"/>
+          <path d="M347 265 L373 256 V376 L347 385Z" fill="#683e2b" opacity=".12"/>
+          <path d="M301 305 L413 268" stroke="#47231e" opacity=".11" stroke-width="7"/>
+        </g>
+        <g [attr.transform]="frame.opened ? 'translate(0 ' + (-frame.burst * 320) + ') rotate(' + (frame.burst * 40) + ' 300 220)' : null">
+          <path d="M168 233 L293 192 L429 233 L299 280Z" [attr.fill]="spec.color"/>
+          <path d="M168 233 L293 192 L429 233 L299 280Z" fill="#fff" opacity=".17"/>
+          <path d="M168 233 L293 192 L429 233 L299 280Z" [attr.fill]="'url(#' + id + '-pattern)'"/>
+          <path d="M168 233 V255 L299 301 L429 253 V233 L299 280Z" [attr.fill]="spec.color"/>
+          <path d="M299 280 L429 233 V253 L299 301Z" fill="#322036" opacity=".2"/>
+          <path d="M217 217 L244 208 L378 251 V272 L350 282 V260Z" [attr.fill]="spec.ribbon"/>
+          <path d="M350 209 L377 217 L249 263 V284 L222 274 V253Z" [attr.fill]="spec.ribbon"/>
+          <path d="M350 209 L377 217 L249 263 V284 L222 274 V253Z" [attr.fill]="'url(#' + id + '-ribbon)'"/>
+          <path d="M168 233 L299 280 L429 233" stroke="#fff" opacity=".28" fill="none"/>
+          <path d="M297 223 C263 211 218 156 250 150 C279 147 303 186 302 215 C317 186 355 152 373 173 C391 199 334 220 308 226" [attr.fill]="spec.ribbon" stroke="#835734" stroke-opacity=".12" stroke-width="2"/>
+          <path d="M293 213 C273 197 244 157 253 159 C275 158 291 190 293 213 M314 215 C333 190 360 170 365 179 C372 191 337 211 314 215" fill="#9e663f" opacity=".26"/>
+          <path d="M297 222 Q270 223 256 247 L281 243 L289 256 Q293 238 310 226 M307 222 Q323 231 337 243 L332 224 L349 227 Q329 210 307 222" [attr.fill]="spec.ribbon"/>
+          <rect x="290" y="206" width="26" height="26" rx="9" transform="rotate(-12 303 219)" [attr.fill]="spec.ribbon"/>
+          <rect x="290" y="206" width="26" height="26" rx="9" transform="rotate(-12 303 219)" [attr.fill]="'url(#' + id + '-ribbon)'"/>
+        </g>
+      </g>
+    }
+    @if (frame.opened && !reducedMotion) {
+      <circle cx="300" cy="275" [attr.r]="45 + frame.burst * 240" fill="none" [attr.stroke]="spec.ribbon" [attr.stroke-opacity]="(1 - frame.burst) * .25" [attr.stroke-width]="(1 - frame.burst) * 3"/>
+    }
+    @for (particle of particles; track $index) {
+      <g [attr.transform]="'translate(' + particle.x + ' ' + particle.y + ') rotate(' + particle.rotation + ')'" [attr.opacity]="particle.opacity">
+        @switch (spec.burst) {
+          @case ('bubbles') { <circle [attr.r]="particle.radius" [attr.fill]="spec.ribbon" fill-opacity=".08" [attr.stroke]="$index % 2 ? spec.ribbon : spec.color" stroke-width="1.5"/><circle [attr.cx]="-particle.radius * .3" [attr.cy]="-particle.radius * .3" r="2" fill="#fff" opacity=".6"/> }
+          @case ('stars') { <polygon [attr.points]="starPoints" [attr.fill]="$index % 2 ? spec.ribbon : spec.patternColor"/> }
+          @default { <rect [attr.x]="-particle.radius" [attr.y]="-particle.radius" [attr.width]="particle.radius * 1.4" [attr.height]="particle.radius * 2.8" rx="1" [attr.fill]="$index % 3 === 0 ? spec.color : $index % 3 === 1 ? spec.ribbon : spec.patternColor"/> }
+        }
+      </g>
+    }
+  </svg>
+  @if (frame.opened) {
+    <div class="reward" [style.opacity]="reducedMotion ? 1 : frame.burst * 4" [style.transform]="'scale(' + (reducedMotion ? 1 : .5 + .5 * (1 - (1 - frame.burst) ** 4)) + ')'">
+      <app-collectible [reward]="reward" label="Odměna ze Superboxu"/>
+    </div>
+  }
+</div>

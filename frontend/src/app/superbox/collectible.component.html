@@ -1,0 +1,111 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" [attr.aria-label]="label || (reward.kind === 'person' ? 'Figurka' : 'Nábytek')">
+  <defs>
+    <linearGradient [id]="id + '-shine'" x2=".8" y2="1"><stop stop-color="#fff" stop-opacity=".25"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#382421" stop-opacity=".14"/></linearGradient>
+  </defs>
+  <ellipse cx="100" cy="185" rx="49" ry="7" fill="#1b2924" opacity=".10"/>
+  @if (reward.kind === 'person') {
+    <g [attr.transform]="adult ? 'translate(-5 -8) scale(1.05)' : 'translate(6 11) scale(.94)'" stroke-linecap="round" stroke-linejoin="round">
+      @if (person.hairStyle === 'long' || person.hairStyle === 'bob') {
+        <path [attr.d]="person.hairStyle === 'long' ? 'M61 63 Q56 23 100 23 Q144 23 139 67 L148 123 Q128 135 113 119 H84 Q68 133 52 120Z' : 'M62 58 Q58 25 100 25 Q143 25 138 62 L143 95 Q100 114 56 94Z'" [attr.fill]="person.hair"/>
+      }
+      <path d="M86 145 L83 173 M114 145 L117 173" [attr.stroke]="dress ? person.skin : person.accent" stroke-width="17"/>
+      <path d="M81 174 L74 177 Q70 184 82 184 H92 V174Z M109 174 V184 H125 Q132 179 124 176 L119 174Z" fill="#504341"/>
+      <path d="M74 101 Q61 112 59 134 M127 102 Q140 115 141 134" [attr.stroke]="person.skin" stroke-width="12"/>
+      <path d="M73 99 L65 113 M128 100 L136 113" [attr.stroke]="person.clothing" stroke-width="18"/>
+      <path [attr.d]="dress ? 'M79 94 Q100 87 121 94 L140 152 Q100 168 60 152Z' : 'M77 94 Q100 87 123 94 L128 143 Q100 151 72 143Z'" [attr.fill]="person.clothing"/>
+      <path [attr.d]="dress ? 'M79 94 Q100 87 121 94 L140 152 Q100 168 60 152Z' : 'M77 94 Q100 87 123 94 L128 143 Q100 151 72 143Z'" [attr.fill]="'url(#' + id + '-shine)'"/>
+      <path d="M92 89 Q100 101 108 89" [attr.fill]="person.skin"/>
+      @if (person.outfit === 'overalls') {
+        <path d="M81 94 L85 113 H115 L119 94 M83 117 H117 L121 145 H79Z" [attr.fill]="person.accent" [attr.stroke]="person.accent" stroke-width="7"/>
+        <path d="M92 121 H108 V132 Q100 138 92 132Z" fill="#fff" opacity=".3"/>
+        <circle cx="87" cy="114" r="2" fill="#605247"/><circle cx="113" cy="114" r="2" fill="#605247"/>
+      }
+      @if (person.outfit === 'casual') { <path d="M75 117 H125 M75 129 H126" [attr.stroke]="person.accent" stroke-width="5"/> }
+      @if (dress) {
+        <path d="M75 116 Q100 123 125 116" [attr.stroke]="person.accent" stroke-width="6" fill="none"/>
+        <path d="M100 119 Q85 104 86 121 Q90 128 100 119 Q115 104 114 121 Q110 128 100 119" [attr.fill]="person.accent"/>
+        <path d="M85 133 L82 149 M115 133 L118 149" stroke="#fff" opacity=".2" stroke-width="3"/>
+      }
+      <g [attr.transform]="adult ? 'translate(100 62) scale(.95) translate(-100 -62)' : null">
+        <circle cx="66" cy="67" r="8" [attr.fill]="person.skin"/><circle cx="134" cy="67" r="8" [attr.fill]="person.skin"/>
+        <rect x="67" y="30" width="66" height="65" rx="30" [attr.fill]="person.skin"/>
+        <path d="M66 58 Q61 26 91 25 Q130 16 137 52 L129 62 L123 40 Q112 56 83 46 L70 63Z" [attr.fill]="person.hair"/>
+        @if (person.hairStyle === 'short') { <path d="M72 39 L69 24 L85 27 L97 18 L112 28" [attr.fill]="person.hair"/> }
+        @if (person.hairStyle === 'buns') { <circle cx="62" cy="40" r="17" [attr.fill]="person.hair"/><circle cx="138" cy="40" r="17" [attr.fill]="person.hair"/><path d="M61 56 L69 51 M130 52 L139 56" [attr.stroke]="person.accent" stroke-width="4"/> }
+        <ellipse cx="79" cy="76" rx="7" ry="4" fill="#e78f88" opacity=".5"/><ellipse cx="121" cy="76" rx="7" ry="4" fill="#e78f88" opacity=".5"/>
+        <ellipse cx="86" cy="66" rx="3" ry="4" fill="#393134"/><ellipse cx="114" cy="66" rx="3" ry="4" fill="#393134"/>
+        <circle cx="87" cy="65" r="1" fill="#fff"/><circle cx="115" cy="65" r="1" fill="#fff"/>
+        <path d="M95 80 Q100 85 105 80" fill="none" stroke="#92594c" stroke-width="2.5"/>
+        <path d="M99 70 L97 75 H101" fill="none" stroke="#c58a71" stroke-width="2"/>
+        @if (person.kind === 'dad') { <path d="M90 78 Q95 74 100 79 Q105 74 110 78 Q107 85 100 81 Q93 85 90 78" [attr.fill]="person.hair"/> }
+        @if (person.kind === 'princess' || person.outfit === 'royal') {
+          <path d="M80 32 L76 12 L90 21 L100 6 L110 21 L124 12 L120 32Z" [attr.fill]="person.accent" stroke="#bd913e" stroke-width="1.5"/>
+          <path d="M82 28 H118" stroke="#fff" opacity=".6" stroke-width="2"/><path d="M100 16 L104 22 L100 27 L96 22Z" [attr.fill]="person.clothing"/>
+        }
+      </g>
+    </g>
+  } @else {
+    <g stroke="#443c36" stroke-opacity=".13" stroke-width="2" stroke-linejoin="round">
+      @switch (furniture.kind) {
+        @case ('chair') {
+          <path d="M55 120 L49 178 H61 L70 123 M132 120 L141 178 H153 L145 117 M76 108 V165 H85 V110 M121 109 V163 H130 V107" [attr.fill]="furniture.color"/>
+          <rect x="51" y="32" width="99" height="88" [attr.rx]="furniture.style === 'round' ? 22 : 4" [attr.fill]="furniture.color"/>
+          <rect x="61" y="43" width="79" height="55" [attr.rx]="furniture.style === 'round' ? 15 : 2" [attr.fill]="furniture.accent"/>
+          <path d="M49 112 H152 L161 134 Q103 145 40 134Z" [attr.fill]="furniture.color"/>
+          <path d="M53 105 H147 L153 123 Q100 135 47 123Z" [attr.fill]="furniture.accent"/>
+          <path d="M61 50 Q99 41 133 50" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="3"/>
+        }
+        @case ('table') {
+          <path d="M45 99 L37 174 H51 L61 101 M141 99 L151 174 H165 L158 98 M87 107 V167 H101 V108" [attr.fill]="furniture.color"/>
+          <path d="M30 92 Q100 125 171 92 V107 Q100 140 30 107Z" [attr.fill]="furniture.color"/>
+          @if (furniture.style === 'round') { <ellipse cx="100" cy="88" rx="76" ry="32" [attr.fill]="furniture.color"/> }
+          @else { <path d="M24 73 L122 54 L177 93 L79 115 L24 91Z" [attr.fill]="furniture.color"/> }
+          <ellipse cx="100" cy="87" rx="43" ry="18" [attr.fill]="furniture.accent" stroke="none"/>
+          <path d="M41 78 Q68 60 112 64" stroke="#fff" stroke-opacity=".22" stroke-width="3" fill="none"/>
+        }
+        @case ('wardrobe') {
+          <path d="M53 163 V180 H66 V163 M134 163 V180 H147 V163" [attr.fill]="furniture.color"/>
+          <rect x="41" y="25" width="119" height="146" [attr.rx]="furniture.style === 'round' ? 17 : 3" [attr.fill]="furniture.color"/>
+          <rect x="51" y="37" width="46" height="121" [attr.rx]="furniture.style === 'round' ? 10 : 2" [attr.fill]="furniture.accent"/>
+          <rect x="103" y="37" width="46" height="121" [attr.rx]="furniture.style === 'round' ? 10 : 2" [attr.fill]="furniture.accent"/>
+          <path d="M61 48 H85 M114 48 H137" stroke="#fff" stroke-opacity=".3" stroke-width="3"/>
+          <circle cx="88" cy="104" r="4" fill="#eaca86"/><circle cx="112" cy="104" r="4" fill="#eaca86"/>
+        }
+        @case ('toy') {
+          @switch (furniture.toy) {
+            @case ('bear') {
+              <ellipse cx="100" cy="129" rx="40" ry="43" [attr.fill]="furniture.color"/>
+              <ellipse cx="64" cy="128" rx="15" ry="26" transform="rotate(25 64 128)" [attr.fill]="furniture.color"/><ellipse cx="137" cy="128" rx="15" ry="26" transform="rotate(-25 137 128)" [attr.fill]="furniture.color"/>
+              <circle cx="67" cy="163" r="20" [attr.fill]="furniture.color"/><circle cx="131" cy="163" r="20" [attr.fill]="furniture.color"/>
+              <circle cx="63" cy="49" r="20" [attr.fill]="furniture.color"/><circle cx="136" cy="49" r="20" [attr.fill]="furniture.color"/>
+              <circle cx="64" cy="49" r="11" [attr.fill]="furniture.accent"/><circle cx="135" cy="49" r="11" [attr.fill]="furniture.accent"/>
+              <ellipse cx="100" cy="76" rx="47" ry="41" [attr.fill]="furniture.color"/>
+              <ellipse cx="100" cy="135" rx="25" ry="28" [attr.fill]="furniture.accent"/>
+              <ellipse cx="100" cy="91" rx="22" ry="16" fill="#fae6ca"/><circle cx="80" cy="73" r="4" fill="#403734"/><circle cx="120" cy="73" r="4" fill="#403734"/>
+              <path d="M94 84 Q100 81 106 84 Q107 91 100 93 Q93 91 94 84" fill="#403734"/><path d="M100 91 V98 M93 99 Q100 105 107 99" stroke="#403734" stroke-opacity="1" fill="none"/>
+              <path d="M100 113 L82 105 V122Z M100 113 L118 105 V122Z" [attr.fill]="furniture.accent"/>
+            }
+            @case ('blocks') {
+              <rect x="30" y="112" width="67" height="62" [attr.rx]="furniture.style === 'round' ? 10 : 2" [attr.fill]="furniture.color"/>
+              <rect x="104" y="112" width="67" height="62" [attr.rx]="furniture.style === 'round' ? 10 : 2" [attr.fill]="furniture.accent"/>
+              <rect x="67" y="47" width="67" height="61" [attr.rx]="furniture.style === 'round' ? 10 : 2" [attr.fill]="furniture.accent"/>
+              <path d="M82 88 L100 60 L119 88Z" fill="#fff" opacity=".5"/><circle cx="63" cy="143" r="17" fill="#fff" opacity=".4"/><rect x="123" y="129" width="28" height="28" rx="3" fill="#fff" opacity=".4"/>
+            }
+            @case ('car') {
+              <path d="M31 121 L51 114 L76 77 H125 L150 114 L169 122 V156 H31Z" [attr.fill]="furniture.color"/>
+              <path d="M80 86 L65 112 H96 V86Z M104 86 V112 H137 L120 86Z" [attr.fill]="furniture.accent"/>
+              <circle cx="62" cy="156" r="22" fill="#5e5750"/><circle cx="139" cy="156" r="22" fill="#5e5750"/><circle cx="62" cy="156" r="10" [attr.fill]="furniture.accent"/><circle cx="139" cy="156" r="10" [attr.fill]="furniture.accent"/>
+              <rect x="153" y="126" width="14" height="10" rx="3" fill="#ffe2a1"/>
+            }
+          }
+        }
+      }
+      @if (furniture.detail !== 'plain') {
+        <g [attr.transform]="furniture.kind === 'table' ? 'translate(100 87) scale(.7)' : furniture.kind === 'toy' ? 'translate(100 139) scale(.8)' : 'translate(100 68)'" fill="#fff" opacity=".65" stroke="none">
+          @if (furniture.detail === 'stars') { <path d="M0 -12 L3 -4 L12 -4 L5 2 L8 11 L0 6 L-8 11 L-5 2 L-12 -4 L-3 -4Z"/> }
+          @else { <path d="M0 9 C-25 -5 -8 -19 0 -9 C8 -19 25 -5 0 9"/> }
+        </g>
+      }
+    </g>
+  }
+</svg>

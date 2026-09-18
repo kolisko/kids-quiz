@@ -1,0 +1,71 @@
+<section class="timed-game">
+  <header class="game-heading">
+    <button type="button" class="icon-button" (click)="exit.emit()" title="Zpět na výběr testu" aria-label="Zpět na výběr testu"><svg [lucideIcon]="icons.back" [size]="24"></svg></button>
+    <h1>Počítání na čas do 20</h1>
+  </header>
+
+  <ng-container *ngIf="phase === 'ready' || phase === 'starting'">
+    <div class="overview">
+      <div class="overview-level" *ngFor="let level of summary.levels; let index = index">
+        <span class="level-number">{{ level.level }}.</span>
+        <strong>{{ labels[index] }}</strong>
+        <span><svg [lucideIcon]="icons.timer" [size]="20"></svg>{{ time(level.seconds) }}</span>
+        <span title="Osobní rekord"><svg [lucideIcon]="icons.trophy" [size]="20"></svg>{{ level.record }}</span>
+      </div>
+    </div>
+    <p class="summary-line">Celkem {{ time(duration) }} <span>Osobní rekord {{ summary.totalRecord }}</span></p>
+    <button class="primary-button game-command" type="button" (click)="start()" [disabled]="phase === 'starting'">{{ phase === 'starting' ? 'Připravuji hru…' : 'Spustit' }}</button>
+  </ng-container>
+
+  <ng-container *ngIf="phase === 'playing' && engine">
+    <div class="level-progress" aria-label="Úrovně">
+      <div *ngFor="let level of summary.levels; let index = index" [class.current]="engine.levelIndex === index" [class.completed]="engine.levelIndex > index">
+        <span>{{ level.level }}. {{ labels[index] }}</span><strong>{{ engine.score(index) }}</strong>
+      </div>
+    </div>
+    <div class="countdown" *ngIf="countdown > 0" role="status">{{ countdown }}</div>
+    <ng-container *ngIf="countdown === 0 && engine.question">
+      <div class="score-row">
+        <span>Správně <strong>{{ engine.score(engine.levelIndex) }}</strong></span>
+        <span class="clock" [class.urgent]="engine.secondsLeft <= 10" role="timer" aria-label="Zbývající čas">{{ time(engine.secondsLeft) }}</span>
+        <span>Rekord <strong>{{ summary.levels[engine.levelIndex].record }}</strong></span>
+      </div>
+      <div class="question" aria-live="polite"><span>{{ engine.question.text }}</span><span class="answer">= {{ engine.answerVisible ? engine.question.answer : '?' }}</span></div>
+      <div class="answer-actions">
+        <button class="primary-button" type="button" *ngIf="!engine.answerVisible" (click)="reveal()">Zobrazit výsledek</button>
+        <ng-container *ngIf="engine.answerVisible">
+          <button class="wrong-button" type="button" (click)="answer(false)"><svg [lucideIcon]="icons.wrong" [size]="26"></svg>Špatně</button>
+          <button class="correct-button" type="button" (click)="answer(true)"><svg [lucideIcon]="icons.check" [size]="26"></svg>Správně</button>
+        </ng-container>
+      </div>
+    </ng-container>
+  </ng-container>
+
+  <div class="saving" *ngIf="phase === 'saving'" role="status">
+    <h2>Čas vypršel</h2>
+    <p>Správně {{ engine?.total }}</p>
+    <p *ngIf="!error">Ukládám výsledky, rekordy a odměny…</p>
+    <button *ngIf="error" class="primary-button game-command" type="button" (click)="save()">Zkusit uložit znovu</button>
+  </div>
+
+  <ng-container *ngIf="phase === 'result' && result">
+    <h2 class="result-title">{{ result.superboxAwarded ? 'Nový celkový rekord!' : awardedCount ? 'Nový rekord!' : 'Hotovo!' }}</h2>
+    <div class="result-levels">
+      <article *ngFor="let level of result.levels; let index = index" class="result-level">
+        <h3>{{ level.level }}. {{ labels[index] }}</h3>
+        <strong class="result-score">{{ level.correct }}</strong>
+        <span>správně · {{ level.wrong }} špatně</span>
+        <span>Rekord {{ level.previousRecord }} → {{ level.record }}</span>
+        <div class="reward" *ngIf="level.trophy; else noReward">
+          <button class="trophy-reaction" type="button" (click)="fumfik.react()" aria-label="Reakce nového fumfíka"><app-fumfik #fumfik [appearance]="level.trophy"></app-fumfik></button>
+          <strong>Nový fumfík</strong>
+        </div>
+        <ng-template #noReward><div class="no-reward">{{ level.correct === level.previousRecord && level.correct > 0 ? 'Vyrovnaný rekord' : 'Příště to překonáš' }}</div></ng-template>
+      </article>
+    </div>
+    <p class="summary-line">Celkem <strong>{{ result.total }}</strong><span>Rekord {{ result.previousTotalRecord }} → {{ result.totalRecord }}</span></p>
+    <p class="superbox" *ngIf="result.superboxAwarded"><svg [lucideIcon]="icons.box" [size]="30"></svg><strong>Získáváš superbox!</strong></p>
+    <button class="primary-button game-command" type="button" (click)="exit.emit()">Vybrat test</button>
+  </ng-container>
+  <p class="error" *ngIf="error" role="alert">{{ error }}</p>
+</section>

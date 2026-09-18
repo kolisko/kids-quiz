@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import type { LucideIcon } from '@lucide/angular';
 import { LucideArrowLeft as ArrowLeft, LucideArrowUp as ArrowUp, LucideEar as Ear, LucideExpand as Expand, LucideEye as Eye, LucideMaximize2 as Maximize2, LucideMoveHorizontal as MoveHorizontal, LucideMoveVertical as MoveVertical, LucidePause as Pause, LucidePlay as Play, LucideRotateCcw as RotateCcw, LucideRotateCw as RotateCw, LucideShuffle as Shuffle, LucideSmile as Smile, LucideSparkles as Sparkles, LucideDynamicIcon } from '@lucide/angular';
+import { SuperboxLabComponent } from './superbox/superbox-lab.component';
 import { FumfikComponent } from '../app/fumfik-v2/fumfik.component';
 import { DEFAULT_FUMFIK, FUMFIK_OPTIONS, FumfikParameter, FumfikPose, FumfikReaction, FumfikSpec, PALETTES, REST_POSE, randomReaction, randomSpec, reactionPose, reactionTarget, specQuery } from '../app/fumfik-v2/fumfik.model';
 
@@ -16,11 +17,12 @@ const LABELS: Record<string, string> = {
 
 @Component({
   selector: 'app-fumfik-lab', standalone: true,
-  imports: [CommonModule, FormsModule, LucideDynamicIcon, FumfikComponent],
+  imports: [CommonModule, FormsModule, LucideDynamicIcon, FumfikComponent, SuperboxLabComponent],
   changeDetection: ChangeDetectionStrategy.Eager,
   templateUrl: './fumfik-lab.component.html', styleUrl: './fumfik-lab.component.css',
 })
 export class FumfikLabComponent implements OnDestroy {
+  readonly superboxPage = new URLSearchParams(location.search).get('page') === 'superbox';
   readonly icons = { ArrowLeft, Eye, Pause, Play, RotateCcw, Shuffle, Smile, Sparkles };
   readonly palettes = PALETTES;
   readonly fields = (Object.keys(FUMFIK_OPTIONS) as FumfikParameter[]).map(key => ({
@@ -114,7 +116,7 @@ export class FumfikLabComponent implements OnDestroy {
   private saveHash(): void { this.error = ''; history.replaceState(null, '', `${location.pathname}${location.search}#${this.query}`); }
 
   private readHash(): void {
-    if (!location.hash) return;
+    if (this.superboxPage || !location.hash) return;
     const params = new URLSearchParams(location.hash.slice(1));
     const entries: [string, string][] = [];
     params.forEach((value, key) => entries.push([key, value]));
