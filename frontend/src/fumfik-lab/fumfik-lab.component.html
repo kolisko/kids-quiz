@@ -1,7 +1,14 @@
 <header class="topbar">
   <div class="brand"><span class="brand-mark"><svg [lucideIcon]="icons.Smile" [size]="24"></svg></span><h1>Fumfík <span>Laboratoř</span></h1><span class="version">v2</span></div>
+  <nav class="lab-navigation" aria-label="Stránky laboratoře">
+    <a href="/fumfik-lab/" [class.current]="!superboxPage" [attr.aria-current]="!superboxPage ? 'page' : null">Fumfíci</a>
+    <a href="/fumfik-lab/?page=superbox" [class.current]="superboxPage" [attr.aria-current]="superboxPage ? 'page' : null">Superbox a domečky</a>
+  </nav>
   <a class="icon-button back-button" href="/" title="Zpět do aplikace" aria-label="Zpět do aplikace"><svg [lucideIcon]="icons.ArrowLeft" [size]="20"></svg></a>
 </header>
+@if (superboxPage) {
+  <app-superbox-lab/>
+} @else {
 <div class="error" role="alert" *ngIf="error">{{ error }}</div>
 <main class="workspace">
   <aside class="parameters" aria-label="Parametry fumfíka">
@@ -54,3 +61,5 @@
     </div>
   </aside>
 </main>
+
+}
