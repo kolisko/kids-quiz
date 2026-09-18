@@ -224,6 +224,43 @@ fun Application.module() {
                     call.respond(ArithmeticStore.recordSession(user.id, request.results))
                 }
             }
+            route("/timed-arithmetic") {
+                get {
+                    val user = Auth.requireUser(call) ?: return@get
+                    call.respond(TimedArithmeticStore.summary(user.id))
+                }
+                post("/runs") {
+                    val user = Auth.requireUser(call) ?: return@post
+                    val request = runCatching { call.receive<TimedArithmeticStartRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_request"))
+                        return@post
+                    }
+                    try {
+                        call.respond(TimedArithmeticStore.start(user.id, request.requestId))
+                    } catch (error: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to (error.message ?: "invalid_request")))
+                    }
+                }
+                post("/runs/{id}/finish") {
+                    val user = Auth.requireUser(call) ?: return@post
+                    val request = runCatching { call.receive<TimedArithmeticFinishRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_request"))
+                        return@post
+                    }
+                    try {
+                        call.respond(TimedArithmeticStore.finish(user.id, call.parameters["id"].orEmpty(), request))
+                    } catch (error: IllegalArgumentException) {
+                        val status = when (error.message) {
+                            "run_not_found" -> HttpStatusCode.NotFound
+                            "run_not_finished" -> HttpStatusCode.Conflict
+                            else -> HttpStatusCode.BadRequest
+                        }
+                        call.respond(status, mapOf("error" to (error.message ?: "invalid_request")))
+                    }
+                }
+            }
             route("/settings") {
                 get {
                     val user = Auth.requireUser(call) ?: return@get
@@ -236,6 +273,10 @@ fun Application.module() {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
                         return@put
                     }
+                    if (!validTimedArithmeticSeconds(request.timedArithmeticSeconds)) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_timed_arithmetic_seconds"))
+                        return@put
+                    }
                     call.respond(SettingsStore.replace(user.id, request))
                 }
                 patch {
@@ -243,6 +284,10 @@ fun Application.module() {
                     val request = runCatching { call.receive<AppSettingsPatchRequest>() }.getOrNull()
                     if (request == null) {
                         call.respond(HttpStatusCode.BadRequest, mapOf("ok" to false))
+                        return@patch
+                    }
+                    if (request.timedArithmeticSeconds?.let { !validTimedArithmeticSeconds(it) } == true) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_timed_arithmetic_seconds"))
                         return@patch
                     }
                     call.respond(SettingsStore.patch(user.id, request))

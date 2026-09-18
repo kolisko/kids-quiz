@@ -330,6 +330,12 @@ object DatabaseMigrator {
                     recordMigration(31, "migrate_flipcard_images_to_stable_storage")
                 }
             }
+            if (32 !in applied) {
+                connection.transaction {
+                    addTimedArithmetic()
+                    recordMigration(32, "add_timed_arithmetic_records_and_superboxes")
+                }
+            }
         }
         migrated = true
     }
@@ -2361,7 +2367,7 @@ fun Connection.readAppSettings(userId: Long): AppSettings {
     ensureUserSettingsRow(userId)
     return prepareStatement(
         """
-        SELECT seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, hidden_test_menu_keys
+        SELECT seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, hidden_test_menu_keys, timed_arithmetic_seconds
         FROM user_settings
         WHERE user_id = ?
         """.trimIndent(),
@@ -2377,6 +2383,7 @@ fun Connection.readAppSettings(userId: Long): AppSettings {
                 flipcardSource = rows.getString("flipcard_source").toFlipcardSource(),
                 flipcardPromptLanguage = rows.getString("flipcard_prompt_language").toLearningLanguage(defaultFlipcardPromptLanguage),
                 hiddenTestMenuKeys = decodeHiddenTestMenuKeys(rows.getString("hidden_test_menu_keys")),
+                timedArithmeticSeconds = migrationJson.decodeFromString(rows.getString("timed_arithmetic_seconds")),
             )
         }
     }
@@ -2411,14 +2418,15 @@ fun Connection.replaceAppSettings(settings: AppSettings) {
 }
 
 fun Connection.replaceAppSettings(userId: Long, settings: AppSettings) {
+    require(validTimedArithmeticSeconds(settings.timedArithmeticSeconds)) { "invalid_timed_arithmetic_seconds" }
     val secondsLimit = settings.secondsLimit.coerceAtLeast(1)
     val targetScore = settings.targetScore.coerceAtLeast(1)
     val celebrationTapLimit = settings.celebrationTapLimit.coerceAtLeast(0)
     val hiddenTestMenuKeys = encodeHiddenTestMenuKeys(settings.hiddenTestMenuKeys)
     prepareStatement(
         """
-        INSERT INTO user_settings(user_id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, hidden_test_menu_keys, updated_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO user_settings(user_id, seconds_limit, target_score, celebration_tap_limit, audio_source, flipcard_source, flipcard_prompt_language, hidden_test_menu_keys, timed_arithmetic_seconds, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(user_id) DO UPDATE SET
             seconds_limit = excluded.seconds_limit,
             target_score = excluded.target_score,
@@ -2427,6 +2435,7 @@ fun Connection.replaceAppSettings(userId: Long, settings: AppSettings) {
             flipcard_source = excluded.flipcard_source,
             flipcard_prompt_language = excluded.flipcard_prompt_language,
             hidden_test_menu_keys = excluded.hidden_test_menu_keys,
+            timed_arithmetic_seconds = excluded.timed_arithmetic_seconds,
             updated_at = CURRENT_TIMESTAMP
         """.trimIndent(),
     ).use { statement ->
@@ -2438,6 +2447,7 @@ fun Connection.replaceAppSettings(userId: Long, settings: AppSettings) {
         statement.setString(6, settings.flipcardSource.name)
         statement.setString(7, settings.flipcardPromptLanguage.name)
         statement.setString(8, hiddenTestMenuKeys)
+        statement.setString(9, migrationJson.encodeToString(settings.timedArithmeticSeconds))
         statement.executeUpdate()
     }
 }

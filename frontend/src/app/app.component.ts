@@ -5,8 +5,11 @@ import { LucideArrowLeft as ArrowLeft, LucideCarFront as CarFront, LucideFlag as
 import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
 import { FumfikAppearance, FumfikAvatarComponent } from './fumfik/fumfik.component';
 import { LoginFumfiksComponent } from './fumfik/login-fumfiks.component';
+import { TimedArithmeticComponent } from './timed-arithmetic/timed-arithmetic.component';
+import { TimedArithmeticSettingsComponent } from './timed-arithmetic/timed-arithmetic-settings.component';
+import { TimedSummary } from './timed-arithmetic/timed-arithmetic.model';
 
-type Screen = 'login' | 'start' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished';
+type Screen = 'login' | 'start' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished' | 'timedArithmetic';
 type QuizTestType = 'multiplication' | 'arithmetic' | 'english';
 type ActiveGame = 'multiplication' | 'arithmetic' | 'spelling' | 'flipcards';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
@@ -142,6 +145,7 @@ interface LanguageOption {
 }
 
 interface GameSettings {
+  timedArithmeticSeconds: number[];
   secondsLimit: number;
   targetScore: number;
   celebrationTapLimit: number;
@@ -174,9 +178,10 @@ interface TestMenuNode {
   visible: boolean;
 }
 
-type TestMenuLaunchKind = 'multiplication' | 'arithmetic' | 'spelling' | 'flipcards';
+type TestMenuLaunchKind = 'multiplication' | 'arithmetic' | 'spelling' | 'flipcards' | 'timed_arithmetic';
 
 interface TestMenuLaunchResponse {
+  timedArithmetic?: TimedSummary | null;
   key: string;
   kind: TestMenuLaunchKind;
   settings: GameSettings;
@@ -587,7 +592,7 @@ interface TtsDiagnostics {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideDynamicIcon, FumfikAvatarComponent, LoginFumfiksComponent],
+  imports: [CommonModule, FormsModule, LucideDynamicIcon, FumfikAvatarComponent, LoginFumfiksComponent, TimedArithmeticComponent, TimedArithmeticSettingsComponent],
   changeDetection: ChangeDetectionStrategy.Eager,
   templateUrl: './app.component.html',
 })
@@ -644,7 +649,8 @@ export class AppComponent implements OnInit, OnDestroy {
   password = '';
   snapshotNumber = 'dev';
 
-  settings: GameSettings = { secondsLimit: 30, targetScore: 10, celebrationTapLimit: 100, audioSource: 'browser_tts', flipcardSource: 'all_words', flipcardPromptLanguage: 'cs', hiddenTestMenuKeys: [] };
+  settings: GameSettings = { timedArithmeticSeconds: [120, 120, 120], secondsLimit: 30, targetScore: 10, celebrationTapLimit: 100, audioSource: 'browser_tts', flipcardSource: 'all_words', flipcardPromptLanguage: 'cs', hiddenTestMenuKeys: [] };
+  timedArithmeticSummary: TimedSummary | null = null;
   testMenuRoot: TestMenuNode | null = null;
   testMenuSettingsRoot: TestMenuNode | null = null;
   testMenuPath: string[] = [];
@@ -1364,7 +1370,10 @@ export class AppComponent implements OnInit, OnDestroy {
     try {
       const launch = await this.apiPost<TestMenuLaunchResponse>('test-menu/launch', { key: node.key });
       this.applySettings(launch.settings);
-      if (launch.kind === 'multiplication') {
+      if (launch.kind === 'timed_arithmetic' && launch.timedArithmetic) {
+        this.timedArithmeticSummary = launch.timedArithmetic;
+        this.setScreen('timedArithmetic');
+      } else if (launch.kind === 'multiplication') {
         this.startLaunchedMath(launch);
       } else if (launch.kind === 'arithmetic') {
         this.startLaunchedArithmetic(launch);
@@ -2741,6 +2750,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private normalizedSettings(): GameSettings {
     return {
+      timedArithmeticSeconds: [...this.settings.timedArithmeticSeconds],
       secondsLimit: Math.max(1, Math.floor(Number(this.settings.secondsLimit) || 10)),
       targetScore: Math.max(1, Math.floor(Number(this.settings.targetScore) || 10)),
       celebrationTapLimit: Math.max(0, Math.floor(Number(this.settings.celebrationTapLimit) || 0)),
@@ -2755,6 +2765,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const wasTeslaMp3AudioModeActive = this.teslaMp3AudioModeActive;
     const celebrationTapLimit = Math.floor(Number(settings.celebrationTapLimit));
     this.settings = {
+      timedArithmeticSeconds: settings.timedArithmeticSeconds?.length === 3 ? [...settings.timedArithmeticSeconds] : [120, 120, 120],
       secondsLimit: Math.max(1, Math.floor(Number(settings.secondsLimit) || 30)),
       targetScore: Math.max(1, Math.floor(Number(settings.targetScore) || 10)),
       celebrationTapLimit: Number.isFinite(celebrationTapLimit) ? Math.max(0, celebrationTapLimit) : 100,
@@ -2773,6 +2784,14 @@ export class AppComponent implements OnInit, OnDestroy {
   private normalizedLearningLanguage(language: LearningLanguage | null | undefined, fallback: LearningLanguage): LearningLanguage {
     return this.languageOptions.find((option) => option.code === language)?.code ?? fallback;
   }
+
+  onTimedArithmeticSaved(): void { void this.loadTrophyLeaderboard(); }
+
+  onTimedArithmeticStartFailed(code: string): void {
+    this.reportTestStartError('launch', new Error(code), code, 'tests.math.timed-arithmetic', 'arithmetic');
+  }
+
+  onTimedArithmeticUnauthorized(): void { this.currentUser = null; this.setScreen('login'); void this.loadAuthProviders(); }
 
   isTestMenuNodeVisible(node: TestMenuNode): boolean {
     return !this.effectiveDraftTestMenuHiddenKeys().includes(node.key);
@@ -3995,6 +4014,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private testErrorGameForKey(testKey: string): ActiveGame {
+    if (testKey === 'tests.math.timed-arithmetic') return 'arithmetic';
     if (testKey.includes('.flipcards')) return 'flipcards';
     if (testKey.includes('.spelling.')) return 'spelling';
     if (testKey.includes('.arithmetic.')) return 'arithmetic';

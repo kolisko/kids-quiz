@@ -1,0 +1,65 @@
+:host { display: block; }
+.timed-game { width: min(960px, 100%); min-height: 100dvh; margin: 0 auto; padding: 100px 24px 32px; display: flex; flex-direction: column; justify-content: center; gap: 20px; }
+.game-heading { display: grid; grid-template-columns: 52px 1fr 52px; align-items: center; gap: 12px; }
+.game-heading h1 { margin: 0; text-align: center; font-size: 30px; line-height: 1.2; }
+.game-heading .icon-button { width: 48px; height: 48px; padding: 0; }
+.overview { display: grid; gap: 12px; }
+.overview-level { display: grid; grid-template-columns: 40px 1fr 100px 90px; align-items: center; padding: 20px 12px; border-bottom: 1px solid #cbd5e1; gap: 10px; font-size: 22px; }
+.overview-level > span:not(.level-number) { display: flex; align-items: center; gap: 12px; font-variant-numeric: tabular-nums; }
+.level-number { color: #475569; }
+.summary-line { display: flex; justify-content: center; gap: 10px 28px; flex-wrap: wrap; margin: 0; text-align: center; font-size: 20px; }
+.game-command { width: min(500px, 100%); margin: 0 auto; min-height: 80px; padding: 16px; font-size: 24px; }
+.level-progress { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.level-progress > div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 5px solid #cbd5e1; padding: 10px 0; color: #64748b; }
+.level-progress .current { color: #0f766e; border-color: #0f766e; font-weight: 700; }
+.level-progress .completed { color: #166534; border-color: #86efac; }
+.score-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 20px; }
+.score-row strong { display: block; font-size: 30px; text-align: center; }
+.clock { color: #0f766e; font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.clock.urgent { color: #b91c1c; }
+.question { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; min-height: 140px; font-size: 76px; line-height: 1.15; font-weight: 800; }
+.answer { color: #0f766e; }
+.answer-actions { display: flex; gap: 16px; min-height: 96px; }
+.answer-actions button { flex: 1; min-width: 0; min-height: 96px; display: flex; gap: 10px; justify-content: center; align-items: center; padding: 16px; font-size: 28px; border-radius: 8px; }
+.wrong-button { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
+.correct-button { background: #99f6e4; color: #115e59; border: 2px solid #5eead4; }
+.countdown { display: grid; place-items: center; min-height: 340px; font-size: 100px; font-weight: 800; color: #0f766e; }
+.saving { text-align: center; }
+.saving h2, .result-title { margin: 0; font-size: 32px; text-align: center; }
+.result-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.result-level { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; text-align: center; }
+.result-level h3 { font-size: 18px; margin: 0; }
+.result-score { font-size: 40px; color: #0f766e; }
+.reward { display: flex; flex-direction: column; align-items: center; color: #0f766e; }
+.trophy-reaction { display: block; width: 126px; height: 126px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.no-reward { display: grid; align-items: center; height: 152px; color: #64748b; }
+.superbox { margin: 0; display: flex; justify-content: center; align-items: center; gap: 12px; color: #7c3aed; font-size: 24px; }
+button { touch-action: none; }
+@media (max-height: 750px) and (min-width: 601px) {
+  .timed-game { padding-top: 86px; gap: 14px; }
+  .question { min-height: 100px; }
+  .trophy-reaction { width: 96px; height: 96px; }
+  .no-reward { height: 122px; }
+}
+@media (max-width: 600px) {
+  .timed-game { padding: 88px 16px 24px; gap: 16px; }
+  .game-heading { grid-template-columns: 40px 1fr; }
+  .game-heading .icon-button { width: 40px; height: 40px; }
+  .game-heading h1 { font-size: 24px; }
+  .overview-level { grid-template-columns: 25px 1fr 66px 50px; padding: 18px 0; font-size: 16px; gap: 6px; }
+  .overview-level > span:not(.level-number) { gap: 5px; }
+  .level-progress { gap: 8px; font-size: 14px; }
+  .level-progress > div { flex-direction: column; align-items: center; text-align: center; }
+  .score-row { font-size: 16px; }
+  .clock { font-size: 34px; }
+  .question { font-size: 48px; min-height: 140px; gap: 10px; }
+  .answer-actions { gap: 10px; }
+  .answer-actions button { font-size: 20px; padding: 12px; min-height: 88px; }
+  .summary-line { font-size: 16px; }
+  .result-levels { gap: 8px; }
+  .result-level h3 { font-size: 14px; min-height: 34px; }
+  .result-level { font-size: 12px; }
+  .trophy-reaction { width: 90px; height: 90px; }
+  .no-reward { height: 110px; }
+  .result-title { font-size: 26px; }
+}

@@ -269,6 +269,7 @@ data class UserStatusRequest(
 
 @Serializable
 data class AppSettings(
+    val timedArithmeticSeconds: List<Int> = listOf(120, 120, 120),
     val secondsLimit: Int = 30,
     val targetScore: Int = 10,
     val celebrationTapLimit: Int = 100,
@@ -280,6 +281,7 @@ data class AppSettings(
 
 @Serializable
 data class AppSettingsPatchRequest(
+    val timedArithmeticSeconds: List<Int>? = null,
     val secondsLimit: Int? = null,
     val targetScore: Int? = null,
     val celebrationTapLimit: Int? = null,
@@ -305,6 +307,7 @@ data class TestMenuLaunchRequest(
 
 @Serializable
 enum class TestMenuLaunchKind {
+    timed_arithmetic,
     multiplication,
     arithmetic,
     spelling,
@@ -316,6 +319,7 @@ data class TestMenuLaunchResponse(
     val key: String,
     val kind: TestMenuLaunchKind,
     val settings: AppSettings,
+    val timedArithmetic: TimedArithmeticSummary? = null,
     val selectedTest: QuizTest? = null,
     val selectedLanguage: LearningLanguage? = null,
     val practiceMode: PracticeMode? = null,
