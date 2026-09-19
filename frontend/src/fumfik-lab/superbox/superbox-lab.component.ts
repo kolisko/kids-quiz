@@ -5,7 +5,7 @@ import { LucideDynamicIcon, LucideGift as Gift, LucideUsers as Users, LucideArmc
 import { CollectibleComponent } from '../../app/superbox/collectible.component';
 import { SuperboxComponent } from '../../app/superbox/superbox.component';
 import { HouseComponent } from '../../app/superbox/house.component';
-import { DEFAULT_BOX, DEFAULT_FURNITURE, DEFAULT_HOUSE, DEFAULT_PERSON, Design, DesignKind, FURNITURE_LABELS, PERSON_LABELS, PERSON_HAIR_LABELS, PERSON_OUTFIT_LABELS, PERSON_OPTIONS, Placement, Reward, SuperboxDocument, boundPlacement, boxFrame, clamp, clone, defaultDocument, normalizePersonSpec, parseDocument, totalDuration } from '../../app/superbox/superbox.model';
+import { DEFAULT_BOX, DEFAULT_FURNITURE, DEFAULT_HOUSE, Design, DesignKind, FURNITURE_LABELS, PERSON_LABELS, PERSON_HAIR_LABELS, PERSON_TOP_LABELS, PERSON_BOTTOM_LABELS, PERSON_SHOE_LABELS, PERSON_FACE_LABELS, PERSON_EYE_LABELS, PERSON_BUILD_LABELS, PERSON_BEARD_LABELS, PERSON_OPTIONS, PersonKind, Placement, Reward, SuperboxDocument, boundPlacement, boxFrame, canHaveBeard, clamp, clone, defaultDocument, isAdultPerson, isFemalePerson, normalizePersonSpec, parseDocument, personForKind, totalDuration, wrinkleRange } from '../../app/superbox/superbox.model';
 
 const STORAGE_KEY = 'fumfik-superbox-lab-v1';
 @Component({
@@ -18,8 +18,21 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
   readonly tabs = [ { id: 'box', label: 'Superbox', icon: Gift }, { id: 'person', label: 'Osoby', icon: Users }, { id: 'furniture', label: 'Nábytek', icon: Armchair }, { id: 'house', label: 'Domky', icon: House } ] as const;
   readonly personKinds = Object.entries(PERSON_LABELS);
   readonly hairLabels = PERSON_HAIR_LABELS;
-  readonly outfitLabels = PERSON_OUTFIT_LABELS;
+  readonly topLabels = PERSON_TOP_LABELS;
+  readonly bottomLabels = PERSON_BOTTOM_LABELS;
+  readonly shoeLabels = PERSON_SHOE_LABELS;
+  readonly faceOptions = Object.entries(PERSON_FACE_LABELS);
+  readonly eyeOptions = Object.entries(PERSON_EYE_LABELS);
+  readonly buildOptions = Object.entries(PERSON_BUILD_LABELS);
+  readonly beardOptions = Object.entries(PERSON_BEARD_LABELS);
   get personOptions() { return PERSON_OPTIONS[this.doc.person.kind]; }
+  get personWrinkleRange() { return wrinkleRange(this.doc.person.kind); }
+  get personHasWrinkles() { return isAdultPerson(this.doc.person.kind); }
+  get personHasBeard() { return canHaveBeard(this.doc.person.kind); }
+  get personHasCrown() { return isFemalePerson(this.doc.person.kind); }
+  get personAgeHint(): string {
+    return ({ baby: 'Velká hlavička, malé tělo a krátké končetiny.', girl: 'Dětské proporce a jemný obličej bez vrásek.', boy: 'Dětské proporce a jemný obličej bez vrásek.', woman: 'Dospělé proporce a dámské střihy oblečení.', man: 'Dospělé proporce, širší ramena a pánské střihy.', grandpa: 'Kratší postoj, zakulacená ramena a výraznější vrásky.', grandma: 'Kratší postoj, zakulacená ramena a výraznější vrásky.' })[this.doc.person.kind];
+  }
   readonly furnitureKinds = Object.entries(FURNITURE_LABELS);
   readonly patterns = [{ value: 'plain', label: 'Bez vzoru' }, { value: 'dots', label: 'Tečky' }, { value: 'stars', label: 'Hvězdičky' }, { value: 'stripes', label: 'Pruhy' }];
   readonly inflations = [{ value: 'puff', label: 'Nafukování', hint: 'Roste a pulzuje' }, { value: 'spin', label: 'Roztočení', hint: 'Zrychlující otočky' }, { value: 'wobble', label: 'Proměny tvarů', hint: 'Protáhne se a zavlní' }, { value: 'bounce', label: 'Poskakování', hint: 'Skáče a pruží' }];
@@ -74,10 +87,16 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
     }
     this.persist();
   }
+  changePersonKind(kind: PersonKind): void {
+    const defaults = personForKind(kind);
+    this.doc.person = normalizePersonSpec({ ...this.doc.person, kind, wrinkles: defaults.wrinkles });
+    this.designName = PERSON_LABELS[kind];
+    this.changed('person');
+  }
   setBox(key: 'pattern' | 'inflation' | 'burst', value: string): void { this.doc.box = { ...this.doc.box, [key]: value }; this.changed('box'); }
   resetDesign(): void {
     if (this.section === 'box') this.doc.box = { ...DEFAULT_BOX };
-    if (this.section === 'person') this.doc.person = { ...DEFAULT_PERSON };
+    if (this.section === 'person') this.doc.person = personForKind(this.doc.person.kind);
     if (this.section === 'furniture') this.doc.furniture = { ...DEFAULT_FURNITURE };
     if (this.section === 'house') this.doc.house = { ...DEFAULT_HOUSE };
     this.changed();

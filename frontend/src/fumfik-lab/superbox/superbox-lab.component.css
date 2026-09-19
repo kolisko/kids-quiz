@@ -18,6 +18,13 @@ button { color:inherit; } button:disabled { opacity:.45; cursor:default; }
 .editor-grid { display:grid; grid-template-columns:256px minmax(300px,1fr) 258px; gap:24px; align-items:start; }
 .panel { background:var(--paper); border:1px solid var(--line); border-radius:12px; }
 .settings,.library { padding:20px; }
+.age-hint { margin:-7px 0 19px; }
+.person-group { border-top:1px solid var(--line); padding:14px 0; }
+.person-group summary { cursor:pointer; font-size:12px; font-weight:600; color:var(--green); }
+.person-group[open] summary { margin-bottom:18px; }
+.person-group .field:last-child,.person-group .color-fields:last-child,.person-group .compact:last-child { margin-bottom:0; }
+.person-group .slider-label { margin-top:5px; }
+@media (min-width:1001px) { .person-editor .preview-column { position:sticky; top:24px; } }
 .panel-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:19px; }
 h3 { font-size:13px; font-weight:650; margin:0; }
 .icon-button { display:inline-grid; place-items:center; border:0; width:28px; height:28px; background:transparent; color:#8c968a; border-radius:5px; flex-shrink:0; padding:0; }
