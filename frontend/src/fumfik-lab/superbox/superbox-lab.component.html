@@ -15,7 +15,13 @@
   <div class="notice success" role="status" [class.empty]="!message">{{ message }}</div>
   <div class="editor-grid" [class.person-editor]="section === 'person'">
     <aside class="settings panel" aria-label="Parametry návrhu">
-      <div class="panel-heading"><h3>{{ section === 'box' ? 'Podoba balíčku' : section === 'person' ? 'Podoba postavy' : section === 'furniture' ? 'Podoba nábytku' : 'Podoba domku' }}</h3><button type="button" class="icon-button" title="Výchozí parametry návrhu" aria-label="Výchozí parametry návrhu" (click)="resetDesign()"><svg [lucideIcon]="icons.RotateCcw" [size]="16"></svg></button></div>
+      <div class="panel-heading">
+        <h3>{{ section === 'box' ? 'Podoba balíčku' : section === 'person' ? 'Podoba postavy' : section === 'furniture' ? 'Podoba nábytku' : 'Podoba domku' }}</h3>
+        <div class="icon-actions">
+          @if (section === 'person') { <button type="button" class="icon-button" title="Náhodná postava" aria-label="Náhodná postava" (click)="randomizePerson()"><svg [lucideIcon]="icons.Shuffle" [size]="18"></svg></button> }
+          <button type="button" class="icon-button" title="Výchozí parametry návrhu" aria-label="Výchozí parametry návrhu" (click)="resetDesign()"><svg [lucideIcon]="icons.RotateCcw" [size]="18"></svg></button>
+        </div>
+      </div>
       @switch (section) {
         @case ('box') {
           <div class="color-fields">
@@ -37,7 +43,6 @@
           </details>
         }
         @case ('person') {
-          <button type="button" class="quiet-button full-width random-person" title="Vylosovat typ, vzhled i oblečení postavy" (click)="randomizePerson()"><svg [lucideIcon]="icons.Shuffle" [size]="16"></svg>Náhodná postava</button>
           <label class="field">Typ osoby<select aria-label="Typ osoby" [ngModel]="doc.person.kind" (ngModelChange)="changePersonKind($event)">@for (kind of personKinds; track kind[0]) { <option [value]="kind[0]">{{ kind[1] }}</option> }</select></label>
           <p class="hint age-hint">{{ personAgeHint }}</p>
           <details class="person-group" open>
