@@ -71,8 +71,13 @@ The workshop has four editors:
   particles. Delay, inflation duration, intensity and particle count are adjustable.
   The deterministic timeline supports playback, pause, seeking and replay. Reduced
   motion respects the device preference and can also be selected in the editor.
-- **Osoby:** children, princesses, dads and moms, with skin/hair colors, four
-  hairstyles, four outfits and separately colored clothing and accessories.
+- **Osoby:** boys, girls, princesses, dads and moms, with skin/hair colors and
+  separately colored clothing and accessories. Boys/dads have short hair and
+  casual clothing or overalls; girls/princesses/moms have bob/long/bun hairstyles
+  and dresses or royal outfits. Changing the person type replaces incompatible
+  selections. The legacy `child` key remains the boy type. Saved/imported version
+  1 designs, library rewards and house placements normalize old combinations
+  without discarding their colors, names or layout; unknown values are rejected.
 - **Nábytek:** chairs, tables, wardrobes and toys (bear, blocks, car), with colors,
   rounded/square edges where applicable and optional stars/hearts.
 - **Domky:** cottage, townhouse or castle, one to three floors/rooms, wall/roof/floor
