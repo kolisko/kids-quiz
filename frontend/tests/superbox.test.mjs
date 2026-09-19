@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_BOX, DEFAULT_HOUSE, DEFAULT_PERSON, DEFAULT_FURNITURE, defaultDocument, boxFrame, particleFrame, totalDuration, boundPlacement, normalizePersonSpec, parseDocument, validSpec } from '../src/app/superbox/superbox.model.ts';
+import { DEFAULT_BOX, DEFAULT_HOUSE, DEFAULT_PERSON, DEFAULT_FURNITURE, defaultDocument, boxFrame, particleFrame, totalDuration, boundPlacement, normalizePersonSpec, parseDocument, validSpec, personForKind, PERSON_OPTIONS, PERSON_LABELS, PERSON_FACE_LABELS, PERSON_EYE_LABELS, PERSON_HAIR_LABELS, PERSON_TOP_LABELS, PERSON_BOTTOM_LABELS, PERSON_SHOE_LABELS } from '../src/app/superbox/superbox.model.ts';
+import { personGeometry } from '../src/app/superbox/person-geometry.ts';
 
 test('a complete workshop round trips, including rewards and arranged furniture', () => {
   const doc = defaultDocument();
   assert.deepEqual(parseDocument(JSON.stringify(doc)), doc);
   assert.ok(doc.library.some(d => d.id === doc.rewardId));
-  assert.equal(new Set(doc.library.filter(d => d.kind === 'person').map(d => d.spec.kind)).size, 5);
+  assert.equal(new Set(doc.library.filter(d => d.kind === 'person').map(d => d.spec.kind)).size, 7);
   assert.equal(new Set(doc.library.filter(d => d.kind === 'furniture').map(d => d.spec.kind)).size, 4);
-  assert.deepEqual(doc.placements.map(p => p.reward.spec.kind), ['child', 'chair', 'toy']);
+  assert.deepEqual(doc.placements.map(p => p.reward.spec.kind), ['boy', 'chair', 'toy']);
 });
 
 test('the gift waits, inflates, bursts exactly once, and leaves a persistent reward', () => {
@@ -64,9 +65,20 @@ test('imports reject invalid parameters, missing rewards, duplicate ids and over
     doc => doc.house.cost = -10,
     doc => doc.person.kind = 'unknown',
     doc => doc.person.hairStyle = 'unknown',
-    doc => doc.person.outfit = 'unknown',
+    doc => doc.person.top = 'unknown',
     doc => doc.library[0].spec.hairStyle = 'unknown',
-    doc => doc.placements[0].reward.spec.outfit = 'unknown',
+    doc => doc.placements[0].reward.spec.bottom = 'unknown',
+    doc => doc.person.face = 'unknown',
+    doc => doc.person.eyes = 'unknown',
+    doc => doc.person.build = 'unknown',
+    doc => doc.person.shoes = 'unknown',
+    doc => doc.person.topColor = 'red',
+    doc => doc.person.bottomColor = 'url(bad)',
+    doc => doc.person.shoeColor = '#123',
+    doc => doc.person.fringe = 'yes',
+    doc => doc.person.wrinkles = 101,
+    doc => doc.person.facialHair = 'beard',
+    doc => doc.person.top = 'bra',
     doc => doc.rewardId = 'missing',
     doc => doc.fumfiks = null,
     doc => doc.library.push(doc.library[0]),
@@ -90,69 +102,121 @@ test('importing valid but off-canvas placements repairs their positions', () => 
   assert.ok(loaded.placements[0].y <= 93 - loaded.placements[0].size / 2);
 });
 
-test('all editor variants are serializable valid specs', () => {
-  for (const kind of ['child', 'girl', 'princess', 'dad', 'mom']) {
-    const male = kind === 'child' || kind === 'dad';
-    for (const hairStyle of ['short', 'bob', 'long', 'buns']) {
-      for (const outfit of ['casual', 'dress', 'overalls', 'royal']) {
-        const compatibleHair = male ? hairStyle === 'short' : hairStyle !== 'short';
-        const compatibleOutfit = male ? ['casual', 'overalls'].includes(outfit) : ['dress', 'royal'].includes(outfit);
-        assert.equal(validSpec('person', { ...DEFAULT_PERSON, kind, hairStyle, outfit }), compatibleHair && compatibleOutfit, `${kind}/${hairStyle}/${outfit}`);
+test('every offered character combination survives serialization and obeys age and appearance rules', () => {
+  for (const kind of Object.keys(PERSON_LABELS)) {
+    const spec = personForKind(kind), options = PERSON_OPTIONS[kind];
+    assert.ok(validSpec('person', spec), kind);
+    for (const [field, choices, allowed] of [
+      ['hairStyle', Object.keys(PERSON_HAIR_LABELS), options.hairStyles],
+      ['top', Object.keys(PERSON_TOP_LABELS), options.tops],
+      ['bottom', Object.keys(PERSON_BOTTOM_LABELS), options.bottoms],
+      ['shoes', Object.keys(PERSON_SHOE_LABELS), options.shoes],
+    ]) {
+      for (const choice of choices) {
+        const candidate = { ...spec, [field]: choice };
+        assert.equal(validSpec('person', candidate), allowed.includes(choice), `${kind}/${field}/${choice}`);
+        assert.ok(validSpec('person', normalizePersonSpec(candidate)));
       }
     }
+    const doc = defaultDocument(); doc.person = spec;
+    assert.deepEqual(parseDocument(JSON.stringify(doc)), doc);
   }
+  for (const kind of ['baby', 'girl', 'boy']) {
+    assert.equal(personForKind(kind).wrinkles, 0);
+    assert.ok(!PERSON_OPTIONS[kind].tops.includes('bra'));
+    assert.ok(!PERSON_OPTIONS[kind].shoes.includes('heels'));
+  }
+  for (const kind of ['boy', 'man', 'grandpa']) {
+    assert.ok(!PERSON_OPTIONS[kind].bottoms.some(s => s.includes('skirt')));
+    assert.ok(!PERSON_OPTIONS[kind].hairStyles.some(s => ['bun', 'buns', 'braids', 'pigtails', 'floor-length'].includes(s)));
+  }
+  for (const kind of ['girl', 'woman', 'grandma']) assert.ok(!PERSON_OPTIONS[kind].hairStyles.includes('mohawk'));
+  for (const kind of ['grandpa', 'grandma']) assert.ok(personForKind(kind).wrinkles >= 35);
   for (const kind of ['chair', 'table', 'wardrobe', 'toy']) {
     for (const toy of ['bear', 'blocks', 'car']) assert.ok(validSpec('furniture', { ...DEFAULT_FURNITURE, kind, toy }));
   }
-  for (const kind of ['cottage', 'townhouse', 'castle']) {
-    for (const floors of [1, 2, 3]) assert.ok(validSpec('house', { ...DEFAULT_HOUSE, kind, floors }));
+});
+
+test('switching age or gender repairs incompatible choices without changing custom colors or compatible parts', () => {
+  const woman = { ...personForKind('woman'), top: 'bra', bottom: 'royal-skirt', shoes: 'heels', hairStyle: 'floor-length', crown: true,
+    face: 'oval', eyes: 'almond', skin: '#b98162', topColor: '#336699', bottomColor: '#223344', shoeColor: '#aabbcc' };
+  for (const kind of Object.keys(PERSON_LABELS)) {
+    const original = { ...woman, kind, wrinkles: 100, facialHair: 'beard' };
+    const repaired = normalizePersonSpec(original);
+    assert.ok(validSpec('person', repaired), kind);
+    assert.deepEqual(normalizePersonSpec(repaired), repaired);
+    for (const key of ['skin', 'hair', 'accent', 'topColor', 'bottomColor', 'shoeColor', 'face', 'eyes']) assert.equal(repaired[key], original[key]);
+    if (kind === 'baby' || kind === 'girl' || kind === 'boy') {
+      assert.equal(repaired.wrinkles, 0); assert.equal(repaired.facialHair, 'none');
+    }
+  }
+  assert.equal(woman.top, 'bra', 'normalization must not mutate the source');
+  const valid = { ...personForKind('man'), hairStyle: 'mohawk', top: 'jacket', bottom: 'shorts', shoes: 'clogs', fringe: true };
+  assert.deepEqual(normalizePersonSpec(valid), valid);
+});
+
+function legacyDocument() {
+  const doc = defaultDocument(); doc.version = 1;
+  const legacy = { kind: 'princess', skin: '#efbe9e', hair: '#713e33', hairStyle: 'long', outfit: 'royal', clothing: '#bba1ed', accent: '#ffdc8b' };
+  doc.person = { ...legacy };
+  for (const design of doc.library) if (design.kind === 'person') design.spec = { ...legacy };
+  for (const item of doc.placements) if (item.reward.kind === 'person') item.reward.spec = { ...legacy, kind: 'child', hairStyle: 'short', outfit: 'overalls' };
+  return doc;
+}
+
+test('version 1 migration preserves every saved design, reward selection, colors and house placement', () => {
+  const doc = legacyDocument();
+  doc.person.kind = 'dad'; doc.person.hairStyle = 'buns';
+  const mother = doc.library.find(d => d.id === 'mom');
+  mother.spec.kind = 'mom'; mother.spec.hairStyle = 'short'; mother.spec.outfit = 'overalls';
+  doc.rewardId = mother.id;
+  const loaded = parseDocument(JSON.stringify(doc));
+  assert.equal(loaded.version, 2);
+  assert.equal(loaded.person.kind, 'man'); assert.equal(loaded.person.hairStyle, 'short');
+  assert.equal(loaded.person.top, 'tshirt'); assert.equal(loaded.person.bottom, 'pants'); assert.equal(loaded.person.crown, false);
+  const loadedMother = loaded.library.find(d => d.id === 'mom');
+  assert.equal(loadedMother.spec.kind, 'woman'); assert.equal(loadedMother.spec.hairStyle, 'bob');
+  assert.equal(loadedMother.spec.bottom, 'skirt');
+  assert.equal(loadedMother.name, mother.name); assert.equal(loadedMother.spec.topColor, mother.spec.clothing);
+  assert.equal(loaded.rewardId, doc.rewardId); assert.equal(loaded.library.length, doc.library.length); assert.equal(loaded.placements.length, doc.placements.length);
+  assert.equal(loaded.library.find(d => d.id === 'princess').spec.crown, true);
+  assert.equal(loaded.library.find(d => d.id === 'princess').spec.bottom, 'royal-skirt');
+  assert.equal(loaded.placements[0].reward.spec.kind, 'boy');
+  assert.equal(loaded.placements[0].reward.spec.bottomColor, doc.placements[0].reward.spec.accent);
+  for (const key of ['id', 'name', 'x', 'y', 'size', 'flipped']) assert.equal(loaded.placements[0][key], doc.placements[0][key]);
+  assert.deepEqual(parseDocument(JSON.stringify(loaded)), loaded);
+});
+
+test('migration rejects unknown old values instead of silently replacing a damaged workshop', () => {
+  for (const mutate of [
+    doc => doc.person.kind = 'unknown', doc => doc.person.hairStyle = 'unknown',
+    doc => doc.library[0].spec.outfit = 'unknown', doc => doc.placements[0].reward.spec.skin = 'invalid',
+  ]) {
+    const doc = legacyDocument(); mutate(doc); assert.throws(() => parseDocument(JSON.stringify(doc)), /platný návrh/);
   }
 });
 
-test('switching character types repairs incompatible selections while preserving colors and compatible choices', () => {
-  const princess = { ...DEFAULT_PERSON, skin: '#b98162', clothing: '#336699' };
-  const boy = normalizePersonSpec({ ...princess, kind: 'child' });
-  assert.equal(boy.hairStyle, 'short');
-  assert.equal(boy.outfit, 'casual');
-  assert.equal(boy.skin, princess.skin);
-  assert.equal(boy.clothing, princess.clothing);
-  assert.equal(princess.outfit, 'royal');
-  assert.equal(princess.hairStyle, 'long');
-  for (const kind of ['child', 'girl', 'princess', 'dad', 'mom']) {
-    for (const hairStyle of ['short', 'bob', 'long', 'buns']) {
-      for (const outfit of ['casual', 'dress', 'overalls', 'royal']) {
-        const original = { ...princess, kind, hairStyle, outfit };
-        const repaired = normalizePersonSpec(original);
-        assert.ok(validSpec('person', repaired));
-        assert.deepEqual(normalizePersonSpec(repaired), repaired);
-        if (validSpec('person', original)) assert.deepEqual(repaired, original);
+test('age, face and eye geometry is distinct, finite and keeps long hair at the shared ground baseline', () => {
+  const baby = personGeometry(personForKind('baby')), child = personGeometry(personForKind('boy'));
+  const adult = personGeometry(personForKind('man')), older = personGeometry(personForKind('grandpa'));
+  assert.ok(baby.shoulderY > child.shoulderY && child.shoulderY > adult.shoulderY);
+  assert.ok(baby.headScale > adult.headScale && child.headScale > adult.headScale);
+  assert.ok(older.shoulderY > adult.shoulderY);
+  assert.equal(new Set(Object.keys(PERSON_FACE_LABELS).map(face => personGeometry({ ...DEFAULT_PERSON, face }).facePath)).size, 5);
+  assert.equal(new Set(Object.keys(PERSON_EYE_LABELS).map(eyes => personGeometry({ ...DEFAULT_PERSON, eyes }).eyePath)).size, 5);
+  for (const kind of Object.keys(PERSON_LABELS)) {
+    for (const face of Object.keys(PERSON_FACE_LABELS)) {
+      for (const top of PERSON_OPTIONS[kind].tops) {
+        for (const bottom of PERSON_OPTIONS[kind].bottoms) {
+          const g = personGeometry({ ...personForKind(kind), face, top, bottom });
+          assert.doesNotMatch(JSON.stringify(g), /NaN|Infinity/);
+          assert.ok(g.skirtY <= 184 && g.hipY < 179);
+        }
       }
     }
   }
-});
-
-test('legacy mixed appearances are repaired throughout the workshop without losing saved designs or layout', () => {
-  const doc = defaultDocument();
-  doc.person = { ...DEFAULT_PERSON, kind: 'dad', hairStyle: 'buns', outfit: 'royal' };
-  const mother = doc.library.find(d => d.id === 'mom');
-  mother.spec.hairStyle = 'short';
-  mother.spec.outfit = 'overalls';
-  doc.rewardId = mother.id;
-  doc.placements[0].reward.spec.hairStyle = 'long';
-  doc.placements[0].reward.spec.outfit = 'dress';
-  const loaded = parseDocument(JSON.stringify(doc));
-  assert.equal(loaded.person.hairStyle, 'short');
-  assert.equal(loaded.person.outfit, 'casual');
-  const loadedMother = loaded.library.find(d => d.id === 'mom');
-  assert.equal(loadedMother.spec.hairStyle, 'bob');
-  assert.equal(loadedMother.spec.outfit, 'dress');
-  assert.equal(loadedMother.name, mother.name);
-  assert.equal(loadedMother.spec.clothing, mother.spec.clothing);
-  assert.equal(loaded.rewardId, doc.rewardId);
-  assert.equal(loaded.library.length, doc.library.length);
-  assert.equal(loaded.placements.length, doc.placements.length);
-  assert.equal(loaded.placements[0].reward.spec.hairStyle, 'short');
-  assert.equal(loaded.placements[0].reward.spec.outfit, 'casual');
-  for (const key of ['id', 'name', 'x', 'y', 'size', 'flipped']) assert.equal(loaded.placements[0][key], doc.placements[0][key]);
-  assert.deepEqual(parseDocument(JSON.stringify(loaded)), loaded);
+  for (const kind of ['girl', 'woman', 'grandma']) {
+    const g = personGeometry({ ...personForKind(kind), hairStyle: 'floor-length' });
+    assert.ok(Math.abs(g.headY + (g.hairEnd - 62) * g.headScale - 183) < .001);
+  }
 });

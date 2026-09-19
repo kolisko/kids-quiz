@@ -13,7 +13,7 @@
   </nav>
   @if (error) { <div class="notice error" role="alert">{{ error }}<button type="button" aria-label="Zavřít upozornění" (click)="error = ''">×</button></div> }
   <div class="notice success" role="status" [class.empty]="!message">{{ message }}</div>
-  <div class="editor-grid">
+  <div class="editor-grid" [class.person-editor]="section === 'person'">
     <aside class="settings panel" aria-label="Parametry návrhu">
       <div class="panel-heading"><h3>{{ section === 'box' ? 'Podoba balíčku' : section === 'person' ? 'Podoba postavy' : section === 'furniture' ? 'Podoba nábytku' : 'Podoba domku' }}</h3><button type="button" class="icon-button" title="Výchozí parametry návrhu" aria-label="Výchozí parametry návrhu" (click)="resetDesign()"><svg [lucideIcon]="icons.RotateCcw" [size]="16"></svg></button></div>
       @switch (section) {
@@ -37,13 +37,36 @@
           </details>
         }
         @case ('person') {
-          <label class="field">Postava<select aria-label="Postava" [(ngModel)]="doc.person.kind" (ngModelChange)="changed()">@for (kind of personKinds; track kind[0]) { <option [value]="kind[0]">{{ kind[1] }}</option> }</select></label>
-          <div class="color-fields"><label class="color-field"><input type="color" aria-label="Barva pleti" [(ngModel)]="doc.person.skin" (ngModelChange)="changed()"><span>Pleť<small>{{ doc.person.skin }}</small></span></label><label class="color-field"><input type="color" aria-label="Barva vlasů" [(ngModel)]="doc.person.hair" (ngModelChange)="changed()"><span>Vlasy<small>{{ doc.person.hair }}</small></span></label></div>
-          <label class="field">Účes<select aria-label="Účes" [(ngModel)]="doc.person.hairStyle" (ngModelChange)="changed()">@for (style of personOptions.hairStyles; track style) { <option [value]="style">{{ hairLabels[style] }}</option> }</select></label>
-          <div class="divider"></div><p class="control-heading"><span>02</span>Šatník</p>
-          <label class="field">Oblečení<select aria-label="Oblečení" [(ngModel)]="doc.person.outfit" (ngModelChange)="changed()">@for (outfit of personOptions.outfits; track outfit) { <option [value]="outfit">{{ outfitLabels[outfit] }}</option> }</select></label>
-          <div class="color-fields"><label class="color-field"><input type="color" aria-label="Barva oblečení" [(ngModel)]="doc.person.clothing" (ngModelChange)="changed()"><span>Oblečení<small>{{ doc.person.clothing }}</small></span></label><label class="color-field"><input type="color" aria-label="Barva doplňků" [(ngModel)]="doc.person.accent" (ngModelChange)="changed()"><span>Doplňky<small>{{ doc.person.accent }}</small></span></label></div>
-          <p class="hint info-hint">Každou variantu můžete uložit pod vlastním jménem. Uložené postavy pak najdete mezi odměnami Superboxu.</p>
+          <label class="field">Typ osoby<select aria-label="Typ osoby" [ngModel]="doc.person.kind" (ngModelChange)="changePersonKind($event)">@for (kind of personKinds; track kind[0]) { <option [value]="kind[0]">{{ kind[1] }}</option> }</select></label>
+          <p class="hint age-hint">{{ personAgeHint }}</p>
+          <details class="person-group" open>
+            <summary>Obličej a postava</summary>
+            <label class="field">Tvar obličeje<select aria-label="Tvar obličeje" [(ngModel)]="doc.person.face" (ngModelChange)="changed()">@for (option of faceOptions; track option[0]) { <option [value]="option[0]">{{ option[1] }}</option> }</select></label>
+            <label class="field">Tvar očí<select aria-label="Tvar očí" [(ngModel)]="doc.person.eyes" (ngModelChange)="changed()">@for (option of eyeOptions; track option[0]) { <option [value]="option[0]">{{ option[1] }}</option> }</select></label>
+            <label class="field">Postava<select aria-label="Postava" [(ngModel)]="doc.person.build" (ngModelChange)="changed()">@for (option of buildOptions; track option[0]) { <option [value]="option[0]">{{ option[1] }}</option> }</select></label>
+            <label class="color-field compact"><input type="color" aria-label="Barva pleti" [(ngModel)]="doc.person.skin" (ngModelChange)="changed()"><span>Pleť<small>{{ doc.person.skin }}</small></span></label>
+            @if (personHasWrinkles) { <label class="slider-label" for="person-wrinkles">Výraznost vrásek <output>{{ doc.person.wrinkles }} %</output></label><input id="person-wrinkles" type="range" [min]="personWrinkleRange[0]" [max]="personWrinkleRange[1]" step="1" [(ngModel)]="doc.person.wrinkles" (ngModelChange)="changed()"> }
+          </details>
+          <details class="person-group">
+            <summary>Vlasy a vousy</summary>
+            <label class="field">Účes<select aria-label="Účes" [(ngModel)]="doc.person.hairStyle" (ngModelChange)="changed()">@for (style of personOptions.hairStyles; track style) { <option [value]="style">{{ hairLabels[style] }}</option> }</select></label>
+            <label class="color-field compact"><input type="color" aria-label="Barva vlasů" [(ngModel)]="doc.person.hair" (ngModelChange)="changed()"><span>Vlasy<small>{{ doc.person.hair }}</small></span></label>
+            @if (doc.person.kind !== 'baby' && doc.person.hairStyle !== 'bald') { <label class="checkbox"><input type="checkbox" [(ngModel)]="doc.person.fringe" (ngModelChange)="changed()">Ofinka</label> }
+            @if (personHasBeard) { <label class="field">Vousy<select aria-label="Vousy" [(ngModel)]="doc.person.facialHair" (ngModelChange)="changed()">@for (option of beardOptions; track option[0]) { <option [value]="option[0]">{{ option[1] }}</option> }</select></label> }
+          </details>
+          <details class="person-group">
+            <summary>Oblečení</summary>
+            <label class="field">Horní díl<select aria-label="Horní díl" [(ngModel)]="doc.person.top" (ngModelChange)="changed()">@for (top of personOptions.tops; track top) { <option [value]="top">{{ topLabels[top] }}</option> }</select></label>
+            <label class="color-field compact"><input type="color" aria-label="Barva horního dílu" [(ngModel)]="doc.person.topColor" (ngModelChange)="changed()"><span>Horní díl<small>{{ doc.person.topColor }}</small></span></label>
+            <label class="field">Spodní díl<select aria-label="Spodní díl" [(ngModel)]="doc.person.bottom" (ngModelChange)="changed()">@for (bottom of personOptions.bottoms; track bottom) { <option [value]="bottom">{{ bottomLabels[bottom] }}</option> }</select></label>
+            <label class="color-field compact"><input type="color" aria-label="Barva spodního dílu" [(ngModel)]="doc.person.bottomColor" (ngModelChange)="changed()"><span>Spodní díl<small>{{ doc.person.bottomColor }}</small></span></label>
+          </details>
+          <details class="person-group">
+            <summary>Boty a doplňky</summary>
+            <label class="field">Boty<select aria-label="Boty" [(ngModel)]="doc.person.shoes" (ngModelChange)="changed()">@for (shoes of personOptions.shoes; track shoes) { <option [value]="shoes">{{ shoeLabels[shoes] }}</option> }</select></label>
+            <div class="color-fields"><label class="color-field"><input type="color" aria-label="Barva bot" [(ngModel)]="doc.person.shoeColor" (ngModelChange)="changed()"><span>Boty<small>{{ doc.person.shoeColor }}</small></span></label><label class="color-field"><input type="color" aria-label="Barva doplňků" [(ngModel)]="doc.person.accent" (ngModelChange)="changed()"><span>Doplňky<small>{{ doc.person.accent }}</small></span></label></div>
+            @if (personHasCrown) { <label class="checkbox"><input type="checkbox" [(ngModel)]="doc.person.crown" (ngModelChange)="changed()">Korunka</label> }
+          </details>
         }
         @case ('furniture') {
           <label class="field">Druh vybavení<select aria-label="Druh vybavení" [(ngModel)]="doc.furniture.kind" (ngModelChange)="changed()">@for (kind of furnitureKinds; track kind[0]) { <option [value]="kind[0]">{{ kind[1] }}</option> }</select></label>

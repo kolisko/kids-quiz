@@ -71,13 +71,20 @@ The workshop has four editors:
   particles. Delay, inflation duration, intensity and particle count are adjustable.
   The deterministic timeline supports playback, pause, seeking and replay. Reduced
   motion respects the device preference and can also be selected in the editor.
-- **Osoby:** boys, girls, princesses, dads and moms, with skin/hair colors and
-  separately colored clothing and accessories. Boys/dads have short hair and
-  casual clothing or overalls; girls/princesses/moms have bob/long/bun hairstyles
-  and dresses or royal outfits. Changing the person type replaces incompatible
-  selections. The legacy `child` key remains the boy type. Saved/imported version
-  1 designs, library rewards and house placements normalize old combinations
-  without discarding their colors, names or layout; unknown values are rejected.
+- **Osoby:** baby, girl, boy, woman, man, grandfather and grandmother. Age changes
+  head/body proportions, limb lengths and shoulder shape. Face presets (round,
+  oval, chubby, slim and gaunt), five eye shapes and three body builds are independent.
+  Adults have adjustable wrinkles; elders retain visible age lines, children none.
+  The collapsible editor separates face/body, hair, clothes and footwear/accessories.
+  Hair includes age/type-specific short cuts, curls, mohawk, bob, long and floor-length
+  hair, low/high braids, one/two ponytails and one/two buns. Fringe is independent;
+  men/older men can have a mustache or beard. Tops, bottoms and footwear have separate
+  colors and choices, including jackets, hoodies, skirts of different lengths, a
+  princess skirt, sneakers, boots, sandals, clogs and pom-pom slippers. Adult female
+  types also offer bras and heels; babies have onesies, diapers and booties. Shared
+  clothing categories use the selected body's cut. Crown is an accessory, not an age
+  category. Changing type replaces incompatible choices while retaining colors and
+  compatible parts; reset restores the current type's age-specific defaults.
 - **Nábytek:** chairs, tables, wardrobes and toys (bear, blocks, car), with colors,
   rounded/square edges where applicable and optional stars/hearts.
 - **Domky:** cottage, townhouse or castle, one to three floors/rooms, wall/roof/floor
@@ -92,7 +99,12 @@ placements are not altered when editing or deleting their original library desig
 
 Drafts, library and placements automatically persist in localStorage under
 `fumfik-superbox-lab-v1`. JSON export/import transfers a versioned whole-workshop
-snapshot; import validates colors, variants, limits, identities and selected reward
+snapshot (version 2). Version 1 files and locally saved workshops migrate all
+person designs and house copies: child → boy, dad → man, mom → woman, princess →
+girl with a crown/princess skirt. Original IDs, names, colors, reward choice and
+layout survive; the old combined outfit becomes separate top/bottom pieces.
+Unknown old values are rejected rather than hidden with defaults. Import validates
+colors, age/type compatibility, variants, limits, identities and selected reward
 before replacing the current state. Import replaces the current workshop; export
 first to keep both. There are limits of 100 designs and 40 placed objects.
 

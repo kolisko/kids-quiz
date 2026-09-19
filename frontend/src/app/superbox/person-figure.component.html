@@ -1,0 +1,106 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" [attr.aria-label]="label || 'Figurka'" [attr.data-person-kind]="person.kind" [attr.data-face]="person.face" [attr.data-eyes]="person.eyes" [attr.data-hair]="person.hairStyle" [attr.data-top]="person.top" [attr.data-bottom]="person.bottom" [attr.data-shoes]="person.shoes">
+  <defs>
+    <linearGradient [id]="id + '-shine'" x2=".8" y2="1"><stop stop-color="#fff" stop-opacity=".25"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#382421" stop-opacity=".13"/></linearGradient>
+    <clipPath [id]="id + '-eye'"><path [attr.d]="g.eyePath"/></clipPath>
+  </defs>
+  <ellipse cx="100" cy="187" [attr.rx]="g.baby ? 33 : 44" ry="5" fill="#1b2924" opacity=".10"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <g [attr.transform]="g.headTransform" [attr.fill]="person.hair">
+      @if (hairBack) {
+        <path [attr.d]="g.longHair"/>
+        <path [attr.d]="g.hairLines" fill="none" stroke="#fff" stroke-opacity=".13" stroke-width="3"/>
+        @if (person.hairStyle === 'curly-long') {
+          @for (side of sides; track side) { @for (bead of braidBeads; track bead) { <circle [attr.cx]="100 + side * (36 + bead * 1.3)" [attr.cy]="56 + bead * 17" r="12"/> } }
+        }
+      }
+      @if (person.hairStyle === 'ponytail') { <path d="M127 39 Q159 35 151 67 Q141 85 155 112 Q125 107 128 76 Q138 59 127 39Z"/><path d="M132 46 L143 51" [attr.stroke]="person.accent" stroke-width="5"/> }
+      @if (person.hairStyle === 'pigtails') { @for (side of sides; track side) { <g [attr.transform]="'translate(100 0) scale(' + side + ' 1) translate(-100 0)'"><path d="M129 43 Q157 29 158 60 Q152 77 165 95 Q135 95 136 69Z"/><path d="M131 51 L144 55" [attr.stroke]="person.accent" stroke-width="4"/></g> } }
+      @if (person.hairStyle === 'braids' || person.hairStyle === 'high-braids') {
+        @for (side of sides; track side) {
+          <g [attr.transform]="'translate(' + side * (person.hairStyle === 'high-braids' ? 8 : 0) + ' ' + (person.hairStyle === 'high-braids' ? -19 : 0) + ')'">
+            <path [attr.d]="'M' + (100 + side * 28) + ' 45 Q' + (100 + side * 44) + ' 52 ' + (100 + side * 39) + ' 73'" fill="none" [attr.stroke]="person.hair" stroke-width="14"/>
+            @for (bead of braidBeads; track bead) { <ellipse [attr.cx]="100 + side * (38 + (bead % 2 ? 2 : -2))" [attr.cy]="72 + bead * 10" rx="8" ry="7"/><path [attr.d]="'M' + (96 + side * 38) + ' ' + (70 + bead * 10) + ' l8 5'" stroke="#fff" stroke-opacity=".15" fill="none" stroke-width="1.5"/> }
+            <path [attr.d]="'M' + (94 + side * 38) + ' 116 h12'" [attr.stroke]="person.accent" stroke-width="4"/>
+          </g>
+        }
+      }
+    </g>
+    <g [attr.transform]="g.bodyTransform">
+      <path [attr.d]="'M94 ' + (g.headY + 27 * g.headScale) + ' H106 V' + (g.shoulderY + 9) + ' H94Z'" [attr.fill]="person.skin"/>
+      <path [attr.d]="g.legs" [attr.stroke]="person.skin" [attr.stroke-width]="g.legWidth"/>
+      <path [attr.d]="g.arms" [attr.stroke]="person.skin" [attr.stroke-width]="g.baby ? 10 : 11" fill="none"/>
+      <path [attr.d]="g.body" [attr.fill]="person.skin"/>
+      @if (person.bottom === 'pants' || person.bottom === 'shorts') {
+        <path [attr.d]="g.pants" [attr.fill]="person.bottomColor"/>
+        <path [attr.d]="'M100 ' + g.waistY + ' v' + (g.hipY - g.waistY + 5)" stroke="#1b2924" stroke-opacity=".16" stroke-width="1.5"/>
+        <path [attr.d]="'M' + (101 - g.hip) + ' ' + (g.waistY + 5) + ' q12 12 15 0 M' + (99 + g.hip) + ' ' + (g.waistY + 5) + ' q-12 12 -15 0'" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="2"/>
+      }
+      @if (person.bottom === 'diaper') { <path [attr.d]="'M78 ' + g.waistY + ' H122 Q125 181 110 177 H90 Q75 181 78 ' + g.waistY + 'Z'" [attr.fill]="person.bottomColor"/><path d="M80 168 l8 4 M120 168 l-8 4" [attr.stroke]="person.accent" stroke-width="3"/> }
+      @for (side of sides; track side) {
+        <g [attr.transform]="'translate(' + (100 + side * g.legGap) + ' 179) scale(' + side + ' 1)'" [attr.fill]="person.shoeColor">
+          @switch (person.shoes) {
+            @case ('heels') { <path d="M-6 -4 Q1 5 8 -4 L14 3 Q17 8 8 8 H-6Z"/><path d="M-5 6 V12" [attr.stroke]="person.shoeColor" stroke-width="3"/> }
+            @case ('boots') { <path d="M-7 -21 H7 V-3 Q20 -1 17 8 H-7Z"/><path d="M-7 -18 H7 M-7 8 H17" [attr.stroke]="person.accent" stroke-width="3"/> }
+            @case ('sandals') { <path d="M-7 2 Q4 -1 13 3 L15 8 H-7Z"/><path d="M-4 -3 V4 M5 -1 L9 5" [attr.stroke]="person.shoeColor" stroke-width="3"/><path d="M-7 8 H15" [attr.stroke]="person.accent" stroke-width="2"/> }
+            @case ('clogs') { <path d="M-7 -2 Q10 -7 15 2 L16 8 H-7Z"/><path d="M-9 -4 L-5 3" [attr.stroke]="person.accent" stroke-width="3"/><circle cx="3" cy="0" r="1.2" fill="#302c33" opacity=".45"/><circle cx="8" cy="1" r="1.2" fill="#302c33" opacity=".45"/><path d="M-7 8 H15" stroke="#fff" stroke-opacity=".35" stroke-width="2"/> }
+            @case ('slippers') { <path d="M-7 0 Q4 -8 14 1 Q20 10 10 10 H-7Z"/><circle cx="7" cy="-3" r="6" [attr.fill]="person.accent"/><path d="M-7 9 H13" stroke="#fff" stroke-opacity=".4" stroke-width="2"/> }
+            @case ('booties') { <path d="M-6 -5 H6 V-2 Q15 -1 13 7 Q7 11 -6 7Z"/><path d="M-6 -4 H6" [attr.stroke]="person.accent" stroke-width="3"/><path d="M3 0 l5 3 M8 0 l-5 3" stroke="#fff" stroke-width="1.5"/> }
+            @default { <path d="M-7 -6 H5 L8 -1 Q19 0 16 8 H-7Z"/><path d="M-7 8 H16" [attr.stroke]="person.accent" stroke-width="3"/><path d="M1 -3 l6 1 M3 1 l6 1" stroke="#fff" stroke-width="1.6"/> }
+          }
+        </g>
+      }
+      @if (skirt) {
+        <path [attr.d]="g.skirt" [attr.fill]="person.bottomColor"/>
+        <path [attr.d]="g.skirt" [attr.fill]="'url(#' + id + '-shine)'"/>
+        <path [attr.d]="'M90 ' + (g.waistY + 8) + ' L' + (100 - g.skirtWidth * .48) + ' ' + (g.skirtY - 4) + ' M110 ' + (g.waistY + 8) + ' L' + (100 + g.skirtWidth * .48) + ' ' + (g.skirtY - 4)" fill="none" stroke="#fff" stroke-opacity=".25" stroke-width="2"/>
+        @if (person.bottom === 'royal-skirt') { <path [attr.d]="'M' + (100 - g.waist) + ' ' + (g.waistY + 4) + ' Q100 ' + (g.skirtY + 5) + ' ' + (100 + g.waist) + ' ' + (g.waistY + 4)" fill="none" [attr.stroke]="person.accent" stroke-width="3"/><path [attr.d]="'M' + (100 - g.skirtWidth + 4) + ' ' + (g.skirtY - 3) + ' Q100 ' + (g.skirtY + 3) + ' ' + (100 + g.skirtWidth - 4) + ' ' + (g.skirtY - 3)" fill="none" [attr.stroke]="person.accent" stroke-width="2"/> }
+      }
+      @if (!sleeveless) { <path [attr.d]="longSleeves ? g.arms : g.sleeves" [attr.stroke]="person.topColor" [attr.stroke-width]="person.top === 'jacket' || person.top === 'hoodie' ? 15 : 13" fill="none"/> }
+      <path [attr.d]="g.trunk" [attr.fill]="person.topColor"/>
+      <path [attr.d]="g.trunk" [attr.fill]="'url(#' + id + '-shine)'"/>
+      <path [attr.d]="'M92 ' + (g.shoulderY - 1) + ' Q100 ' + (g.shoulderY + (sleeveless ? 13 : 8)) + ' 108 ' + (g.shoulderY - 1)" [attr.fill]="person.skin"/>
+      @if (person.top === 'jacket') { <path [attr.d]="'M100 ' + (g.shoulderY + 6) + ' V' + (g.waistY + 7)" [attr.stroke]="person.accent" stroke-width="2"/><path [attr.d]="'M88 ' + g.shoulderY + ' L96 ' + (g.shoulderY + 15) + ' L100 ' + (g.shoulderY + 7) + ' L104 ' + (g.shoulderY + 15) + ' L112 ' + g.shoulderY" [attr.fill]="person.accent"/><path [attr.d]="'M82 ' + (g.waistY - 9) + ' h10 M108 ' + (g.waistY - 9) + ' h10'" [attr.stroke]="person.accent" stroke-width="2"/> }
+      @if (person.top === 'hoodie') { <path [attr.d]="'M89 ' + (g.shoulderY - 3) + ' Q100 ' + (g.shoulderY + 19) + ' 111 ' + (g.shoulderY - 3)" fill="none" [attr.stroke]="person.accent" stroke-width="5"/><path [attr.d]="'M95 ' + (g.shoulderY + 10) + ' v10 M105 ' + (g.shoulderY + 10) + ' v10 M88 ' + (g.waistY - 10) + ' L84 ' + (g.waistY + 1) + ' H116 L112 ' + (g.waistY - 10) + 'Z'" fill="none" [attr.stroke]="person.accent" stroke-width="1.6"/> }
+      @if (person.top === 'tshirt' || person.top === 'long-sleeve') { <path [attr.d]="'M' + (101 - g.waist) + ' ' + (g.waistY - 10) + ' H' + (99 + g.waist)" [attr.stroke]="person.accent" stroke-width="4"/> }
+      @if (person.top === 'tank' || person.top === 'long-top') { <path [attr.d]="'M' + (100 - g.waist) + ' ' + g.waistY + ' Q100 ' + (g.waistY + 4) + ' ' + (100 + g.waist) + ' ' + g.waistY" [attr.stroke]="person.accent" stroke-width="3" fill="none"/> }
+      @if (person.top === 'bra') { <path [attr.d]="'M81 ' + (g.shoulderY + 7) + ' Q87 ' + (g.shoulderY + 26) + ' 100 ' + (g.shoulderY + 12) + ' Q113 ' + (g.shoulderY + 26) + ' 119 ' + (g.shoulderY + 7)" fill="none" [attr.stroke]="person.accent" stroke-width="2"/> }
+      @if (person.top === 'onesie') { <circle cx="96" cy="169" r="1.4" [attr.fill]="person.accent"/><circle cx="104" cy="169" r="1.4" [attr.fill]="person.accent"/> }
+      @if (longSleeves) { @for (side of sides; track side) { <ellipse [attr.cx]="100 + side * (g.shoulder + 12)" [attr.cy]="g.handY + 4" rx="4.5" ry="5.5" [attr.fill]="person.skin"/> } }
+    </g>
+    <g [attr.transform]="g.headTransform">
+      <circle [attr.cx]="100 - g.earOffset" cy="66" r="7" [attr.fill]="person.skin"/><circle [attr.cx]="100 + g.earOffset" cy="66" r="7" [attr.fill]="person.skin"/>
+      <path [attr.d]="g.facePath" [attr.fill]="person.skin"/>
+      <path [attr.d]="g.facePath" [attr.fill]="'url(#' + id + '-shine)'"/>
+      @if (person.face === 'gaunt') { <path d="M75 72 l7 6 M125 72 l-7 6" fill="none" stroke="#92594c" opacity=".35" stroke-width="2"/> }
+      <ellipse cx="79" cy="77" [attr.rx]="person.face === 'chubby' ? 9 : 6" ry="4" fill="#e78f88" opacity=".36"/><ellipse cx="121" cy="77" [attr.rx]="person.face === 'chubby' ? 9 : 6" ry="4" fill="#e78f88" opacity=".36"/>
+      @for (eyeX of eyePositions; track eyeX) {
+        <g [attr.transform]="'translate(' + eyeX + ' 65)'">
+          <path [attr.d]="g.eyePath" fill="#fffdf6" stroke="#685047" stroke-width=".8"/>
+          <g [attr.clip-path]="'url(#' + id + '-eye)'"><ellipse cx="0" cy=".5" rx="3.2" ry="4.5" fill="#3d3538"/><circle cx="1" cy="-1" r="1.1" fill="#fff"/></g>
+          <path d="M-6 -10 Q0 -13 6 -10" [attr.stroke]="person.hair" fill="none" stroke-width="1.8"/>
+        </g>
+      }
+      <path d="M94 83 Q100 88 106 83" fill="none" stroke="#92594c" stroke-width="2.3"/>
+      <path d="M99 71 L97 77 H101" fill="none" stroke="#b27b63" stroke-opacity=".65" stroke-width="1.8"/>
+      @if (person.wrinkles > 0) { <g [attr.opacity]="g.wrinkleOpacity" fill="none" stroke="#875b4e" stroke-width="1.2" [attr.data-wrinkles]="person.wrinkles"><path d="M86 43 Q100 39 114 43 M88 47 Q100 44 112 47 M75 63 l-5 -3 M75 68 l-5 2 M125 63 l5 -3 M125 68 l5 2 M87 76 Q81 84 86 89 M113 76 Q119 84 114 89 M91 93 Q100 96 109 93"/></g> }
+      @if (person.facialHair === 'beard') { <path d="M73 76 Q77 109 100 111 Q123 109 127 76 L116 84 Q100 96 84 84Z" [attr.fill]="person.hair"/><path d="M91 98 Q100 104 109 98" stroke="#fff" stroke-opacity=".25" fill="none" stroke-width="2"/> }
+      @if (person.facialHair !== 'none') { <path d="M87 81 Q94 76 100 81 Q106 76 113 81 Q111 89 100 84 Q89 89 87 81Z" [attr.fill]="person.hair"/> }
+      @if (person.hairStyle !== 'bald') {
+        <g [attr.fill]="person.hair">
+          @switch (person.hairStyle) {
+            @case ('tuft') { <path d="M90 31 Q96 12 109 25 Q99 19 98 32 Q107 20 116 30Z"/> }
+            @case ('baby-curls') { <path d="M78 33 Q75 19 86 24 Q92 8 102 23 Q116 13 119 33" fill="none" [attr.stroke]="person.hair" stroke-width="7"/> }
+            @case ('mohawk') { <path d="M92 45 L89 30 L94 26 L92 11 L102 19 L110 7 L112 29 L108 46Z"/><path d="M69 49 l-2 13 M131 49 l2 13" [attr.stroke]="person.hair" stroke-width="4"/> }
+            @default { <path [attr.d]="person.hairStyle === 'sidepart' ? 'M65 54 Q62 26 94 24 Q125 16 136 43 L131 61 L122 39 Q95 62 72 48 L69 62Z' : 'M66 57 Q59 23 100 23 Q139 21 136 54 L129 62 L124 40 Q112 53 83 44 L71 62Z'"/> }
+          }
+          @if (person.hairStyle === 'short') { <path d="M72 36 L71 23 L86 27 L99 17 L112 26Z"/> }
+          @if (person.hairStyle === 'curly-short' || person.hairStyle === 'curly-long') { @for (curl of curls; track $index) { <circle [attr.cx]="curl[0]" [attr.cy]="curl[1]" r="11"/> } <path d="M76 32 Q74 23 83 28 M98 27 Q97 19 106 25 M121 35 Q120 27 129 33" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="2"/> }
+          @if (person.hairStyle === 'bun') { <circle cx="100" cy="20" r="17"/><path d="M91 17 Q105 9 110 22 M86 34 H114" fill="none" [attr.stroke]="person.accent" stroke-width="2.5"/> }
+          @if (person.hairStyle === 'buns') { <circle cx="62" cy="37" r="16"/><circle cx="138" cy="37" r="16"/><path d="M61 53 L69 49 M131 49 L139 53" [attr.stroke]="person.accent" stroke-width="4"/> }
+          @if (person.fringe) { <path d="M71 39 Q100 26 129 39 L129 54 L118 50 L115 55 L102 51 L99 56 L86 51 L80 54 L71 51Z"/> }
+        </g>
+      }
+      @if (person.crown) { <path d="M80 32 L76 12 L90 21 L100 6 L110 21 L124 12 L120 32Z" [attr.fill]="person.accent" stroke="#bd913e" stroke-width="1.5"/><path d="M82 28 H118" stroke="#fff" opacity=".6" stroke-width="2"/><path d="M100 16 L104 22 L100 27 L96 22Z" [attr.fill]="person.topColor"/> }
+    </g>
+  </g>
+</svg>

@@ -1,21 +1,18 @@
-import { ChangeDetectionStrategy, Component, Input, OnChanges } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { DEFAULT_FURNITURE, DEFAULT_PERSON, FurnitureSpec, PersonSpec, Reward, normalizePersonSpec } from './superbox.model';
+import { DEFAULT_FURNITURE, DEFAULT_PERSON, FurnitureSpec, Reward } from './superbox.model';
+import { PersonFigureComponent } from './person-figure.component';
 
 let nextId = 0;
 @Component({
-  selector: 'app-collectible', standalone: true, imports: [CommonModule],
+  selector: 'app-collectible', standalone: true, imports: [CommonModule, PersonFigureComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './collectible.component.html',
   styles: [':host { display: block; width: 100%; height: 100%; } svg { display: block; width: 100%; height: 100%; overflow: visible; }'],
 })
-export class CollectibleComponent implements OnChanges {
+export class CollectibleComponent {
   @Input() reward: Reward = { kind: 'person', spec: DEFAULT_PERSON };
   @Input() label = '';
   readonly id = `collectible-${nextId++}`;
-  person: PersonSpec = DEFAULT_PERSON;
-  ngOnChanges(): void { this.person = normalizePersonSpec(this.reward.kind === 'person' ? this.reward.spec : DEFAULT_PERSON); }
   get furniture(): FurnitureSpec { return this.reward.kind === 'furniture' ? this.reward.spec : DEFAULT_FURNITURE; }
-  get adult(): boolean { return this.person.kind === 'dad' || this.person.kind === 'mom'; }
-  get dress(): boolean { return this.person.outfit === 'dress' || this.person.outfit === 'royal'; }
 }

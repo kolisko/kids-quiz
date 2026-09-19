@@ -1,50 +1,11 @@
-<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" [attr.aria-label]="label || (reward.kind === 'person' ? 'Figurka' : 'Nábytek')">
+@if (reward.kind === 'person') {
+  <app-person-figure [spec]="reward.spec" [label]="label"/>
+} @else {
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" [attr.aria-label]="label || 'Nábytek'">
   <defs>
     <linearGradient [id]="id + '-shine'" x2=".8" y2="1"><stop stop-color="#fff" stop-opacity=".25"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#382421" stop-opacity=".14"/></linearGradient>
   </defs>
   <ellipse cx="100" cy="185" rx="49" ry="7" fill="#1b2924" opacity=".10"/>
-  @if (reward.kind === 'person') {
-    <g [attr.transform]="adult ? 'translate(-5 -8) scale(1.05)' : 'translate(6 11) scale(.94)'" stroke-linecap="round" stroke-linejoin="round">
-      @if (person.hairStyle === 'long' || person.hairStyle === 'bob') {
-        <path [attr.d]="person.hairStyle === 'long' ? 'M61 63 Q56 23 100 23 Q144 23 139 67 L148 123 Q128 135 113 119 H84 Q68 133 52 120Z' : 'M62 58 Q58 25 100 25 Q143 25 138 62 L143 95 Q100 114 56 94Z'" [attr.fill]="person.hair"/>
-      }
-      <path d="M86 145 L83 173 M114 145 L117 173" [attr.stroke]="dress ? person.skin : person.accent" stroke-width="17"/>
-      <path d="M81 174 L74 177 Q70 184 82 184 H92 V174Z M109 174 V184 H125 Q132 179 124 176 L119 174Z" fill="#504341"/>
-      <path d="M74 101 Q61 112 59 134 M127 102 Q140 115 141 134" [attr.stroke]="person.skin" stroke-width="12"/>
-      <path d="M73 99 L65 113 M128 100 L136 113" [attr.stroke]="person.clothing" stroke-width="18"/>
-      <path [attr.d]="dress ? 'M79 94 Q100 87 121 94 L140 152 Q100 168 60 152Z' : 'M77 94 Q100 87 123 94 L128 143 Q100 151 72 143Z'" [attr.fill]="person.clothing"/>
-      <path [attr.d]="dress ? 'M79 94 Q100 87 121 94 L140 152 Q100 168 60 152Z' : 'M77 94 Q100 87 123 94 L128 143 Q100 151 72 143Z'" [attr.fill]="'url(#' + id + '-shine)'"/>
-      <path d="M92 89 Q100 101 108 89" [attr.fill]="person.skin"/>
-      @if (person.outfit === 'overalls') {
-        <path d="M81 94 L85 113 H115 L119 94 M83 117 H117 L121 145 H79Z" [attr.fill]="person.accent" [attr.stroke]="person.accent" stroke-width="7"/>
-        <path d="M92 121 H108 V132 Q100 138 92 132Z" fill="#fff" opacity=".3"/>
-        <circle cx="87" cy="114" r="2" fill="#605247"/><circle cx="113" cy="114" r="2" fill="#605247"/>
-      }
-      @if (person.outfit === 'casual') { <path d="M75 117 H125 M75 129 H126" [attr.stroke]="person.accent" stroke-width="5"/> }
-      @if (dress) {
-        <path d="M75 116 Q100 123 125 116" [attr.stroke]="person.accent" stroke-width="6" fill="none"/>
-        <path d="M100 119 Q85 104 86 121 Q90 128 100 119 Q115 104 114 121 Q110 128 100 119" [attr.fill]="person.accent"/>
-        <path d="M85 133 L82 149 M115 133 L118 149" stroke="#fff" opacity=".2" stroke-width="3"/>
-      }
-      <g [attr.transform]="adult ? 'translate(100 62) scale(.95) translate(-100 -62)' : null">
-        <circle cx="66" cy="67" r="8" [attr.fill]="person.skin"/><circle cx="134" cy="67" r="8" [attr.fill]="person.skin"/>
-        <rect x="67" y="30" width="66" height="65" rx="30" [attr.fill]="person.skin"/>
-        <path d="M66 58 Q61 26 91 25 Q130 16 137 52 L129 62 L123 40 Q112 56 83 46 L70 63Z" [attr.fill]="person.hair"/>
-        @if (person.hairStyle === 'short') { <path d="M72 39 L69 24 L85 27 L97 18 L112 28" [attr.fill]="person.hair"/> }
-        @if (person.hairStyle === 'buns') { <circle cx="62" cy="40" r="17" [attr.fill]="person.hair"/><circle cx="138" cy="40" r="17" [attr.fill]="person.hair"/><path d="M61 56 L69 51 M130 52 L139 56" [attr.stroke]="person.accent" stroke-width="4"/> }
-        <ellipse cx="79" cy="76" rx="7" ry="4" fill="#e78f88" opacity=".5"/><ellipse cx="121" cy="76" rx="7" ry="4" fill="#e78f88" opacity=".5"/>
-        <ellipse cx="86" cy="66" rx="3" ry="4" fill="#393134"/><ellipse cx="114" cy="66" rx="3" ry="4" fill="#393134"/>
-        <circle cx="87" cy="65" r="1" fill="#fff"/><circle cx="115" cy="65" r="1" fill="#fff"/>
-        <path d="M95 80 Q100 85 105 80" fill="none" stroke="#92594c" stroke-width="2.5"/>
-        <path d="M99 70 L97 75 H101" fill="none" stroke="#c58a71" stroke-width="2"/>
-        @if (person.kind === 'dad') { <path d="M90 78 Q95 74 100 79 Q105 74 110 78 Q107 85 100 81 Q93 85 90 78" [attr.fill]="person.hair"/> }
-        @if (person.kind === 'princess' || person.outfit === 'royal') {
-          <path d="M80 32 L76 12 L90 21 L100 6 L110 21 L124 12 L120 32Z" [attr.fill]="person.accent" stroke="#bd913e" stroke-width="1.5"/>
-          <path d="M82 28 H118" stroke="#fff" opacity=".6" stroke-width="2"/><path d="M100 16 L104 22 L100 27 L96 22Z" [attr.fill]="person.clothing"/>
-        }
-      </g>
-    </g>
-  } @else {
     <g stroke="#443c36" stroke-opacity=".13" stroke-width="2" stroke-linejoin="round">
       @switch (furniture.kind) {
         @case ('chair') {
@@ -107,5 +68,5 @@
         </g>
       }
     </g>
-  }
 </svg>
+}
