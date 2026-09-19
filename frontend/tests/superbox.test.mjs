@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_BOX, DEFAULT_HOUSE, DEFAULT_PERSON, DEFAULT_FURNITURE, defaultDocument, boxFrame, particleFrame, totalDuration, boundPlacement, parseDocument, validSpec } from '../src/app/superbox/superbox.model.ts';
+import { DEFAULT_BOX, DEFAULT_HOUSE, DEFAULT_PERSON, DEFAULT_FURNITURE, defaultDocument, boxFrame, particleFrame, totalDuration, boundPlacement, normalizePersonSpec, parseDocument, validSpec } from '../src/app/superbox/superbox.model.ts';
 
 test('a complete workshop round trips, including rewards and arranged furniture', () => {
   const doc = defaultDocument();
   assert.deepEqual(parseDocument(JSON.stringify(doc)), doc);
   assert.ok(doc.library.some(d => d.id === doc.rewardId));
-  assert.equal(new Set(doc.library.filter(d => d.kind === 'person').map(d => d.spec.kind)).size, 4);
+  assert.equal(new Set(doc.library.filter(d => d.kind === 'person').map(d => d.spec.kind)).size, 5);
   assert.equal(new Set(doc.library.filter(d => d.kind === 'furniture').map(d => d.spec.kind)).size, 4);
+  assert.deepEqual(doc.placements.map(p => p.reward.spec.kind), ['child', 'chair', 'toy']);
 });
 
 test('the gift waits, inflates, bursts exactly once, and leaves a persistent reward', () => {
@@ -62,6 +63,10 @@ test('imports reject invalid parameters, missing rewards, duplicate ids and over
     doc => doc.house.rooms = 1.5,
     doc => doc.house.cost = -10,
     doc => doc.person.kind = 'unknown',
+    doc => doc.person.hairStyle = 'unknown',
+    doc => doc.person.outfit = 'unknown',
+    doc => doc.library[0].spec.hairStyle = 'unknown',
+    doc => doc.placements[0].reward.spec.outfit = 'unknown',
     doc => doc.rewardId = 'missing',
     doc => doc.fumfiks = null,
     doc => doc.library.push(doc.library[0]),
@@ -86,8 +91,15 @@ test('importing valid but off-canvas placements repairs their positions', () => 
 });
 
 test('all editor variants are serializable valid specs', () => {
-  for (const kind of ['child', 'princess', 'dad', 'mom']) {
-    for (const outfit of ['casual', 'dress', 'overalls', 'royal']) assert.ok(validSpec('person', { ...DEFAULT_PERSON, kind, outfit }));
+  for (const kind of ['child', 'girl', 'princess', 'dad', 'mom']) {
+    const male = kind === 'child' || kind === 'dad';
+    for (const hairStyle of ['short', 'bob', 'long', 'buns']) {
+      for (const outfit of ['casual', 'dress', 'overalls', 'royal']) {
+        const compatibleHair = male ? hairStyle === 'short' : hairStyle !== 'short';
+        const compatibleOutfit = male ? ['casual', 'overalls'].includes(outfit) : ['dress', 'royal'].includes(outfit);
+        assert.equal(validSpec('person', { ...DEFAULT_PERSON, kind, hairStyle, outfit }), compatibleHair && compatibleOutfit, `${kind}/${hairStyle}/${outfit}`);
+      }
+    }
   }
   for (const kind of ['chair', 'table', 'wardrobe', 'toy']) {
     for (const toy of ['bear', 'blocks', 'car']) assert.ok(validSpec('furniture', { ...DEFAULT_FURNITURE, kind, toy }));
@@ -95,4 +107,52 @@ test('all editor variants are serializable valid specs', () => {
   for (const kind of ['cottage', 'townhouse', 'castle']) {
     for (const floors of [1, 2, 3]) assert.ok(validSpec('house', { ...DEFAULT_HOUSE, kind, floors }));
   }
+});
+
+test('switching character types repairs incompatible selections while preserving colors and compatible choices', () => {
+  const princess = { ...DEFAULT_PERSON, skin: '#b98162', clothing: '#336699' };
+  const boy = normalizePersonSpec({ ...princess, kind: 'child' });
+  assert.equal(boy.hairStyle, 'short');
+  assert.equal(boy.outfit, 'casual');
+  assert.equal(boy.skin, princess.skin);
+  assert.equal(boy.clothing, princess.clothing);
+  assert.equal(princess.outfit, 'royal');
+  assert.equal(princess.hairStyle, 'long');
+  for (const kind of ['child', 'girl', 'princess', 'dad', 'mom']) {
+    for (const hairStyle of ['short', 'bob', 'long', 'buns']) {
+      for (const outfit of ['casual', 'dress', 'overalls', 'royal']) {
+        const original = { ...princess, kind, hairStyle, outfit };
+        const repaired = normalizePersonSpec(original);
+        assert.ok(validSpec('person', repaired));
+        assert.deepEqual(normalizePersonSpec(repaired), repaired);
+        if (validSpec('person', original)) assert.deepEqual(repaired, original);
+      }
+    }
+  }
+});
+
+test('legacy mixed appearances are repaired throughout the workshop without losing saved designs or layout', () => {
+  const doc = defaultDocument();
+  doc.person = { ...DEFAULT_PERSON, kind: 'dad', hairStyle: 'buns', outfit: 'royal' };
+  const mother = doc.library.find(d => d.id === 'mom');
+  mother.spec.hairStyle = 'short';
+  mother.spec.outfit = 'overalls';
+  doc.rewardId = mother.id;
+  doc.placements[0].reward.spec.hairStyle = 'long';
+  doc.placements[0].reward.spec.outfit = 'dress';
+  const loaded = parseDocument(JSON.stringify(doc));
+  assert.equal(loaded.person.hairStyle, 'short');
+  assert.equal(loaded.person.outfit, 'casual');
+  const loadedMother = loaded.library.find(d => d.id === 'mom');
+  assert.equal(loadedMother.spec.hairStyle, 'bob');
+  assert.equal(loadedMother.spec.outfit, 'dress');
+  assert.equal(loadedMother.name, mother.name);
+  assert.equal(loadedMother.spec.clothing, mother.spec.clothing);
+  assert.equal(loaded.rewardId, doc.rewardId);
+  assert.equal(loaded.library.length, doc.library.length);
+  assert.equal(loaded.placements.length, doc.placements.length);
+  assert.equal(loaded.placements[0].reward.spec.hairStyle, 'short');
+  assert.equal(loaded.placements[0].reward.spec.outfit, 'casual');
+  for (const key of ['id', 'name', 'x', 'y', 'size', 'flipped']) assert.equal(loaded.placements[0][key], doc.placements[0][key]);
+  assert.deepEqual(parseDocument(JSON.stringify(loaded)), loaded);
 });

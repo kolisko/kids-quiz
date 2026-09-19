@@ -5,7 +5,7 @@ import { LucideDynamicIcon, LucideGift as Gift, LucideUsers as Users, LucideArmc
 import { CollectibleComponent } from '../../app/superbox/collectible.component';
 import { SuperboxComponent } from '../../app/superbox/superbox.component';
 import { HouseComponent } from '../../app/superbox/house.component';
-import { DEFAULT_BOX, DEFAULT_FURNITURE, DEFAULT_HOUSE, DEFAULT_PERSON, Design, DesignKind, FURNITURE_LABELS, PERSON_LABELS, Placement, Reward, SuperboxDocument, boundPlacement, boxFrame, clamp, clone, defaultDocument, parseDocument, totalDuration } from '../../app/superbox/superbox.model';
+import { DEFAULT_BOX, DEFAULT_FURNITURE, DEFAULT_HOUSE, DEFAULT_PERSON, Design, DesignKind, FURNITURE_LABELS, PERSON_LABELS, PERSON_HAIR_LABELS, PERSON_OUTFIT_LABELS, PERSON_OPTIONS, Placement, Reward, SuperboxDocument, boundPlacement, boxFrame, clamp, clone, defaultDocument, normalizePersonSpec, parseDocument, totalDuration } from '../../app/superbox/superbox.model';
 
 const STORAGE_KEY = 'fumfik-superbox-lab-v1';
 @Component({
@@ -17,6 +17,9 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
   readonly icons = { Gift, Users, Armchair, House, Play, Pause, RotateCcw, Download, Upload, Plus, Check, Move, Sparkles, Trash2, ArrowRight, Lock };
   readonly tabs = [ { id: 'box', label: 'Superbox', icon: Gift }, { id: 'person', label: 'Osoby', icon: Users }, { id: 'furniture', label: 'Nábytek', icon: Armchair }, { id: 'house', label: 'Domky', icon: House } ] as const;
   readonly personKinds = Object.entries(PERSON_LABELS);
+  readonly hairLabels = PERSON_HAIR_LABELS;
+  readonly outfitLabels = PERSON_OUTFIT_LABELS;
+  get personOptions() { return PERSON_OPTIONS[this.doc.person.kind]; }
   readonly furnitureKinds = Object.entries(FURNITURE_LABELS);
   readonly patterns = [{ value: 'plain', label: 'Bez vzoru' }, { value: 'dots', label: 'Tečky' }, { value: 'stars', label: 'Hvězdičky' }, { value: 'stripes', label: 'Pruhy' }];
   readonly inflations = [{ value: 'puff', label: 'Nafukování', hint: 'Roste a pulzuje' }, { value: 'spin', label: 'Roztočení', hint: 'Zrychlující otočky' }, { value: 'wobble', label: 'Proměny tvarů', hint: 'Protáhne se a zavlní' }, { value: 'bounce', label: 'Poskakování', hint: 'Skáče a pruží' }];
@@ -63,7 +66,7 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
   }
   changed(kind: DesignKind = this.section): void {
     if (kind === 'box') { this.doc.box = { ...this.doc.box }; this.resetAnimation(); }
-    if (kind === 'person') this.doc.person = { ...this.doc.person };
+    if (kind === 'person') this.doc.person = normalizePersonSpec(this.doc.person);
     if (kind === 'furniture') this.doc.furniture = { ...this.doc.furniture };
     if (kind === 'house') {
       this.doc.house = { ...this.doc.house, cost: clamp(Math.round(this.doc.house.cost || 1), 1, 1000) };
