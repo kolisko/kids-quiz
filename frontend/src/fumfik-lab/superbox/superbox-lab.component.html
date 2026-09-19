@@ -37,6 +37,7 @@
           </details>
         }
         @case ('person') {
+          <button type="button" class="quiet-button full-width random-person" title="Vylosovat typ, vzhled i oblečení postavy" (click)="randomizePerson()"><svg [lucideIcon]="icons.Shuffle" [size]="16"></svg>Náhodná postava</button>
           <label class="field">Typ osoby<select aria-label="Typ osoby" [ngModel]="doc.person.kind" (ngModelChange)="changePersonKind($event)">@for (kind of personKinds; track kind[0]) { <option [value]="kind[0]">{{ kind[1] }}</option> }</select></label>
           <p class="hint age-hint">{{ personAgeHint }}</p>
           <details class="person-group" open>
@@ -90,7 +91,12 @@
           <p class="hint">Zkušební stav labu. Skutečné herní odměny tím neměníte.</p>
         }
       }
-      <div class="save-design"><label class="field" for="design-name">Jméno návrhu<input id="design-name" type="text" maxlength="80" [(ngModel)]="designName" (keydown.enter)="saveDesign()"></label><button type="button" class="primary-button full-width" (click)="saveDesign()"><svg [lucideIcon]="icons.Plus" [size]="16"></svg>Uložit do knihovny</button></div>
+      <div class="save-design">
+        @if (editingDesign; as editing) { <p class="hint editing-context">Upravujete: <strong>{{ editing.name }}</strong></p> }
+        <label class="field" for="design-name">Jméno návrhu<input id="design-name" type="text" maxlength="80" [(ngModel)]="designName" (keydown.enter)="editingDesign ? updateDesign() : saveDesign()"></label>
+        @if (editingDesign) { <button type="button" class="primary-button full-width" (click)="updateDesign()"><svg [lucideIcon]="icons.Check" [size]="16"></svg>Uložit změny</button> }
+        <button type="button" class="full-width" [class.primary-button]="!editingDesign" [class.quiet-button]="!!editingDesign" (click)="saveDesign()"><svg [lucideIcon]="icons.Plus" [size]="16"></svg>{{ editingDesign ? 'Uložit jako nový návrh' : 'Uložit do knihovny' }}</button>
+      </div>
     </aside>
     <main class="preview-column">
       <div class="preview-title"><h3>{{ currentTitle }}</h3><p>{{ currentHint }}</p></div>
@@ -120,7 +126,7 @@
     </main>
     <aside class="library panel" aria-label="Knihovna návrhů">
       <div class="panel-heading"><h3>{{ section === 'house' ? 'Zabydlete domeček' : section === 'box' ? 'Co bude uvnitř?' : 'Knihovna návrhů' }}</h3><span class="count-badge">{{ visibleDesigns.length }}</span></div>
-      <p class="library-hint">{{ section === 'box' ? 'Vyberte odměnu, která se objeví po rozbalení.' : section === 'house' ? 'Klepnutím přidejte prvek, potom ho přesuňte na své místo.' : 'Klepnutím načtěte návrh a vytvořte jeho další variantu.' }}</p>
+      <p class="library-hint">{{ section === 'box' ? 'Vyberte odměnu, která se objeví po rozbalení.' : section === 'house' ? 'Klepnutím přidejte prvek, potom ho přesuňte na své místo.' : 'Klepnutím načtěte návrh. Uložte jeho změny nebo novou kopii.' }}</p>
       <div class="library-filters"><button type="button" [class.selected]="libraryFilter === 'rewards'" (click)="libraryFilter = 'rewards'">Odměny</button><button type="button" [class.selected]="libraryFilter === 'box'" (click)="libraryFilter = 'box'">Balíčky</button><button type="button" [class.selected]="libraryFilter === 'house'" (click)="libraryFilter = 'house'">Domky</button></div>
       <div class="design-grid">
         @for (design of visibleDesigns; track design.id) {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_BOX, DEFAULT_HOUSE, DEFAULT_PERSON, DEFAULT_FURNITURE, defaultDocument, boxFrame, particleFrame, totalDuration, boundPlacement, normalizePersonSpec, parseDocument, validSpec, personForKind, PERSON_OPTIONS, PERSON_LABELS, PERSON_FACE_LABELS, PERSON_EYE_LABELS, PERSON_HAIR_LABELS, PERSON_TOP_LABELS, PERSON_BOTTOM_LABELS, PERSON_SHOE_LABELS } from '../src/app/superbox/superbox.model.ts';
+import { DEFAULT_BOX, DEFAULT_HOUSE, DEFAULT_PERSON, DEFAULT_FURNITURE, defaultDocument, boxFrame, particleFrame, totalDuration, boundPlacement, normalizePersonSpec, parseDocument, validSpec, personForKind, randomPersonSpec, saveLibraryDesign, PERSON_OPTIONS, PERSON_LABELS, PERSON_FACE_LABELS, PERSON_EYE_LABELS, PERSON_HAIR_LABELS, PERSON_TOP_LABELS, PERSON_BOTTOM_LABELS, PERSON_SHOE_LABELS } from '../src/app/superbox/superbox.model.ts';
 import { personGeometry } from '../src/app/superbox/person-geometry.ts';
 
 test('a complete workshop round trips, including rewards and arranged furniture', () => {
@@ -219,4 +219,67 @@ test('age, face and eye geometry is distinct, finite and keeps long hair at the 
     const g = personGeometry({ ...personForKind(kind), hairStyle: 'floor-length' });
     assert.ok(Math.abs(g.headY + (g.hairEnd - 62) * g.headScale - 183) < .001);
   }
+});
+
+
+test('random people cover every type and always obey appearance rules and round-trip validation', () => {
+  let seed = 0x5eeda11;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
+  const types = new Set(), appearances = new Set();
+  for (let i = 0; i < 1000; i++) {
+    const person = randomPersonSpec(random);
+    assert.ok(validSpec('person', person), JSON.stringify(person));
+    types.add(person.kind); appearances.add(JSON.stringify(person));
+    const doc = defaultDocument(); doc.person = person;
+    assert.deepEqual(parseDocument(JSON.stringify(doc)).person, person);
+  }
+  assert.deepEqual([...types].sort(), Object.keys(PERSON_LABELS).sort());
+  assert.equal(appearances.size, 1000);
+  for (const boundary of [0, 1 - Number.EPSILON]) assert.ok(validSpec('person', randomPersonSpec(() => boundary)));
+});
+
+
+test('editing saved designs replaces the same entry for every editor without changing rewards or house copies', () => {
+  for (const kind of ['person', 'furniture', 'box', 'house']) {
+    let doc = defaultDocument();
+    const created = saveLibraryDesign(doc, kind, 'Original');
+    doc = created.document;
+    if (kind === 'person' || kind === 'furniture') doc.rewardId = created.design.id;
+    const libraryBefore = structuredClone(doc.library), placementsBefore = structuredClone(doc.placements);
+    const previousLength = doc.library.length;
+    if (kind === 'person') doc.person = { ...personForKind('man'), top: 'hoodie' };
+    if (kind === 'furniture') doc.furniture = { ...doc.furniture, color: '#123456' };
+    if (kind === 'box') doc.box = { ...doc.box, ribbon: '#123456' };
+    if (kind === 'house') doc.house = { ...doc.house, wall: '#123456' };
+    const updated = saveLibraryDesign(doc, kind, ' Updated ', created.design.id);
+    assert.equal(updated.document.library.length, previousLength);
+    assert.equal(updated.design.id, created.design.id);
+    assert.equal(updated.design.name, 'Updated');
+    assert.deepEqual(updated.design.spec, doc[kind]);
+    assert.notEqual(updated.design.spec, doc[kind]);
+    assert.deepEqual(doc.library, libraryBefore, 'the previous library must not be mutated');
+    assert.deepEqual(updated.document.placements, placementsBefore);
+    assert.equal(updated.document.rewardId, doc.rewardId);
+    assert.deepEqual(parseDocument(JSON.stringify(updated.document)), updated.document);
+    const copy = saveLibraryDesign(updated.document, kind, 'Copy');
+    assert.notEqual(copy.design.id, updated.design.id);
+    assert.equal(copy.document.library.length, previousLength + 1);
+    assert.deepEqual(copy.document.library.find(d => d.id === updated.design.id), updated.design);
+  }
+});
+
+test('full libraries can update existing entries but cannot silently add more copies', () => {
+  const doc = defaultDocument();
+  const source = doc.library[0];
+  doc.library = Array.from({ length: 100 }, (_, i) => ({ ...structuredClone(source), id: i ? `design-${i}` : source.id }));
+  assert.equal(saveLibraryDesign(doc, 'person', 'Updated', source.id).document.library.length, 100);
+  assert.throws(() => saveLibraryDesign(doc, 'person', 'Copy'), /100 návrhů/);
+});
+
+test('invalid update targets and empty names never overwrite or duplicate a saved design', () => {
+  const doc = defaultDocument(), before = structuredClone(doc);
+  assert.throws(() => saveLibraryDesign(doc, 'person', 'Updated', 'missing'), /Původní návrh/);
+  assert.throws(() => saveLibraryDesign(doc, 'box', 'Updated', 'princess'), /Původní návrh/);
+  assert.throws(() => saveLibraryDesign(doc, 'person', '  ', 'princess'), /Pojmenujte/);
+  assert.deepEqual(doc, before);
 });

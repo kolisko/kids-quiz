@@ -1,20 +1,21 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { LucideDynamicIcon, LucideGift as Gift, LucideUsers as Users, LucideArmchair as Armchair, LucideHouse as House, LucidePlay as Play, LucidePause as Pause, LucideRotateCcw as RotateCcw, LucideDownload as Download, LucideUpload as Upload, LucidePlus as Plus, LucideCheck as Check, LucideMove as Move, LucideSparkles as Sparkles, LucideTrash2 as Trash2, LucideArrowRight as ArrowRight, LucideLockKeyhole as Lock } from '@lucide/angular';
+import { LucideDynamicIcon, LucideGift as Gift, LucideUsers as Users, LucideArmchair as Armchair, LucideHouse as House, LucidePlay as Play, LucidePause as Pause, LucideRotateCcw as RotateCcw, LucideDownload as Download, LucideUpload as Upload, LucidePlus as Plus, LucideCheck as Check, LucideMove as Move, LucideSparkles as Sparkles, LucideTrash2 as Trash2, LucideArrowRight as ArrowRight, LucideLockKeyhole as Lock, LucideShuffle as Shuffle } from '@lucide/angular';
 import { CollectibleComponent } from '../../app/superbox/collectible.component';
 import { SuperboxComponent } from '../../app/superbox/superbox.component';
 import { HouseComponent } from '../../app/superbox/house.component';
-import { DEFAULT_BOX, DEFAULT_FURNITURE, DEFAULT_HOUSE, Design, DesignKind, FURNITURE_LABELS, PERSON_LABELS, PERSON_HAIR_LABELS, PERSON_TOP_LABELS, PERSON_BOTTOM_LABELS, PERSON_SHOE_LABELS, PERSON_FACE_LABELS, PERSON_EYE_LABELS, PERSON_BUILD_LABELS, PERSON_BEARD_LABELS, PERSON_OPTIONS, PersonKind, Placement, Reward, SuperboxDocument, boundPlacement, boxFrame, canHaveBeard, clamp, clone, defaultDocument, isAdultPerson, isFemalePerson, normalizePersonSpec, parseDocument, personForKind, totalDuration, wrinkleRange } from '../../app/superbox/superbox.model';
+import { DEFAULT_BOX, DEFAULT_FURNITURE, DEFAULT_HOUSE, Design, DesignKind, FURNITURE_LABELS, PERSON_LABELS, PERSON_HAIR_LABELS, PERSON_TOP_LABELS, PERSON_BOTTOM_LABELS, PERSON_SHOE_LABELS, PERSON_FACE_LABELS, PERSON_EYE_LABELS, PERSON_BUILD_LABELS, PERSON_BEARD_LABELS, PERSON_OPTIONS, PersonKind, Placement, Reward, SuperboxDocument, boundPlacement, boxFrame, canHaveBeard, clamp, clone, defaultDocument, isAdultPerson, isFemalePerson, normalizePersonSpec, parseDocument, personForKind, randomPersonSpec, saveLibraryDesign, totalDuration, wrinkleRange } from '../../app/superbox/superbox.model';
 
 const STORAGE_KEY = 'fumfik-superbox-lab-v1';
+const EDITOR_STORAGE_KEY = 'fumfik-superbox-editing-v1';
 @Component({
   selector: 'app-superbox-lab', standalone: true,
   imports: [CommonModule, FormsModule, LucideDynamicIcon, CollectibleComponent, SuperboxComponent, HouseComponent],
   templateUrl: './superbox-lab.component.html', styleUrl: './superbox-lab.component.css', changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class SuperboxLabComponent implements OnInit, OnDestroy {
-  readonly icons = { Gift, Users, Armchair, House, Play, Pause, RotateCcw, Download, Upload, Plus, Check, Move, Sparkles, Trash2, ArrowRight, Lock };
+  readonly icons = { Gift, Users, Armchair, House, Play, Pause, RotateCcw, Download, Upload, Plus, Check, Move, Sparkles, Trash2, ArrowRight, Lock, Shuffle };
   readonly tabs = [ { id: 'box', label: 'Superbox', icon: Gift }, { id: 'person', label: 'Osoby', icon: Users }, { id: 'furniture', label: 'Nábytek', icon: Armchair }, { id: 'house', label: 'Domky', icon: House } ] as const;
   readonly personKinds = Object.entries(PERSON_LABELS);
   readonly hairLabels = PERSON_HAIR_LABELS;
@@ -41,6 +42,7 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
   section: DesignKind = 'box';
   libraryFilter: 'rewards' | 'box' | 'house' = 'rewards';
   designName = 'Můj Superbox';
+  editingDesignIds: Partial<Record<DesignKind, string>> = {};
   selectedPlacementId = '';
   elapsed = 0;
   playing = false;
@@ -54,6 +56,15 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) { this.doc = parseDocument(saved); this.saveStatus = 'Načteno z tohoto prohlížeče'; }
     } catch { this.error = 'Uložený návrh se nepodařilo načíst. Zobrazuji výchozí návrhy.'; }
+    try {
+      const editing: unknown = JSON.parse(localStorage.getItem(EDITOR_STORAGE_KEY) ?? '{}');
+      if (editing && typeof editing === 'object' && !Array.isArray(editing)) {
+        for (const design of this.doc.library) {
+          if ((editing as Record<string, unknown>)[design.kind] === design.id) this.editingDesignIds[design.kind] = design.id;
+        }
+      }
+    } catch { /* Invalid optional editor context must not discard saved designs. */ }
+    this.designName = this.editingDesign?.name ?? this.designName;
   }
   ngOnInit(): void { this.play(); }
   ngOnDestroy(): void { this.pause(); }
@@ -69,12 +80,13 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
     return this.doc.library.filter(d => this.libraryFilter === 'rewards' ? (this.section === 'person' ? d.kind === 'person' : this.section === 'furniture' ? d.kind === 'furniture' : d.kind === 'person' || d.kind === 'furniture') : d.kind === this.libraryFilter);
   }
   get selectedPlacement(): Placement | undefined { return this.doc.placements.find(p => p.id === this.selectedPlacementId); }
+  get editingDesign(): Design | undefined { return this.doc.library.find(d => d.id === this.editingDesignIds[this.section] && d.kind === this.section); }
   get locked(): boolean { return this.doc.fumfiks < this.doc.house.cost; }
   get currentTitle(): string { return ({ box: 'Balíček plný překvapení', person: 'Malí obyvatelé velkých příběhů', furniture: 'Každý poklad má své místo', house: 'Místo pro všechny poklady' })[this.section]; }
   get currentHint(): string { return ({ box: 'Barvy, pohyb a ten okamžik překvapení. Všechno podle vás.', person: 'Vytvořte obyvatele a uložte ho mezi odměny do Superboxu.', furniture: 'Od první židle po oblíbeného medvídka. Vytvořte vlastní sadu.', house: 'Vyzkoušejte odemykání za fumfíky a zařiďte domek tahem prstu.' })[this.section]; }
   setSection(section: DesignKind): void {
     this.pause(); this.section = section; this.libraryFilter = 'rewards';
-    this.designName = ({ box: 'Můj Superbox', person: PERSON_LABELS[this.doc.person.kind], furniture: FURNITURE_LABELS[this.doc.furniture.kind], house: 'Můj domeček' })[section];
+    this.designName = this.editingDesign?.name ?? ({ box: 'Můj Superbox', person: PERSON_LABELS[this.doc.person.kind], furniture: FURNITURE_LABELS[this.doc.furniture.kind], house: 'Můj domeček' })[section];
     this.message = '';
   }
   changed(kind: DesignKind = this.section): void {
@@ -87,10 +99,17 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
     }
     this.persist();
   }
+  randomizePerson(): void {
+    this.doc.person = randomPersonSpec();
+    delete this.editingDesignIds.person;
+    this.designName = PERSON_LABELS[this.doc.person.kind];
+    this.message = '';
+    this.changed('person');
+  }
   changePersonKind(kind: PersonKind): void {
     const defaults = personForKind(kind);
     this.doc.person = normalizePersonSpec({ ...this.doc.person, kind, wrinkles: defaults.wrinkles });
-    this.designName = PERSON_LABELS[kind];
+    if (!this.editingDesign) this.designName = PERSON_LABELS[kind];
     this.changed('person');
   }
   setBox(key: 'pattern' | 'inflation' | 'burst', value: string): void { this.doc.box = { ...this.doc.box, [key]: value }; this.changed('box'); }
@@ -127,19 +146,23 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
     if (pool.length) this.chooseReward(pool[Math.floor(Math.random() * pool.length)].id);
     this.play();
   }
-  saveDesign(): void {
-    const name = this.designName.trim();
-    if (!name) { this.error = 'Pojmenujte návrh před uložením.'; return; }
-    if (this.doc.library.length >= 100) { this.error = 'Knihovna pojme 100 návrhů. Nejdříve některý odeberte.'; return; }
-    const design = { id: crypto.randomUUID(), name: name.slice(0, 80), kind: this.section, spec: clone(this.doc[this.section]) } as Design;
-    this.doc.library = [...this.doc.library, design];
-    this.libraryFilter = design.kind === 'box' || design.kind === 'house' ? design.kind : 'rewards';
-    this.persist(); this.message = `„${design.name}“ je v knihovně.`;
+  saveDesign(): void { this.storeDesign(); }
+  updateDesign(): void { if (this.editingDesign) this.storeDesign(this.editingDesign.id); }
+  private storeDesign(existingId?: string): void {
+    try {
+      const saved = saveLibraryDesign(this.doc, this.section, this.designName, existingId);
+      this.doc = saved.document;
+      this.editingDesignIds[this.section] = saved.design.id;
+      this.designName = saved.design.name;
+      this.libraryFilter = saved.design.kind === 'box' || saved.design.kind === 'house' ? saved.design.kind : 'rewards';
+      this.persist(); this.message = existingId ? `Změny návrhu „${saved.design.name}“ jsou uložené.` : `„${saved.design.name}“ je v knihovně.`;
+    } catch (error) { this.error = error instanceof Error ? error.message : 'Návrh se nepodařilo uložit.'; }
   }
   useDesign(design: Design): void {
     if ((design.kind === 'person' || design.kind === 'furniture') && this.section === 'box') { this.chooseReward(design.id); return; }
     if ((design.kind === 'person' || design.kind === 'furniture') && this.section === 'house') { this.addToHouse(design, design.name); return; }
     this.setSection(design.kind);
+    this.editingDesignIds[design.kind] = design.id;
     if (design.kind === 'box') this.doc.box = clone(design.spec);
     if (design.kind === 'person') this.doc.person = clone(design.spec);
     if (design.kind === 'furniture') this.doc.furniture = clone(design.spec);
@@ -150,6 +173,7 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
   deleteDesign(design: Design): void {
     if ((design.kind === 'person' || design.kind === 'furniture') && this.rewardDesigns.length <= 1) { this.error = 'V knihovně musí zůstat alespoň jedna odměna.'; return; }
     this.doc.library = this.doc.library.filter(d => d.id !== design.id);
+    if (this.editingDesignIds[design.kind] === design.id) delete this.editingDesignIds[design.kind];
     if (this.doc.rewardId === design.id) this.chooseReward(this.rewardDesigns[0].id);
     this.persist(); this.message = `„${design.name}“ odebráno z knihovny.`;
   }
@@ -171,7 +195,7 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
   fumfiksChanged(): void { this.doc.fumfiks = clamp(Math.round(this.doc.fumfiks || 0), 0, 1000); this.persist(); }
   persist(): void {
     this.error = '';
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.doc)); this.saveStatus = 'Uloženo v tomto prohlížeči'; }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.doc)); localStorage.setItem(EDITOR_STORAGE_KEY, JSON.stringify(this.editingDesignIds)); this.saveStatus = 'Uloženo v tomto prohlížeči'; }
     catch { this.saveStatus = 'Automatické uložení není dostupné'; this.error = 'Prohlížeč návrh neuložil. Použijte Export JSON pro jeho zachování.'; }
   }
   exportDocument(): void {
@@ -186,7 +210,7 @@ export class SuperboxLabComponent implements OnInit, OnDestroy {
     try {
       if (file.size > 600_000) throw new Error('Soubor je příliš velký. Maximum je 600 kB.');
       const doc = parseDocument(await file.text());
-      this.resetAnimation(); this.doc = doc; this.selectedPlacementId = ''; this.persist(); this.message = 'Návrhy i rozmístění byly načteny.';
+      this.resetAnimation(); this.doc = doc; this.editingDesignIds = {}; this.selectedPlacementId = ''; this.setSection(this.section); this.persist(); this.message = 'Návrhy i rozmístění byly načteny.';
     } catch (error) { this.error = error instanceof Error ? error.message : 'Soubor se nepodařilo načíst.'; }
     input.value = '';
     this.cdr.markForCheck();

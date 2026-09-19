@@ -99,9 +99,40 @@ export function personForKind(kind: PersonKind): PersonSpec {
     shoes: kind === 'baby' ? 'booties' : 'sneakers',
   });
 }
+export function randomPersonSpec(random: () => number = Math.random): PersonSpec {
+  const pick = <T>(values: readonly T[]): T => values[Math.floor(random() * values.length)];
+  const key = <T extends string>(labels: Record<T, string>): T => pick(Object.keys(labels) as T[]);
+  const kind = key(PERSON_LABELS), options = PERSON_OPTIONS[kind];
+  const [minWrinkles, maxWrinkles] = wrinkleRange(kind);
+  const clothes = ['#bba1ed', '#d9857c', '#91b5ca', '#a7c8b6', '#d4af62', '#697b8b', '#bc9bb9', '#f5e5cf'];
+  return normalizePersonSpec({
+    ...personForKind(kind),
+    face: key(PERSON_FACE_LABELS), eyes: key(PERSON_EYE_LABELS), build: key(PERSON_BUILD_LABELS),
+    skin: pick(['#f4d2b6', '#efbe9e', '#d8a17e', '#b97f59', '#8c593e', '#633f30']),
+    hair: pick(isOlderPerson(kind) ? ['#b5b4b0', '#e2ddd4', '#77716b', '#8b7769'] : ['#332a25', '#713e33', '#b47442', '#d8b767', '#2e252c']),
+    hairStyle: pick(options.hairStyles), fringe: random() < .4,
+    wrinkles: minWrinkles + Math.floor(random() * (maxWrinkles - minWrinkles + 1)),
+    facialHair: canHaveBeard(kind) ? key(PERSON_BEARD_LABELS) : 'none',
+    crown: isFemalePerson(kind) && random() < .15,
+    top: pick(options.tops), bottom: pick(options.bottoms), shoes: pick(options.shoes),
+    topColor: pick(clothes), bottomColor: pick(clothes), shoeColor: pick(clothes), accent: pick(clothes),
+  });
+}
 export const FURNITURE_LABELS: Record<FurnitureKind, string> = { chair: 'Židle', table: 'Stůl', wardrobe: 'Skříň', toy: 'Hračka' };
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 export const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+export function saveLibraryDesign(doc: SuperboxDocument, kind: DesignKind, name: string, existingId?: string): { document: SuperboxDocument; design: Design } {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('Pojmenujte návrh před uložením.');
+  const existing = existingId ? doc.library.find(d => d.id === existingId && d.kind === kind) : undefined;
+  if (existingId && !existing) throw new Error('Původní návrh už není v knihovně. Uložte ho jako nový návrh.');
+  if (!existing && doc.library.length >= 100) throw new Error('Knihovna pojme 100 návrhů. Nejdříve některý odeberte.');
+  if (!validSpec(kind, doc[kind])) throw new Error('Návrh obsahuje neplatné parametry. Zkontrolujte jeho nastavení.');
+  const design = { id: existing?.id ?? crypto.randomUUID(), name: trimmed.slice(0, 80), kind, spec: clone(doc[kind]) } as Design;
+  const library = existing ? doc.library.map(d => d.id === existing.id ? design : d) : [...doc.library, design];
+  return { document: { ...doc, library }, design };
+}
 
 export function defaultDocument(): SuperboxDocument {
   const library: Design[] = [
