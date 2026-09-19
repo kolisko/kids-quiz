@@ -83,7 +83,9 @@ The workshop has four editors:
   princess skirt, sneakers, boots, sandals, clogs and pom-pom slippers. Adult female
   types also offer bras and heels; babies have onesies, diapers and booties. Shared
   clothing categories use the selected body's cut. Crown is an accessory, not an age
-  category. Changing type replaces incompatible choices while retaining colors and
+  category. **Náhodná postava** generates a complete draft, including its type,
+  colors and compatible appearance choices. It can be edited or saved as usual.
+  Changing type replaces incompatible choices while retaining colors and
   compatible parts; reset restores the current type's age-specific defaults.
 - **Nábytek:** chairs, tables, wardrobes and toys (bear, blocks, car), with colors,
   rounded/square edges where applicable and optional stars/hearts.
@@ -92,7 +94,11 @@ The workshop has four editors:
   simulation. Furniture and people support pointer capture for touch/mouse dragging,
   arrow-key movement (Shift for larger steps), resizing, mirroring and removal.
 
-Named designs can be saved as independent variants in a local library. Select a
+Named designs can be saved as independent variants in a local library. Opening a
+saved design enables **Uložit změny**, which replaces that entry while keeping its
+ID and selected reward. **Uložit jako nový návrh** creates a separate copy. Editing
+targets are remembered per editor, including after a reload; imports clear them.
+Generating a random person starts a new draft instead of overwriting its source. Select a
 saved person/furniture design as a Superbox reward, or choose a random reward.
 After revealing it, **Do domečku** adds an independent copy to the room. Existing
 placements are not altered when editing or deleting their original library design.

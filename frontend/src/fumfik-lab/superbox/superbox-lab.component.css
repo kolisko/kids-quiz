@@ -18,6 +18,9 @@ button { color:inherit; } button:disabled { opacity:.45; cursor:default; }
 .editor-grid { display:grid; grid-template-columns:256px minmax(300px,1fr) 258px; gap:24px; align-items:start; }
 .panel { background:var(--paper); border:1px solid var(--line); border-radius:12px; }
 .settings,.library { padding:20px; }
+.random-person { margin-bottom:18px; }
+.save-design > button + button { margin-top:8px; }
+.editing-context { margin:0 0 12px; overflow-wrap:anywhere; }
 .age-hint { margin:-7px 0 19px; }
 .person-group { border-top:1px solid var(--line); padding:14px 0; }
 .person-group summary { cursor:pointer; font-size:12px; font-weight:600; color:var(--green); }
