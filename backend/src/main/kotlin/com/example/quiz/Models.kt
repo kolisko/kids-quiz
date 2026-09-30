@@ -35,6 +35,7 @@ enum class QuizTestType {
     multiplication,
     arithmetic,
     english,
+    czech_spelling,
 }
 
 @Serializable
@@ -221,6 +222,7 @@ enum class TestErrorGame {
     arithmetic,
     spelling,
     flipcards,
+    czech_spelling,
 }
 
 @Serializable
@@ -312,6 +314,7 @@ enum class TestMenuLaunchKind {
     arithmetic,
     spelling,
     flipcards,
+    czech_spelling,
 }
 
 @Serializable
@@ -329,6 +332,8 @@ data class TestMenuLaunchResponse(
     val mathStats: Map<PracticeDirection, QuestionStatsSnapshot> = emptyMap(),
     val arithmeticQuestions: List<ArithmeticQuestion> = emptyList(),
     val arithmeticStats: ArithmeticStatsSnapshot? = null,
+    val czechSpellingQuestions: List<CzechSpellingQuestion> = emptyList(),
+    val czechSpellingStats: CzechSpellingStatsSnapshot? = null,
     val spellingSession: SpellingSession? = null,
     val spellingStats: SpellingStatsSnapshot? = null,
     val flipcardStats: FlipcardStatsSnapshot? = null,

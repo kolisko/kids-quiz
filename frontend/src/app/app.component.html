@@ -257,6 +257,26 @@
       (updated)="settings.timedArithmeticSeconds = $event"></app-timed-arithmetic-settings>
 
     <section class="settings-section">
+      <h2>Český jazyk – Pravopis (ú/ů a i/y)</h2>
+      <p class="settings-note">Tvůj seznam slov pro doplňování. Napiš správně celá slova oddělená čárkami, například úkol, stůl, žirafa, ryba.</p>
+      <div class="spelling-set-list">
+        <label class="spelling-set-row">
+          <span class="spelling-set-title">Slova pro doplňování</span>
+          <textarea rows="6" name="czechSpellingWords" [(ngModel)]="czechSpellingWordsInput"
+            (ngModelChange)="czechSpellingWordsSaved = false"
+            [disabled]="loading || czechSpellingWordsLoading || czechSpellingWordsSaving"></textarea>
+        </label>
+      </div>
+      <p class="settings-note">V každé otázce chybí jedno ú, ů, i nebo y. Slovo s více těmito písmeny může mít více zadání. Dlouhá í a ý zůstávají vidět. Vybírej slova jednoznačná i bez věty (například kůra a kúra se pro tento test nehodí).</p>
+      <button class="secondary-button compact-button" type="button" (click)="saveCzechSpellingWords()"
+        [disabled]="loading || czechSpellingWordsLoading || czechSpellingWordsSaving">
+        {{ czechSpellingWordsSaving ? 'Ukládám...' : 'Uložit slova pro doplňování' }}
+      </button>
+      <p class="settings-note" role="status" *ngIf="czechSpellingWordsSaved">Slova jsou uložená pro příští test.</p>
+      <p class="error settings-error" role="alert" *ngIf="czechSpellingWordsError">{{ czechSpellingWordsError }}</p>
+    </section>
+
+    <section class="settings-section">
       <h2>Zobrazení testů</h2>
       <p class="settings-note">
         Skrytý rodič schová celou větev menu. Položku můžeš kdykoliv znovu zapnout.
@@ -909,6 +929,7 @@
             (error)="onSpellingImageError()">
         </div>
         <h1
+          [class.czech-spelling-word]="activeGame === 'czech_spelling'"
           [class.spelling-answer-clickable]="spellingAnswerTextClickable"
           [class.spelling-answer-audio-active]="spellingAnswerWordActive"
           [attr.role]="spellingAnswerTextClickable ? 'button' : null"
@@ -920,6 +941,12 @@
         </h1>
         <p class="answer-hint" *ngIf="!answerVisible && currentAnswerHint">{{ currentAnswerHint }}</p>
         <p class="timeout-note" *ngIf="timedOut">Čas vypršel, počítá se jako chyba.</p>
+        <p class="czech-spelling-feedback" role="status" *ngIf="activeGame === 'czech_spelling' && answerVisible && !timedOut"
+          [class.czech-spelling-correct]="czechSpellingCorrect" [class.czech-spelling-wrong]="czechSpellingCorrect === false">
+          <span aria-hidden="true">{{ czechSpellingCorrect ? '✓' : '✕' }}</span>
+          <strong>{{ czechSpellingCorrect ? 'Správně!' : 'Špatně.' }}</strong>
+          <span *ngIf="czechSpellingCorrect === false">Správně je {{ currentCzechSpellingAnswer }}.</span>
+        </p>
       </div>
       <ng-template #flipcardCard>
         <div class="question-card flipcard-card">
@@ -970,7 +997,24 @@
         </div>
       </ng-template>
 
-      <div class="main-actions answer-actions" *ngIf="activeGame !== 'flipcards'">
+      <div class="main-actions answer-actions czech-spelling-actions" *ngIf="activeGame === 'czech_spelling'">
+        <button class="primary-button answer-button czech-spelling-letter" type="button"
+          *ngFor="let letter of currentCzechSpellingQuestion?.options"
+          [disabled]="answerVisible"
+          [class.czech-letter-wrong]="answerVisible && letter === czechSpellingSelectedLetter && czechSpellingCorrect === false"
+          [class.czech-letter-correct]="answerVisible && letter === czechSpellingSelectedLetter && czechSpellingCorrect === true"
+          [class.czech-letter-unselected]="answerVisible && letter !== czechSpellingSelectedLetter"
+          (click)="selectCzechSpellingLetter(letter)">
+          <span>{{ letter }}</span>
+          <small *ngIf="answerVisible && letter === czechSpellingSelectedLetter && czechSpellingCorrect === false">✕ Tvoje volba</small>
+          <small *ngIf="answerVisible && letter === czechSpellingSelectedLetter && czechSpellingCorrect === true">✓ Správně</small>
+        </button>
+        <button class="primary-button czech-spelling-next wide-action" type="button" *ngIf="answerVisible" (click)="nextCzechSpellingQuestion()">
+          {{ score === scoreGoal ? 'Dokončit test' : 'Další' }}
+        </button>
+      </div>
+
+      <div class="main-actions answer-actions" *ngIf="activeGame !== 'flipcards' && activeGame !== 'czech_spelling'">
         <button class="primary-button answer-button wide-action" type="button" *ngIf="!answerVisible" (click)="showAnswer()">
           Ukázat odpověď
         </button>

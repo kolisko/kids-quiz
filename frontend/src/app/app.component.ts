@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnIni
 import { FormsModule } from '@angular/forms';
 import { LucideArrowLeft as ArrowLeft, LucideCarFront as CarFront, LucideFlag as Flag, LucideFlaskConical as FlaskConical, LucideInfo as Info, LucideListRestart as ListRestart, LucideLogOut as LogOut, LucideDynamicIcon, LucideMessageCircleOff as MessageCircleOff, LucidePlay as Play, LucideRefreshCw as RefreshCw, LucideSettings as Settings, LucideTrophy as Trophy, LucideUserCircle as UserCircle } from '@lucide/angular';
 import { TestSessionEngine, TestSessionOutcome } from './test-session-engine';
+import { CzechSpellingQuestion, CzechSpellingStatsSnapshot, czechSpellingCandidates, czechSpellingPrompt, czechSpellingResults, czechSpellingWordsError } from './czech-spelling';
 import { FumfikAppearance, FumfikAvatarComponent } from './fumfik/fumfik.component';
 import { LoginFumfiksComponent } from './fumfik/login-fumfiks.component';
 import { TimedArithmeticComponent } from './timed-arithmetic/timed-arithmetic.component';
@@ -10,8 +11,8 @@ import { TimedArithmeticSettingsComponent } from './timed-arithmetic/timed-arith
 import { TimedSummary } from './timed-arithmetic/timed-arithmetic.model';
 
 type Screen = 'login' | 'start' | 'audioPrep' | 'play' | 'settings' | 'assetLibrary' | 'trophies' | 'finished' | 'timedArithmetic';
-type QuizTestType = 'multiplication' | 'arithmetic' | 'english';
-type ActiveGame = 'multiplication' | 'arithmetic' | 'spelling' | 'flipcards';
+type QuizTestType = 'multiplication' | 'arithmetic' | 'english' | 'czech_spelling';
+type ActiveGame = 'multiplication' | 'arithmetic' | 'spelling' | 'flipcards' | 'czech_spelling';
 type PracticeDirection = 'product_to_factors' | 'factors_to_product';
 type PracticeMode = PracticeDirection | 'mix';
 type ArithmeticMode = 'easy' | 'normal' | 'hard' | 'mix';
@@ -178,7 +179,7 @@ interface TestMenuNode {
   visible: boolean;
 }
 
-type TestMenuLaunchKind = 'multiplication' | 'arithmetic' | 'spelling' | 'flipcards' | 'timed_arithmetic';
+type TestMenuLaunchKind = ActiveGame | 'timed_arithmetic';
 
 interface TestMenuLaunchResponse {
   timedArithmetic?: TimedSummary | null;
@@ -194,6 +195,8 @@ interface TestMenuLaunchResponse {
   mathStats?: Record<PracticeDirection, QuestionStatsSnapshot>;
   arithmeticQuestions?: ArithmeticQuestion[];
   arithmeticStats?: ArithmeticStatsSnapshot | null;
+  czechSpellingQuestions?: CzechSpellingQuestion[];
+  czechSpellingStats?: CzechSpellingStatsSnapshot | null;
   spellingSession?: SpellingSession | null;
   spellingStats?: SpellingStatsSnapshot | null;
   flipcardStats?: FlipcardStatsSnapshot | null;
@@ -669,6 +672,15 @@ export class AppComponent implements OnInit, OnDestroy {
     factors_to_product: {},
   };
   arithmeticStats: Record<string, QuestionStats> = {};
+  czechSpellingQuestions: CzechSpellingQuestion[] = [];
+  czechSpellingStats: Record<string, QuestionStats> = {};
+  czechSpellingCorrect: boolean | null = null;
+  czechSpellingSelectedLetter: string | null = null;
+  czechSpellingWordsInput = '';
+  czechSpellingWordsLoading = false;
+  czechSpellingWordsSaving = false;
+  czechSpellingWordsSaved = false;
+  czechSpellingWordsError: string | null = null;
   spellingSetInputsByLanguage: Record<LearningLanguage, string[]> = { en: [''], de: [''], es: [''], cs: [''] };
   spellingSetsByLanguage: Record<LearningLanguage, SpellingSet[]> = { en: [], de: [], es: [], cs: [] };
   spellingAudioSetStatusesByLanguage: Record<LearningLanguage, Record<number, SpellingAudioSetStatus>> = { en: {}, de: {}, es: {}, cs: {} };
@@ -760,6 +772,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private readonly mathSession = new TestSessionEngine<MathSessionItem>();
   private readonly arithmeticSession = new TestSessionEngine<number>();
+  private readonly czechSpellingSession = new TestSessionEngine<number>();
   private readonly spellingSession = new TestSessionEngine<number>();
   private readonly flipcardSession = new TestSessionEngine<number>();
   private timerId: number | null = null;
@@ -794,6 +807,15 @@ export class AppComponent implements OnInit, OnDestroy {
     return this.currentIndex === null ? null : this.arithmeticQuestions[this.currentIndex] ?? null;
   }
 
+  get currentCzechSpellingQuestion(): CzechSpellingQuestion | null {
+    return this.currentIndex === null ? null : this.czechSpellingQuestions[this.currentIndex] ?? null;
+  }
+
+  get currentCzechSpellingAnswer(): string {
+    const question = this.currentCzechSpellingQuestion;
+    return question?.word[question.blankIndex] ?? '';
+  }
+
   get currentSpellingWord(): SpellingWord | null {
     return this.spellingWordIndex === null ? null : this.spellingWords[this.spellingWordIndex] ?? null;
   }
@@ -803,6 +825,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get hasCurrentPrompt(): boolean {
+    if (this.activeGame === 'czech_spelling') return this.currentCzechSpellingQuestion !== null;
     if (this.activeGame === 'spelling') return this.currentSpellingWord !== null;
     if (this.activeGame === 'flipcards') return this.currentFlipcardWord !== null;
     if (this.activeGame === 'arithmetic') return this.currentArithmeticQuestion !== null;
@@ -845,6 +868,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get currentQuestionText(): string {
+    if (this.activeGame === 'czech_spelling') {
+      const question = this.currentCzechSpellingQuestion;
+      return question ? czechSpellingPrompt(question) : '';
+    }
     if (this.activeGame === 'spelling') {
       return 'Poslechni si slovo';
     }
@@ -906,6 +933,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get currentAnswerText(): string {
+    if (this.activeGame === 'czech_spelling') return this.currentCzechSpellingQuestion?.word ?? '';
     if (this.activeGame === 'spelling') {
       return formatSpellingAnswer(this.currentSpellingWord?.text ?? '', this.selectedLanguage);
     }
@@ -923,6 +951,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get currentAnswerHint(): string | null {
+    if (this.activeGame === 'czech_spelling') return 'Doplň chybějící písmeno.';
     if (this.activeGame === 'spelling') return null;
     if (this.activeGame === 'arithmetic') return null;
     if (this.currentDirection !== 'product_to_factors') return null;
@@ -931,6 +960,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   get scoreGoal(): number {
+    if (this.activeGame === 'czech_spelling') return this.czechSpellingSession.selectedCount;
     if (this.activeGame === 'spelling') return this.spellingSession.selectedCount;
     if (this.activeGame === 'flipcards') return this.flipcardSession.selectedCount;
     if (this.activeGame === 'arithmetic') return this.arithmeticSession.selectedCount;
@@ -1377,6 +1407,8 @@ export class AppComponent implements OnInit, OnDestroy {
         this.startLaunchedMath(launch);
       } else if (launch.kind === 'arithmetic') {
         this.startLaunchedArithmetic(launch);
+      } else if (launch.kind === 'czech_spelling') {
+        this.startLaunchedCzechSpelling(launch);
       } else if (launch.kind === 'spelling') {
         await this.startLaunchedSpelling(launch);
       } else if (launch.kind === 'flipcards') {
@@ -1429,6 +1461,40 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.startTeslaMp3AudioForTest();
     this.startArithmeticSession();
     this.setScreen('play');
+    this.pickQuestion();
+  }
+
+  private startLaunchedCzechSpelling(launch: TestMenuLaunchResponse): void {
+    this.activeGame = 'czech_spelling';
+    this.selectedTest = launch.selectedTest ?? null;
+    this.czechSpellingQuestions = launch.czechSpellingQuestions ?? [];
+    this.czechSpellingStats = launch.czechSpellingStats?.statsByKey ?? {};
+    if (this.czechSpellingQuestions.length === 0) {
+      this.failTestStart('selection', 'no_czech_spelling_questions', 'Pro tento test nejsou dostupná žádná slova.');
+      return;
+    }
+    this.czechSpellingSession.startBalanced(
+      czechSpellingCandidates(this.czechSpellingQuestions, this.settings.targetScore, (key) => statsWeight(this.czechSpellingStats[key])),
+      this.settings.targetScore,
+    );
+    this.setScreen('play');
+    this.pickQuestion();
+  }
+
+  selectCzechSpellingLetter(letter: string): void {
+    const question = this.currentCzechSpellingQuestion;
+    if (this.screen !== 'play' || this.activeGame !== 'czech_spelling' || !question || this.answerVisible || this.finishingSession) return;
+    if (!question.options.includes(letter)) return;
+    this.czechSpellingSelectedLetter = letter;
+    this.czechSpellingCorrect = letter === this.currentCzechSpellingAnswer;
+    this.recordSessionOutcome(this.czechSpellingCorrect ? 'correct' : 'wrong');
+    this.score = this.currentSessionCompletedCount();
+    this.revealAnswer();
+    this.render();
+  }
+
+  nextCzechSpellingQuestion(): void {
+    if (this.screen !== 'play' || this.activeGame !== 'czech_spelling' || !this.answerVisible || this.finishingSession) return;
     this.pickQuestion();
   }
 
@@ -1685,6 +1751,7 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.loadSettings();
       await Promise.all([
         this.loadTestMenuSettings(),
+        this.loadCzechSpellingWords(),
         this.isAdmin ? this.loadAllLanguageSettings() : Promise.resolve(),
         this.isAdmin ? this.loadAdminUsers() : Promise.resolve(),
       ]);
@@ -1695,6 +1762,38 @@ export class AppComponent implements OnInit, OnDestroy {
       if (this.isAdmin) {
         this.startSpellingAudioSetPolling(this.settingsLanguage);
       }
+      this.render();
+    }
+  }
+
+  private async loadCzechSpellingWords(): Promise<void> {
+    this.czechSpellingWordsLoading = true;
+    this.czechSpellingWordsSaved = false;
+    this.czechSpellingWordsError = null;
+    this.czechSpellingWordsInput = '';
+    try {
+      const response = await this.apiGet<{ rawWords: string }>('czech-spelling/words');
+      this.czechSpellingWordsInput = response.rawWords;
+    } catch {
+      this.czechSpellingWordsError = 'Seznam slov se nepodařilo načíst. Otevři prosím nastavení znovu.';
+    } finally {
+      this.czechSpellingWordsLoading = false;
+    }
+  }
+
+  async saveCzechSpellingWords(): Promise<void> {
+    if (this.loading || this.czechSpellingWordsLoading || this.czechSpellingWordsSaving) return;
+    this.czechSpellingWordsSaving = true;
+    this.czechSpellingWordsSaved = false;
+    this.czechSpellingWordsError = null;
+    try {
+      const response = await this.apiPut<{ rawWords: string }>('czech-spelling/words', { rawWords: this.czechSpellingWordsInput });
+      this.czechSpellingWordsInput = response.rawWords;
+      this.czechSpellingWordsSaved = true;
+    } catch (error) {
+      this.czechSpellingWordsError = czechSpellingWordsError(error instanceof Error ? error.message : '');
+    } finally {
+      this.czechSpellingWordsSaving = false;
       this.render();
     }
   }
@@ -3480,6 +3579,21 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private pickQuestion(): void {
     this.clearTimer();
+    if (this.activeGame === 'czech_spelling') {
+      const nextIndex = this.czechSpellingSession.next();
+      if (nextIndex === null) {
+        void this.finishSession();
+        return;
+      }
+      this.currentIndex = nextIndex;
+      this.czechSpellingCorrect = null;
+      this.czechSpellingSelectedLetter = null;
+      this.answerVisible = false;
+      this.timedOut = false;
+      this.secondsLeft = this.settings.secondsLimit;
+      this.startTimer();
+      return;
+    }
     if (this.activeGame === 'spelling') {
       this.pickSpellingWord();
       return;
@@ -3805,6 +3919,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private recordSessionOutcome(outcome: TestSessionOutcome): void {
+    if (this.activeGame === 'czech_spelling') {
+      this.czechSpellingSession.record(outcome);
+      return;
+    }
     if (this.activeGame === 'spelling') {
       this.spellingSession.record(outcome);
       return;
@@ -3821,6 +3939,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private currentSessionCompletedCount(): number {
+    if (this.activeGame === 'czech_spelling') return this.czechSpellingSession.completedCount;
     if (this.activeGame === 'spelling') return this.spellingSession.completedCount;
     if (this.activeGame === 'flipcards') return this.flipcardSession.completedCount;
     if (this.activeGame === 'arithmetic') return this.arithmeticSession.completedCount;
@@ -3828,6 +3947,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private currentSessionFinished(): boolean {
+    if (this.activeGame === 'czech_spelling') return this.czechSpellingSession.finished;
     if (this.activeGame === 'spelling') return this.spellingSession.finished;
     if (this.activeGame === 'flipcards') return this.flipcardSession.finished;
     if (this.activeGame === 'arithmetic') return this.arithmeticSession.finished;
@@ -3856,6 +3976,13 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private async saveCurrentSessionResults(): Promise<void> {
+    if (this.activeGame === 'czech_spelling') {
+      const response = await this.apiPost<CzechSpellingStatsSnapshot>('czech-spelling/stats/session', {
+        results: czechSpellingResults(this.czechSpellingSession.results()),
+      });
+      this.czechSpellingStats = response.statsByKey;
+      return;
+    }
     if (this.activeGame === 'spelling') {
       await this.saveSpellingSessionResults();
       return;
@@ -3935,6 +4062,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private resetRoundState(): void {
+    this.czechSpellingQuestions = [];
+    this.czechSpellingStats = {};
+    this.czechSpellingCorrect = null;
+    this.czechSpellingSelectedLetter = null;
+    this.czechSpellingSession.clear();
     this.cancelAssetLibraryPolling();
     this.cancelAudioPrepPolling();
     this.clearTimer();
@@ -4014,6 +4146,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private testErrorGameForKey(testKey: string): ActiveGame {
+    if (testKey === 'tests.czech.orthography') return 'czech_spelling';
     if (testKey === 'tests.math.timed-arithmetic') return 'arithmetic';
     if (testKey.includes('.flipcards')) return 'flipcards';
     if (testKey.includes('.spelling.')) return 'spelling';

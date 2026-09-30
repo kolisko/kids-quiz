@@ -16,6 +16,7 @@ Kids Quiz je detska webova kvizova hra s Angular frontendem a Kotlin/Ktor backen
 - [08 Adaptive Question Selection](08-adaptive-question-selection.md)
 - [09 Testing And Acceptance](09-testing-and-acceptance.md)
 - [10 Operations And Development](10-operations-and-development.md)
+- [13 Czech Spelling](13-czech-spelling.md)
 
 ## Current Implementation Summary
 

@@ -213,6 +213,38 @@ fun Application.module() {
                     call.respond(response)
                 }
             }
+            route("/czech-spelling") {
+                get("/words") {
+                    val user = Auth.requireUser(call) ?: return@get
+                    call.respond(CzechSpellingStore.readWords(user.id))
+                }
+                put("/words") {
+                    val user = Auth.requireUser(call) ?: return@put
+                    val request = runCatching { call.receive<CzechSpellingWords>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_czech_spelling_words"))
+                        return@put
+                    }
+                    try {
+                        call.respond(CzechSpellingStore.replaceWords(user.id, request.rawWords))
+                    } catch (error: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to (error.message ?: "invalid_czech_spelling_words")))
+                    }
+                }
+                post("/stats/session") {
+                    val user = Auth.requireUser(call) ?: return@post
+                    val request = runCatching { call.receive<CzechSpellingSessionRequest>() }.getOrNull()
+                    if (request == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_czech_spelling_session"))
+                        return@post
+                    }
+                    try {
+                        call.respond(CzechSpellingStore.recordSession(user.id, request.results))
+                    } catch (error: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to (error.message ?: "invalid_czech_spelling_session")))
+                    }
+                }
+            }
             route("/arithmetic") {
                 post("/stats/session") {
                     val user = Auth.requireUser(call) ?: return@post
