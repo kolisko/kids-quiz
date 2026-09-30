@@ -336,6 +336,12 @@ object DatabaseMigrator {
                     recordMigration(32, "add_timed_arithmetic_records_and_superboxes")
                 }
             }
+            if (33 !in applied) {
+                connection.transaction {
+                    addCzechSpellingStats()
+                    recordMigration(33, "add_czech_spelling_stats")
+                }
+            }
         }
         migrated = true
     }

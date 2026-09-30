@@ -55,6 +55,18 @@ object TestMenuStore {
             val visibleTree = buildTree(tests, settings.hiddenTestMenuKeys.toSet()).onlyVisible()
             if (visibleTree?.find(key)?.launchable != true) return@useConnection null
 
+            if (key == czechSpellingMenuKey) {
+                val questions = CzechSpellingQuestions.fromWords(connection.readCzechSpellingWords(userId).rawWords)
+                return@useConnection TestMenuLaunchResponse(
+                    key = key,
+                    kind = TestMenuLaunchKind.czech_spelling,
+                    settings = settings,
+                    selectedTest = QuizTest(-3, "Doplň ú/ů a i/y", QuizTestType.czech_spelling, questions.size),
+                    czechSpellingQuestions = questions,
+                    czechSpellingStats = CzechSpellingStatsSnapshot(connection.readCzechSpellingStats(userId)),
+                )
+            }
+
             if (key == timedArithmeticMenuKey) {
                 return@useConnection TestMenuLaunchResponse(
                     key = key,
@@ -229,6 +241,19 @@ object TestMenuStore {
                         label = "Počítání na čas do 20",
                         launchable = true,
                         visible = timedArithmeticMenuKey !in hiddenKeys,
+                    ),
+                ),
+                TestMenuNode(
+                    key = "tests.czech",
+                    label = "Český jazyk",
+                    visible = "tests.czech" !in hiddenKeys,
+                    children = listOf(
+                        TestMenuNode(
+                            key = czechSpellingMenuKey,
+                            label = "Doplň ú/ů a i/y",
+                            launchable = true,
+                            visible = czechSpellingMenuKey !in hiddenKeys,
+                        ),
                     ),
                 ),
             ) + languageNodes,

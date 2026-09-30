@@ -1114,6 +1114,79 @@ button,
   transition: color 160ms ease, text-shadow 160ms ease, transform 160ms ease;
 }
 
+.question-card h1.czech-spelling-word {
+  font-size: clamp(2rem, 8vw, 6rem);
+  overflow-wrap: normal;
+}
+
+.primary-button.answer-button.czech-spelling-letter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: clamp(9rem, 26vh, 16.5rem);
+  padding: 1.25rem;
+  font-size: clamp(3.5rem, 9vw, 6rem);
+}
+
+.czech-spelling-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 1.2rem;
+  border: 2px solid currentColor;
+  border-radius: 0.6rem;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-weight: 850;
+}
+
+.czech-spelling-feedback.czech-spelling-correct {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+.czech-spelling-feedback.czech-spelling-wrong {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.primary-button.czech-spelling-letter:disabled {
+  opacity: 1;
+  cursor: default;
+  transform: none;
+}
+
+.primary-button.czech-letter-wrong {
+  color: #fff;
+  background: #dc2626;
+  box-shadow: 0 0 0 4px #991b1b, 0 12px 24px rgba(220, 38, 38, 0.22);
+}
+
+.primary-button.czech-letter-correct {
+  color: #fff;
+  background: #047857;
+  box-shadow: 0 0 0 4px #064e3b, 0 12px 24px rgba(4, 120, 87, 0.22);
+}
+
+.primary-button.czech-letter-unselected {
+  color: #64748b;
+  background: #e2e8f0;
+  box-shadow: none;
+}
+
+.czech-spelling-letter small {
+  margin-top: 0.5rem;
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+}
+
+.primary-button.czech-spelling-next {
+  min-height: 4.5rem;
+  font-size: 1.4rem;
+}
+
 .spelling-answer-clickable:focus-visible {
   outline: 0.18rem solid rgba(15, 118, 110, 0.36);
   outline-offset: 0.35rem;
